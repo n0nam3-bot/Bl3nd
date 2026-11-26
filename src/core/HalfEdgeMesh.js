@@ -685,6 +685,200 @@ export class HalfEdgeMesh {
   }
 
   /**
+   * Bevels one interior edge on a closed, convex tri-valent neighborhood.
+   * This deliberately narrow first pass supports cube-like corners only:
+   * both endpoints must have three incident faces, all affected faces must be
+   * planar/convex, and every affected edge must be manifold. All topology is
+   * built and validated on a temporary mesh before the source is replaced.
+   * `amount` is a 0–1 fraction of the maximum safe offset (45% of the shortest
+   * adjacent edge), not a world-unit distance.
+   */
+  bevelSelectedEdge({ amount = 0.25 } = {}) {
+    const fail = reason => ({ changed: false, reason });
+    if (this.selectionMode !== 'edge' || this.edgeSelection.size !== 1) {
+      return fail('Select exactly one edge in Edge Select mode.');
+    }
+    if (!Number.isFinite(amount) || amount <= 0 || amount > 0.95) {
+      return fail('Bevel amount must be greater than 0 and no more than 0.95.');
+    }
+
+    const edge = this.edges[[...this.edgeSelection][0]];
+    if (!edge || edge.halfEdges.length !== 2 || !edge.halfEdges[0].twin || !edge.halfEdges[1].twin) {
+      return fail('Bevel currently requires one closed interior manifold edge; boundary and non-manifold edges are skipped.');
+    }
+    const [first, second] = edge.halfEdges;
+    if (first.next.origin !== second.origin || second.next.origin !== first.origin || first.twin !== second || second.twin !== first) {
+      return fail('The selected edge has inconsistent face winding. Repair or orient the mesh before beveling.');
+    }
+
+    const sourceReport = this.validateTopology();
+    if (!sourceReport.valid) return fail('The mesh has existing topology warnings. Validate and repair safe issues before beveling.');
+
+    const faceAId = first.face?.id, faceBId = second.face?.id;
+    const faceA = this.faces[faceAId], faceB = this.faces[faceBId];
+    if (!faceA || !faceB || faceAId === faceBId) return fail('The selected edge does not have two distinct adjacent faces.');
+    const a = first.origin, b = first.next.origin;
+    const affectedFaces = new Set([faceAId, faceBId]);
+    const edgeByKey = new Map(this.edges.map(item => [keyFor(...item.vertices), item]));
+    const vertices = [a, b];
+
+    for (const vertexId of vertices) {
+      const incidentFaces = this.faces.reduce((ids, face, faceId) => {
+        if (face.includes(vertexId)) ids.push(faceId);
+        return ids;
+      }, []);
+      const incidentEdges = this.edges.filter(item => item.vertices.includes(vertexId));
+      if (incidentFaces.length !== 3 || incidentEdges.length !== 3 || incidentEdges.some(item => item.halfEdges.length !== 2)) {
+        return fail('Bevel currently supports closed valence-three corners only; boundary and extraordinary neighborhoods are skipped.');
+      }
+      const thirdFaces = incidentFaces.filter(id => !affectedFaces.has(id));
+      if (thirdFaces.length !== 1) return fail('The selected edge does not have a simple three-face corner fan at both endpoints.');
+      const thirdFace = this.faces[thirdFaces[0]];
+      if (!thirdFace || thirdFace.length < 3 || !thirdFace.includes(vertexId)) return fail('The adjacent corner face is invalid.');
+      affectedFaces.add(thirdFaces[0]);
+    }
+    if (affectedFaces.size !== 4) return fail('Both edge endpoints must have distinct, unambiguous corner faces.');
+
+    const isPlanarConvex = faceId => {
+      const face = this.faces[faceId];
+      const projection = projectedPolygon(this.positions, face);
+      if (!projection || projection.deviation > projection.scale * 1e-5 || !triangulatePolygon(this.positions, face)) return false;
+      const area = signedArea2D(projection.points), winding = Math.sign(area);
+      if (!winding) return false;
+      const epsilon = projection.scale * projection.scale * 1e-9;
+      for (let i = 0; i < projection.points.length; i++) {
+        if (cross2(projection.points[(i - 1 + projection.points.length) % projection.points.length],
+          projection.points[i], projection.points[(i + 1) % projection.points.length]) * winding <= epsilon) return false;
+      }
+      return true;
+    };
+    for (const faceId of affectedFaces) {
+      if (!isPlanarConvex(faceId)) return fail('All four faces around this edge must be simple, planar and convex.');
+    }
+
+    // Create one cut vertex on each non-selected edge meeting the selected
+    // edge's two endpoints. The two remaining corner faces bridge those pairs.
+    const adjacentLengths = [];
+    const pointAlong = (vertexId, edgeId) => {
+      const adjacent = this.edges[edgeId];
+      if (!adjacent || adjacent.halfEdges.length !== 2 || !adjacent.halfEdges.every(he => he.twin)) return null;
+      const otherId = adjacent.vertices[0] === vertexId ? adjacent.vertices[1] : adjacent.vertices[0];
+      const from = this.positions[vertexId], to = this.positions[otherId];
+      if (!from || !to) return null;
+      const length = Math.hypot(to[0]-from[0], to[1]-from[1], to[2]-from[2]);
+      if (!Number.isFinite(length) || length <= 1e-10) return null;
+      adjacentLengths.push(length);
+      return { edgeId: adjacent.id, otherId, from, to, length };
+    };
+    const cornerCut = (halfEdge, atStart) => {
+      const vertexId = atStart ? halfEdge.origin : halfEdge.next.origin;
+      const adjacentHalfEdge = atStart ? halfEdge.prev : halfEdge.next;
+      const edgeInfo = pointAlong(vertexId, adjacentHalfEdge.edge.id);
+      if (!edgeInfo) return null;
+      return { vertexId, edgeId: edgeInfo.edgeId, otherId: edgeInfo.otherId, from: edgeInfo.from, to: edgeInfo.to, length: edgeInfo.length };
+    };
+    const cutA0 = cornerCut(first, true);   // on the incoming edge of face A at A
+    const cutB0 = cornerCut(first, false);  // on the outgoing edge of face A at B
+    const cutB1 = cornerCut(second, true);  // on the incoming edge of face B at B
+    const cutA1 = cornerCut(second, false); // on the outgoing edge of face B at A
+    if (![cutA0, cutB0, cutB1, cutA1].every(Boolean)) {
+      return fail('The edge neighborhood is incomplete or contains a boundary edge.');
+    }
+    const uniqueCuts = new Set([cutA0, cutB0, cutB1, cutA1].map(item => `${item.vertexId}:${item.edgeId}`));
+    if (uniqueCuts.size !== 4) return fail('The selected edge has overlapping or ambiguous corner edges.');
+
+    const maxWidth = Math.min(...adjacentLengths) * 0.45;
+    const width = maxWidth * amount;
+    if (!Number.isFinite(width) || width <= 1e-9) return fail('The selected edge is too small for a stable bevel.');
+    const nextPositions = this.positions.map(point => [...point]);
+    const cutIdByCornerEdge = new Map();
+    const createCut = item => {
+      const ratio = width / item.length;
+      if (!(ratio > 0 && ratio < 0.5)) return null;
+      const point = item.from.map((value, axis) => value + (item.to[axis] - value) * ratio);
+      if (!point.every(Number.isFinite)) return null;
+      const id = nextPositions.length;
+      nextPositions.push(point);
+      cutIdByCornerEdge.set(`${item.vertexId}:${item.edgeId}`, id);
+      return id;
+    };
+    const pA0 = createCut(cutA0), pB0 = createCut(cutB0), pB1 = createCut(cutB1), pA1 = createCut(cutA1);
+    if (![pA0,pB0,pB1,pA1].every(Number.isInteger)) return fail('The requested bevel width is outside a stable edge range.');
+
+    const trimDirectedFace = (halfEdge, startCut, endCut) => {
+      const face = this.faces[halfEdge.face.id], start = halfEdge.origin, end = halfEdge.next.origin;
+      const index = face.indexOf(start);
+      if (index < 0 || face[(index + 1) % face.length] !== end) return null;
+      const rotated = [...face.slice(index), ...face.slice(0, index)];
+      return [startCut, endCut, ...rotated.slice(2)];
+    };
+    const trimCornerFace = (faceId, vertexId) => {
+      const face = this.faces[faceId], index = face.indexOf(vertexId);
+      if (index < 0) return null;
+      const previous = face[(index - 1 + face.length) % face.length];
+      const next = face[(index + 1) % face.length];
+      const previousEdge = edgeByKey.get(keyFor(previous, vertexId));
+      const nextEdge = edgeByKey.get(keyFor(vertexId, next));
+      const previousCut = previousEdge && cutIdByCornerEdge.get(`${vertexId}:${previousEdge.id}`);
+      const nextCut = nextEdge && cutIdByCornerEdge.get(`${vertexId}:${nextEdge.id}`);
+      if (!Number.isInteger(previousCut) || !Number.isInteger(nextCut)) return null;
+      return [...face.slice(0, index), previousCut, nextCut, ...face.slice(index + 1)];
+    };
+
+    const trimmedA = trimDirectedFace(first, pA0, pB0);
+    const trimmedB = trimDirectedFace(second, pB1, pA1);
+    if (!trimmedA || !trimmedB) return fail('The adjacent faces do not have a consistent edge neighborhood.');
+
+    const nextFaces = this.faces.map(face => [...face]);
+    nextFaces[faceAId] = trimmedA;
+    nextFaces[faceBId] = trimmedB;
+    for (const vertexId of [a, b]) {
+      const incident = [...affectedFaces].filter(faceId => faceId !== faceAId && faceId !== faceBId && this.faces[faceId].includes(vertexId));
+      if (incident.length !== 1) return fail('The corner cap face is ambiguous.');
+      const cap = trimCornerFace(incident[0], vertexId);
+      if (!cap) return fail('The corner cap could not be constructed safely.');
+      nextFaces[incident[0]] = cap;
+    }
+    // Reverse the selected face edge, then bridge both trimmed face strips.
+    const bevelFace = [pB0, pA0, pA1, pB1];
+    nextFaces.push(bevelFace);
+
+    const candidate = new HalfEdgeMesh(nextPositions, nextFaces);
+    const compactMap = candidate.compact();
+    const candidateReport = candidate.validateTopology();
+    if (!candidateReport.valid) {
+      return fail(`The proposed bevel failed topology validation (${candidateReport.issueCount} issue(s)); the original mesh was not changed.`);
+    }
+    if (candidate.faces.slice(0, nextFaces.length - 1).some((_, faceId) => !candidate.triangulateFace(faceId).length) ||
+        !candidate.triangulateFace(candidate.faces.length - 1).length) {
+      return fail('The proposed bevel produced a face that could not be triangulated.');
+    }
+
+    const selectedRing = [pB0, pA0, pA1, pB1].map(id => compactMap.get(id));
+    candidate.selectionMode = 'edge';
+    candidate.clearSelection();
+    const candidateEdgeIds = new Map(candidate.edges.map(item => [keyFor(...item.vertices), item.id]));
+    for (let i = 0; i < selectedRing.length; i++) {
+      const edgeId = candidateEdgeIds.get(keyFor(selectedRing[i], selectedRing[(i + 1) % selectedRing.length]));
+      if (edgeId !== undefined) candidate.edgeSelection.add(edgeId);
+    }
+    if (candidate.edgeSelection.size !== 4) return fail('The bevel perimeter did not produce four stable edges.');
+
+    this.positions = candidate.positions.map(point => [...point]);
+    this.faces = candidate.faces.map(face => [...face]);
+    this.selectionMode = 'edge';
+    this.clearSelection();
+    this.rebuild();
+    const selectedKeys = selectedRing.map((id, index) => keyFor(id, selectedRing[(index + 1) % selectedRing.length]));
+    const rebuiltEdgeIds = new Map(this.edges.map(item => [keyFor(...item.vertices), item.id]));
+    for (const key of selectedKeys) {
+      const edgeId = rebuiltEdgeIds.get(key);
+      if (edgeId !== undefined) this.edgeSelection.add(edgeId);
+    }
+    return { changed: true, amount, width, maxWidth, insertedVertices: 4, createdFaces: 1, selectedEdges: this.edgeSelection.size };
+  }
+
+  /**
    * Inserts a centered/interpolated cut through a regular quad edge loop.
    * The operation is transactional: all incident faces are checked before any
    * vertex or face data is changed. Unsupported topology returns a reason.

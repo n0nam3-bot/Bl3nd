@@ -7,6 +7,7 @@ import { MeshOperators } from './operators/MeshOperators.js';
 import { SelectionOperators } from './operators/SelectionOperators.js';
 import { ModalTransform } from './operators/ModalTransform.js';
 import { LoopCutModal } from './operators/LoopCutModal.js';
+import { BevelModal } from './operators/BevelModal.js';
 import { ModifierStack } from './modifiers/ModifierStack.js';
 import { Viewport } from './ui/Viewport.js';
 import { ModelIO } from './io/ModelIO.js';
@@ -56,7 +57,9 @@ const undoManager = new UndoManager({
 });
 const modalTransform = new ModalTransform({ document: sceneDocument, undoManager, viewport, status, onChange: () => ui?.refreshModal() });
 const loopCutModal = new LoopCutModal({ document: sceneDocument, undoManager, viewport, status, onChange: () => { refresh(); ui?.refreshModal(); } });
+const bevelModal = new BevelModal({ document: sceneDocument, undoManager, viewport, status, onChange: () => { refresh(); ui?.refreshModal(); } });
 let loopCutPreviousSelectionTool = 'tap';
+let bevelPreviousSelectionTool = 'tap';
 const commandBus = new CommandBus({ undoManager, status });
 const modifierStack = new ModifierStack({ onStatus: status });
 const modelIO = new ModelIO(sceneDocument, notify);
@@ -258,9 +261,63 @@ function registerCommands() {
     refresh(); return count > 0;
   }, { recordUndo: false });
   commandBus.register('mesh.subdivide', async () => { if (sceneDocument.mode !== 'edit') return false; MeshOperators.subdivide(sceneDocument); await reapplyActiveModifiers(); refresh(); return true; });
-  commandBus.register('mesh.bevel', () => notify('Bevel (Ctrl+B) is on the Phase 1/2 roadmap; edge-offset topology is not implemented yet.'), { recordUndo: false });
+  commandBus.register('mesh.bevel', async () => {
+    if (modalTransform.active || loopCutModal.active) { notify('Confirm or cancel the current operation before starting Bevel.'); return false; }
+    const started = await bevelModal.begin();
+    if (!started) { notify(`Bevel skipped · ${bevelModal.lastError || 'Unable to start Bevel.'}`, 'error'); return false; }
+    viewport.controls.enabled = false;
+    bevelPreviousSelectionTool = viewport.selectionTool || 'tap';
+    viewport.selectionTool = 'tap';
+    viewport.modalOperationActive = true;
+    ui.refreshSelectionTool();
+    $('#pie-menu').hidden = true;
+    document.body.classList.add('bevel-modal-active');
+    refresh();
+    ui.refreshModal();
+    return true;
+  }, { recordUndo: false });
+  commandBus.register('mesh.bevel_pointer', ({ point, fine = false }) => {
+    bevelModal.pointerMove(point, fine);
+    ui.refreshModal();
+    return true;
+  }, { recordUndo: false });
+  commandBus.register('mesh.bevel_input', ({ value }) => {
+    bevelModal.appendNumeric(value);
+    ui.refreshModal();
+    return true;
+  }, { recordUndo: false });
+  commandBus.register('mesh.bevel_nudge', ({ direction, fine = false }) => {
+    const changed = bevelModal.nudge(direction, fine);
+    ui.refreshModal();
+    return changed;
+  }, { recordUndo: false });
+  commandBus.register('mesh.bevel_confirm', async () => {
+    const result = await bevelModal.confirm();
+    viewport.controls.enabled = true;
+    viewport.modalOperationActive = false;
+    viewport.selectionTool = bevelPreviousSelectionTool;
+    ui.refreshSelectionTool();
+    document.body.classList.remove('bevel-modal-active');
+    if (result) {
+      await reapplyActiveModifiers();
+      notify(`Bevel applied · ${result.insertedVertices} vertices · ${result.createdFaces} face · width ${result.width.toFixed(3)}.`, 'success');
+    }
+    refresh(); ui.refreshModal();
+    return Boolean(result);
+  }, { recordUndo: false });
+  commandBus.register('mesh.bevel_cancel', async () => {
+    const result = await bevelModal.cancel();
+    viewport.controls.enabled = true;
+    viewport.modalOperationActive = false;
+    viewport.selectionTool = bevelPreviousSelectionTool;
+    ui.refreshSelectionTool();
+    document.body.classList.remove('bevel-modal-active');
+    if (result) await reapplyModifiers();
+    refresh(); ui.refreshModal();
+    return result;
+  }, { recordUndo: false });
   commandBus.register('mesh.loop_cut', async () => {
-    if (modalTransform.active) { notify('Confirm or cancel the current transform before starting Loop Cut.'); return false; }
+    if (modalTransform.active || bevelModal.active) { notify('Confirm or cancel the current operation before starting Loop Cut.'); return false; }
     const started = await loopCutModal.begin();
     if (!started) { notify(`Loop Cut skipped · ${loopCutModal.lastError || 'Unable to start the cut.'}`, 'error'); return false; }
     viewport.controls.enabled = false;
@@ -320,7 +377,7 @@ function registerCommands() {
     return result;
   }, { recordUndo: false });
   commandBus.register('transform.modal_start', async ({ type, pointer }) => {
-    if (loopCutModal.active) { notify('Apply or cancel Loop Cut before starting a transform.'); return false; }
+    if (loopCutModal.active || bevelModal.active) { notify('Apply or cancel the current mesh operation before starting a transform.'); return false; }
     const started = await modalTransform.begin(type, pointer || ui.pointerOrigin());
     if (!started) notify('Select an object before transforming.');
     viewport.controls.enabled = !started; ui.refreshModal(); return started;
@@ -359,7 +416,7 @@ function faceIdForTriangle(hem, triangleIndex) {
   return hem.triangleFaceMap()[triangleIndex] ?? -1;
 }
 function handleViewportSelection(hit, pointer, event) {
-  if (modalTransform.active || loopCutModal.active) return;
+  if (modalTransform.active || loopCutModal.active || bevelModal.active) return;
   if (!hit) {
     if (sceneDocument.mode === 'object') run('object.select',{mesh:null});
     else run('mesh.clear_selection');
@@ -420,8 +477,8 @@ function refresh() {
   viewport.updateEditOverlay(editing ? sceneDocument.activeObject : null, sceneDocument.selectionMode);
   const hintDesktop = $('.hint-desktop'), hintMobile = $('.hint-mobile');
   if (editing) {
-    hintDesktop.textContent = 'Edit: Click vertex / edge / face · B/C/L region select · Alt+L loop · Ctrl+Alt+L ring · X delete · Shift+X dissolve';
-    hintMobile.textContent = 'Edit: Tap topology · Select ▾ for Box/Circle/Lasso/Loop/Ring · X delete · Shift+X dissolve';
+    hintDesktop.textContent = 'Edit: Click topology · Alt+L loop · Ctrl+Alt+L ring · Ctrl+B bevel · Ctrl+R loop cut · X delete';
+    hintMobile.textContent = 'Edit: Tap topology · Select ▾ for region/Loop/Ring · Edit Mesh panel for Bevel / Loop Cut';
   } else {
     hintDesktop.textContent = 'Drag to orbit · Right-drag to pan · Scroll to zoom · Click to select · G/R/S then drag to transform';
     hintMobile.textContent = 'One finger: orbit · Two fingers: pan/zoom · Long press: 3D Cursor · G/R/S: transform';
@@ -437,8 +494,8 @@ function refresh() {
 }
 
 ui = {
-  async undo(){if(loopCutModal.active){notify('Apply or cancel Loop Cut before undoing.');return;}if(!undoManager.canUndo){notify('Nothing to undo.');return;} await undoManager.undo();refresh();},
-  async redo(){if(loopCutModal.active){notify('Apply or cancel Loop Cut before redoing.');return;}if(!undoManager.canRedo){notify('Nothing to redo.');return;} await undoManager.redo();refresh();},
+  async undo(){if(loopCutModal.active || bevelModal.active){notify('Apply or cancel the active mesh operation before undoing.');return;}if(!undoManager.canUndo){notify('Nothing to undo.');return;} await undoManager.undo();refresh();},
+  async redo(){if(loopCutModal.active || bevelModal.active){notify('Apply or cancel the active mesh operation before redoing.');return;}if(!undoManager.canRedo){notify('Nothing to redo.');return;} await undoManager.redo();refresh();},
   togglePie(kind){
     const menu=$('#pie-menu');
     if(!menu.hidden && menu.dataset.kind===kind){menu.hidden=true;return;}
@@ -463,10 +520,23 @@ ui = {
   refreshModal(){
     const readout=$('#modal-readout'),pad=$('#numeric-pad'),padTitle=pad.querySelector('.pad-title');
     const axisButtons=pad.querySelectorAll('[data-axis]');
+    if(bevelModal.active){
+      readout.hidden=false;
+      readout.textContent=`BEVEL · Amount ${bevelModal.amount.toFixed(2)} · Width ${bevelModal.lastResult?.width.toFixed(3) || '—'} · Drag / arrows / type · Enter apply / Esc cancel`;
+      pad.hidden=!capabilities.tier.includes('Mobile');
+      pad.classList.remove('loop-cut-mode','bevel-mode');
+      pad.classList.add('bevel-mode');
+      padTitle.textContent='BEVEL AMOUNT · 0–0.95';
+      axisButtons.forEach(button=>button.hidden=true);
+      $('#pad-value').textContent=bevelModal.numeric || bevelModal.amount.toFixed(2);
+      $('#pad-count-row').hidden=true;
+      return;
+    }
     if(loopCutModal.active){
       readout.hidden=false;
       readout.textContent=`LOOP CUT · ${loopCutModal.cuts} cut(s) · Offset ${loopCutModal.offset.toFixed(2)} · Wheel / +/- count · Enter apply / Esc cancel`;
       pad.hidden=!capabilities.tier.includes('Mobile');
+      pad.classList.remove('bevel-mode');
       pad.classList.add('loop-cut-mode');
       padTitle.textContent='CUT OFFSET · TYPE 0–1';
       axisButtons.forEach(button=>button.hidden=true);
@@ -475,7 +545,7 @@ ui = {
       $('#pad-cuts').textContent=String(loopCutModal.cuts);
       return;
     }
-    pad.classList.remove('loop-cut-mode');
+    pad.classList.remove('loop-cut-mode','bevel-mode');
     $('#pad-count-row').hidden=true;
     padTitle.textContent='TRANSFORM VALUE';
     axisButtons.forEach(button=>button.hidden=false);
@@ -517,6 +587,7 @@ $('#select-all-btn').addEventListener('click',()=>run('mesh.select_all'));
 $('#deselect-btn').addEventListener('click',()=>run('mesh.clear_selection'));
 $('#selection-menu-btn').addEventListener('click',()=>ui.togglePie('selection'));
 $('#dissolve-panel-btn').addEventListener('click',()=>run('mesh.dissolve'));
+$('#bevel-panel-btn').addEventListener('click',()=>run('mesh.bevel'));
 $('#validate-topology-btn').addEventListener('click',()=>run('mesh.validate_topology'));
 $('#repair-topology-btn').addEventListener('click',()=>run('mesh.repair_topology')); $('#loop-cut-btn').addEventListener('click',()=>run('mesh.loop_cut'));
 $('#frame-btn').addEventListener('click',()=>run('view.frame'));
@@ -548,6 +619,12 @@ $('#pie-menu').addEventListener('click',async event=>{
 });
 $('#shading-btn').addEventListener('click',()=>ui.togglePie('shading'));
 $('#numeric-pad').addEventListener('click',async event=>{
+  if(bevelModal.active){
+    const bevelKey=event.target.closest('button[data-key]');if(!bevelKey)return;const key=bevelKey.dataset.key;
+    if(key==='enter'){await run('mesh.bevel_confirm');return;}
+    if(key==='escape'){await run('mesh.bevel_cancel');return;}
+    await run('mesh.bevel_input',{value:key});return;
+  }
   if(loopCutModal.active){
     const countButton=event.target.closest('button[data-cuts]');if(countButton){await run('mesh.loop_cut_count',{delta:Number(countButton.dataset.cuts)});return;}
     const cutButton=event.target.closest('button[data-key]');if(!cutButton)return;const cutKey=cutButton.dataset.key;
@@ -569,22 +646,25 @@ $('#numeric-pad').addEventListener('click',async event=>{
 
 const viewportCanvas=viewport.renderer.domElement;
 viewportCanvas.addEventListener('wheel',event=>{
+  if(bevelModal.active){event.preventDefault();commandBus.dispatch('mesh.bevel_nudge',{direction:event.deltaY<0?1:-1});ui.refreshModal();return;}
   if(!loopCutModal.active)return;
   event.preventDefault();
   commandBus.dispatch('mesh.loop_cut_count',{delta:event.deltaY<0?1:-1});
   ui.refreshModal();
 },{passive:false});
 window.addEventListener('pointermove',event=>{
+  if(bevelModal.active && (event.target===viewportCanvas || viewportCanvas.contains(event.target))){commandBus.dispatch('mesh.bevel_pointer',{point:{x:event.clientX,y:event.clientY},fine:event.shiftKey});ui.refreshModal();return;}
   if(loopCutModal.active && (event.target===viewportCanvas || viewportCanvas.contains(event.target))){commandBus.dispatch('mesh.loop_cut_pointer',{point:{x:event.clientX,y:event.clientY},fine:event.shiftKey});ui.refreshModal();return;}
   if(modalTransform.active){commandBus.dispatch('transform.modal_update',{point:{x:event.clientX,y:event.clientY}});ui.refreshModal();}
 });
 viewportCanvas.addEventListener('contextmenu',event=>{
+  if(bevelModal.active){event.preventDefault();run('mesh.bevel_cancel');return;}
   if(loopCutModal.active){event.preventDefault();run('mesh.loop_cut_cancel');return;}
   if(modalTransform.active){event.preventDefault();run('transform.modal_cancel');}
 });
 new TouchController(viewport,notify);
 new SelectionGestureController({viewport,dispatch:(name,payload)=>run(name,payload),getDocument:()=>sceneDocument,notify});
-new KeyboardController({viewport,commandBus,modalTransform,loopCutModal,getDocument:()=>sceneDocument,ui,notify});
+new KeyboardController({viewport,commandBus,modalTransform,loopCutModal,bevelModal,getDocument:()=>sceneDocument,ui,notify});
 loadingProgress(88, 'Keyboard, pointer and touch controls are ready…');
 $('#sw-profile').textContent='Registering…';
 if ('serviceWorker' in navigator) {

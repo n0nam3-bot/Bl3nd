@@ -1,6 +1,6 @@
 export class KeyboardController {
-  constructor({ viewport, commandBus, modalTransform, loopCutModal = null, getDocument, ui, notify }) {
-    this.viewport=viewport; this.commandBus=commandBus; this.modal=modalTransform; this.loopCutModal=loopCutModal; this.getDocument=getDocument; this.ui=ui; this.notify=notify;
+  constructor({ viewport, commandBus, modalTransform, loopCutModal = null, bevelModal = null, getDocument, ui, notify }) {
+    this.viewport=viewport; this.commandBus=commandBus; this.modal=modalTransform; this.loopCutModal=loopCutModal; this.bevelModal=bevelModal; this.getDocument=getDocument; this.ui=ui; this.notify=notify;
     this.listener=event=>this.onKeyDown(event); window.addEventListener('keydown',this.listener);
   }
   dispatch(name,payload={}) { return this.commandBus.dispatch(name,{...payload,document:this.getDocument()}); }
@@ -8,6 +8,16 @@ export class KeyboardController {
   async onKeyDown(event) {
     if (this.isTyping(event.target)) return;
     const key=event.key.toLowerCase(), doc=this.getDocument();
+    if (this.bevelModal?.active) {
+      if (key==='escape') { event.preventDefault(); await this.dispatch('mesh.bevel_cancel'); return; }
+      if (key==='enter') { event.preventDefault(); await this.dispatch('mesh.bevel_confirm'); return; }
+      if (key==='arrowleft' || key==='arrowdown') { event.preventDefault(); await this.dispatch('mesh.bevel_nudge',{direction:-1,fine:event.shiftKey}); return; }
+      if (key==='arrowright' || key==='arrowup') { event.preventDefault(); await this.dispatch('mesh.bevel_nudge',{direction:1,fine:event.shiftKey}); return; }
+      if (/^\d$/.test(key) || key==='.' || key==='backspace') {
+        event.preventDefault(); await this.dispatch('mesh.bevel_input',{value:key==='backspace'?'backspace':key}); return;
+      }
+      return;
+    }
     if (this.loopCutModal?.active) {
       if (key==='escape') { event.preventDefault(); await this.dispatch('mesh.loop_cut_cancel'); return; }
       if (key==='enter') { event.preventDefault(); await this.dispatch('mesh.loop_cut_confirm'); return; }

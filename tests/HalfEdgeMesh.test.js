@@ -386,3 +386,116 @@ test('edge ring refuses extraordinary fans containing non-quad faces', () => {
   assert.equal(hem.lastRingTraversal.ambiguousPoles, 0);
   assert.ok(hem.lastRingTraversal.stoppedFans >= 1);
 });
+
+function makeCube() {
+  const positions = [
+    [-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],
+    [-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1]
+  ];
+  const faces = [
+    [0,3,2,1], [4,5,6,7], [0,1,5,4],
+    [1,2,6,5], [2,3,7,6], [3,0,4,7]
+  ];
+  return new HalfEdgeMesh(positions, faces);
+}
+
+test('Bevel trims a closed cube-like tri-valent edge neighborhood and keeps topology valid', () => {
+  const hem = makeCube();
+  hem.setSelectionMode('edge');
+  const seed = hem.edges.find(edge => keyFor(...edge.vertices) === keyFor(4,5));
+  hem.selectEdge(seed.id);
+  const result = hem.bevelSelectedEdge({ amount: 0.25 });
+  assert.equal(result.changed, true);
+  assert.equal(result.insertedVertices, 4);
+  assert.equal(result.createdFaces, 1);
+  assert.equal(result.selectedEdges, 4);
+  assert.equal(hem.positions.length, 10);
+  assert.equal(hem.faces.length, 7);
+  assert.equal(hem.validateTopology().valid, true);
+  assert.equal(hem.validateTopology().counts.boundaryEdges, 0);
+  assert.equal(hem.edgeSelection.size, 4);
+});
+
+test('Bevel succeeds on every cube edge with manifold topology preserved', () => {
+  const positions = [
+    [-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],
+    [-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1]
+  ];
+  const faces = [[0,3,2,1],[4,5,6,7],[0,1,5,4],[1,2,6,5],[2,3,7,6],[3,0,4,7]];
+  const seedMesh = new HalfEdgeMesh(positions, faces);
+  const edgeKeys = seedMesh.edges.map(edge => keyFor(...edge.vertices));
+  for (const edgeKey of edgeKeys) {
+    const hem = new HalfEdgeMesh(positions, faces);
+    hem.setSelectionMode('edge');
+    hem.selectEdge(hem.edges.find(edge => keyFor(...edge.vertices) === edgeKey).id);
+    const result = hem.bevelSelectedEdge({ amount: 0.95 });
+    assert.equal(result.changed, true, `expected cube edge ${edgeKey} to bevel`);
+    assert.equal(hem.validateTopology().valid, true, `expected cube edge ${edgeKey} to remain manifold`);
+  }
+});
+
+test('Bevel uses a bounded distance along the four neighboring edges', () => {
+  const hem = makeCube();
+  hem.setSelectionMode('edge');
+  const seed = hem.edges.find(edge => keyFor(...edge.vertices) === keyFor(4,5));
+  hem.selectEdge(seed.id);
+  const result = hem.bevelSelectedEdge({ amount: 0.5 });
+  assert.equal(result.changed, true);
+  assert.ok(Math.abs(result.width - 0.45) < 1e-10);
+  const expected = [[-1,-0.55,1],[1,-0.55,1],[1,-1,0.55],[-1,-1,0.55]];
+  for (const point of expected) {
+    assert.ok(hem.positions.some(candidate => candidate.every((value, axis) => Math.abs(value - point[axis]) < 1e-10)));
+  }
+});
+
+test('Bevel rejects a boundary edge without modifying the source mesh', () => {
+  const { hem } = makeGrid(1,1);
+  hem.setSelectionMode('edge');
+  hem.selectEdge(hem.edges[0].id);
+  const before = JSON.stringify({ positions: hem.positions, faces: hem.faces });
+  const result = hem.bevelSelectedEdge({ amount: 0.25 });
+  assert.equal(result.changed, false);
+  assert.match(result.reason, /closed interior manifold edge|boundary/i);
+  assert.equal(JSON.stringify({ positions: hem.positions, faces: hem.faces }), before);
+});
+
+test('Bevel rejects extraordinary endpoint fans without modifying the source mesh', () => {
+  const hem = new HalfEdgeMesh(
+    [[0,0,1],[0,0,-1],[1,0,0],[0,1,0],[-1,0,0],[0,-1,0]],
+    [[0,2,3],[0,3,4],[0,4,5],[0,5,2],[1,3,2],[1,4,3],[1,5,4],[1,2,5]]
+  );
+  hem.setSelectionMode('edge');
+  const seed = hem.edges.find(edge => keyFor(...edge.vertices) === keyFor(0,2));
+  hem.selectEdge(seed.id);
+  const before = JSON.stringify({ positions: hem.positions, faces: hem.faces });
+  const result = hem.bevelSelectedEdge({ amount: 0.25 });
+  assert.equal(result.changed, false);
+  assert.match(result.reason, /valence-three|three-face/i);
+  assert.equal(JSON.stringify({ positions: hem.positions, faces: hem.faces }), before);
+});
+
+test('Bevel rejects non-manifold edges without modifying the source mesh', () => {
+  const hem = new HalfEdgeMesh(
+    [[0,0,0],[1,0,0],[0,1,0],[0,-1,0],[0,0,1]],
+    [[0,1,2],[1,0,3],[0,1,4]]
+  );
+  hem.setSelectionMode('edge');
+  const seed = hem.edges.find(edge => keyFor(...edge.vertices) === keyFor(0,1));
+  hem.selectEdge(seed.id);
+  const before = JSON.stringify({ positions: hem.positions, faces: hem.faces });
+  const result = hem.bevelSelectedEdge({ amount: 0.25 });
+  assert.equal(result.changed, false);
+  assert.match(result.reason, /manifold/i);
+  assert.equal(JSON.stringify({ positions: hem.positions, faces: hem.faces }), before);
+});
+
+test('Bevel rejects a zero or out-of-range width without changing the source mesh', () => {
+  for (const amount of [0, -0.1, 0.96, Number.NaN]) {
+    const hem = makeCube();
+    hem.setSelectionMode('edge');
+    hem.selectEdge(hem.edges.find(edge => keyFor(...edge.vertices) === keyFor(4,5)).id);
+    const before = JSON.stringify({ positions: hem.positions, faces: hem.faces });
+    assert.equal(hem.bevelSelectedEdge({ amount }).changed, false);
+    assert.equal(JSON.stringify({ positions: hem.positions, faces: hem.faces }), before);
+  }
+});

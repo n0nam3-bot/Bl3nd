@@ -28,12 +28,13 @@ The application does not require a build command. Open the GitHub Pages URL afte
 - Edge Select: select one or more seed edges, then `Alt+L` expands through opposite edges of connected quads; `Ctrl+Alt+L` follows opposite edges through closed all-quad vertex fans. At extraordinary poles, it pairs only a unique near-antiparallel edge direction (at least 155° apart with a clear best match); boundaries, mixed-face fans, non-manifold fans and ambiguous pairings are skipped. The Select menu exposes both operations.
 - Edit Mode `X` / `Delete`: delete selected topology; `Shift+X`: dissolve selected topology; the viewport Select menu offers the same actions.
 - Edit Mode `E` / `I`: Extrude / Inset
+- Edge Select: select exactly one interior edge on a supported closed cube-like corner, then `Ctrl+B` or **Bevel** in the Edit Mesh panel. Drag horizontally to preview width; hold `Shift` for precision, use `←/→` for small width changes or type a factor from `0` to `0.95`. `Enter` applies one undoable bevel; `Esc` or right-click cancels. On mobile, drag or use the on-screen numeric pad. The first pass only supports convex planar boundary-free neighborhoods where both endpoints have exactly three incident faces; boundary edges, extraordinary poles, non-manifold topology and ambiguous corners are rejected without mutation.
 - Edge Select: select exactly one seed edge, then `Ctrl+R` or **Loop Cut** in the Edit Mesh panel. Drag horizontally to slide the live cut preview; hold `Shift` for precision, use `←/→` for 1% steps (Shift for 0.1%), or type an offset from `0` to `1`. `Enter` applies and `Esc` cancels. Use the mouse wheel or `+` / `-` to adjust 1–8 evenly spaced cuts; all cuts slide together. On mobile, drag in the viewport, type the slide value, or use the on-screen cut-count buttons.
 - `Shift + A`: add menu; `Z`: shading menu
 - Numpad `1/3/7`: front/right/top views; scroll: zoom
 - Desktop: left-drag or middle-drag to orbit; right-drag or Shift+left-drag to pan; scroll to zoom; a stationary click selects
 - Mobile: one-finger orbit, two-finger pan/zoom, long-press to place cursor and bottom quick actions; choose Box / Circle / Lasso from the viewport Select menu for drag selection, then return to Click Select to orbit with one finger.
-- Edit Mesh panel: Delete and Dissolve use the active vertex/edge/face selection; Validate Mesh reports topology problems, and Repair Safe Issues handles only conservative repairs. Loop Cut is available from the panel or Ctrl+R while one seed edge is selected.
+- Edit Mesh panel: Delete and Dissolve use the active vertex/edge/face selection; Validate Mesh reports topology problems, and Repair Safe Issues handles only conservative repairs. Loop Cut is available from the panel or Ctrl+R while one seed edge is selected. Bevel is available from the panel or Ctrl+B for one supported closed, convex tri-valent edge neighborhood; its preview is transactional and commits one undo step.
 - Concave planar polygons are ear-clipped for rendering and selection. Dissolve can merge a simple concave planar patch; non-planar, self-intersecting and non-manifold patches remain unchanged.
 
 Run all topology/operator regression tests with Node: `node --experimental-default-type=module --test tests/*.test.js`.
@@ -44,6 +45,12 @@ See [`HANDOFF.md`](./HANDOFF.md) for architecture, exact implementation status, 
 ### Safe topology repair
 
 In Edit Mode, **Repair Safe Issues** removes malformed faces and duplicate faces, reorients consistently orientable manifold face components, and compacts unused vertices. It deliberately does not guess how to repair non-manifold edges, non-planar faces, self-intersections, or contradictory/non-orientable components; those remain in the validation report for manual correction. Use **Validate Mesh** before and after repair to inspect what changed.
+
+### Bevel
+
+Select one edge in Edge Select mode on a closed manifold mesh. The first implementation is intentionally limited to an edge whose two endpoints each have exactly three incident faces, with all four affected faces simple, planar and convex. It replaces the selected edge with a four-sided bevel strip, inserts four offset vertices, trims the two side faces and the two endpoint corner faces, and selects the new bevel perimeter. The amount is a normalized factor of the safe maximum (45% of the shortest adjacent edge), not a world-unit distance.
+
+Press **Ctrl+B** or choose **Bevel** in the Edit Mesh panel. Drag horizontally, hold `Shift` for precision, use arrow keys to nudge, or type a factor from `0` to `0.95`. `Enter` commits one undoable operation; `Esc` or right-click restores the original mesh. The candidate mesh is compacted and topology-validated before the source is replaced. Boundary edges, non-manifold or inconsistently wound meshes, existing topology warnings, non-planar/concave faces, and endpoints with other than three incident faces are rejected without mutation. Multi-edge bevels, segments, profile shaping, mitering and open-boundary bevels are not implemented.
 
 ### Loop Cut
 
