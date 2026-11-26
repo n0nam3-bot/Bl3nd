@@ -24,7 +24,9 @@
 - **Local-only:** scenes are stored in the browser; import/export uses local file pickers. No cloud sync or remote project database exists.
 - **Transform frame:** modal transforms capture the camera basis, viewport bounds, pointer origin and camera-to-pivot scale at start. Free movement uses the current camera-facing view plane; axis movement projects screen motion into world-axis distance; free rotation uses a camera-oriented virtual trackball.
 - **Edit overlays:** `src/ui/EditModeOverlay.js` draws live polygon edges, vertices and selected-face fills as children of the active mesh; overlays do not replace editable topology or intercept picking.
-- **Region selection:** `src/input/SelectionGestureController.js` captures box/circle/lasso drags before OrbitControls; `src/operators/SelectionOperators.js` selects projected vertices, edges and face triangles only when ray checks identify the visible mesh surface.
+- **Region selection:** `src/input/SelectionGestureController.js` captures box/circle/lasso drags before OrbitControls; `src/operators/SelectionOperators.js` selects projected vertices, edges and ear-clipped face triangles only when ray checks identify the visible mesh surface.
+- **Polygon triangulation:** `HalfEdgeMesh.triangulateFace()` ear-clips simple concave polygons. `toBufferGeometry`, face picking and selected-face overlay all consume the same triangle list; invalid/self-intersecting polygons are not silently fanned.
+- **Edge traversal:** loop selection crosses opposite edges through connected quads; ring selection follows opposite edges in closed valence-four vertex fans. Both stop at boundaries or unsupported poles.
 - **Deployment:** `.github/workflows/pages.yml` uses two jobs: `build` creates and uploads the `github-pages` artifact; `deploy` waits for `build` and publishes it. The Pages workflow runs on normal `main` changes (excluding `uploads/**`) and after successful completion of `Unpack uploaded update packages`.
 
 ## Repository File Tree
@@ -63,6 +65,8 @@
 │   ├── main.js                 # App composition, commands and UI bindings
 │   └── styles.css              # Responsive desktop/mobile styling
 ├── .gitignore
+├── tests/
+│   └── HalfEdgeMesh.test.js    # Node topology/triangulation regression tests
 ├── HANDOFF.md                  # This document
 ├── README.md                   # Deployment and quick controls
 ├── index.html                  # Static app entry and Bl3nd identity
@@ -84,15 +88,15 @@ Status meanings: **Working** = implemented end-to-end in the current foundation;
 | Device capabilities | Partial | Detects tier, memory, CPU threads, WebGPU, WebGL2 and OPFS. Tier affects render pixel ratio/history budget; WebGPU is not activated. |
 | 3D viewport | Partial | Three.js WebGL renderer, grid, axes, orbit/pan/zoom, standard views and framing. |
 | Command bus | Working | Named command registration and snapshot-based undo boundaries. |
-| Half-edge topology | Partial | Vertex/Edge/HalfEdge/Face records and adjacency. Import merges adjacent coplanar triangles into a convex polygon when a single boundary can be reconstructed. A diagnostic validator reports invalid/duplicate faces, non-manifold edges, inconsistent winding and isolated vertices; it does not auto-repair. This is not a production manifold kernel. |
+| Half-edge topology | Partial | Vertex/Edge/HalfEdge/Face records and adjacency. Import reconstructs safe coplanar regions; polygon rendering uses ear clipping for simple concave faces. Diagnostics cover invalid positions/faces, duplicates, non-manifold edges, inconsistent winding, isolated vertices, non-planar/self-intersecting faces and triangulation failures. No automatic repair is attempted; this is not a production manifold kernel. |
 | Object mode | Working | Primitive creation, object selection/deletion and object transforms. |
-| Edit mode | Partial | Visible edge/vertex overlays and selected-face tint; click/Shift-click, Select All / Deselect / Invert, box/circle/lasso region selection with ray-checked visibility, selection-aware vertex/edge/face deletion and constrained planar dissolve, plus face extrude/inset/subdivision. Loop/ring selection and general concave/non-manifold dissolve remain missing. |
+| Edit mode | Partial | Visible edge/vertex overlays and selected-face tint; click/Shift-click, Select All / Deselect / Invert, box/circle/lasso region selection with ray-checked visibility, selection-aware vertex/edge/face deletion and constrained planar dissolve, plus face extrude/inset/subdivision. Loop/ring selection now has topology-based quad/fan traversal; non-manifold and extraordinary poles terminate traversal. Concave planar dissolve is supported; non-planar/non-manifold repair remains missing. |
 | Modal transforms | Partial | Free G follows the current camera-facing view plane; axis movement converts projected pointer travel into global world units; Shift+axis uses a camera-derived perpendicular plane; free R uses a camera-oriented virtual trackball; numeric commit/cancel remain. Local orientation, snapping and full Blender pivot parity remain incomplete. |
 | 3D cursor/pivot | Partial | Cursor placement and UI pivot selection exist; pivot math is incomplete. |
 | Modifiers | Partial | Worker-based midpoint subdivision, mirror, array and solidify; not Blender-equivalent. |
 | Undo/redo | Partial | OPFS snapshots with memory fallback; current snapshots also preserve per-object vertex/edge/face selections. Large snapshots can temporarily increase RAM. |
 | Model I/O | Partial | GLB, GLTF, OBJ and STL browser import/export paths; complex scenes/materials/animation need validation. |
-| Desktop/mobile input | Partial | Desktop left-drag orbit, right-drag/Shift+left-drag pan and wheel zoom; B/C/L or the viewport menu activate box/circle/lasso drags, with Esc returning to click selection; Shift adds. Mobile supports the same drag tools from the Select menu, two-finger dolly-pan and existing quick actions. Device testing remains. |
+| Desktop/mobile input | Partial | Desktop left-drag orbit, right-drag/Shift+left-drag pan and wheel zoom; B/C/L or the viewport menu activate box/circle/lasso drags, with Esc returning to click selection; Shift adds. Alt+L expands selected quad-edge loops; Ctrl+Alt+L expands regular vertex-fan rings. Mobile supports the same drag tools from the Select menu, two-finger dolly-pan and existing quick actions. Device testing remains. |
 | Pie menus | Partial | Compact command menus; not true radial Blender pie menus. |
 | Bevel/Loop Cut/sculpt | Not Started | No production implementation yet. |
 | Exact Blender clone | Not Started | No claim of full Blender operator, BMesh, UI, or file-format parity. |
@@ -101,9 +105,9 @@ Status meanings: **Working** = implemented end-to-end in the current foundation;
 
 1. WebGPU is detected but the renderer is still Three.js WebGL.
 2. Imported geometry is initially triangulated, then adjacent coplanar triangles are merged only when exactly two triangles share each joined edge and a single convex boundary can be reconstructed. Concave faces, holes, duplicated seam vertices, inconsistent winding and non-manifold regions may remain triangulated or lose source polygon semantics.
-3. Edit Mode box/circle/lasso selection projects sub-elements into screen space and ray-checks candidates against the visible surface. It samples vertices, edge points and fan-triangle centers; loop/ring selection and exact Blender occlusion/selection parity remain missing.
-4. Delete is selection-mode aware: deleting a vertex or edge removes incident faces and dependent unused vertices; face deletion removes selected faces. Dissolve currently merges only a consistently wound, single-boundary, convex planar region. Concave, non-planar, boundary-only and non-manifold cases are deliberately skipped without mutation. Bevel and Loop Cut remain placeholders; extrude/inset and midpoint subdivision retain topology/normal limitations.
-5. The topology validator is diagnostic only. It reports invalid/degenerate or duplicate faces, non-manifold edges, same-direction shared-edge winding and isolated vertices; boundary edges are reported but are valid for open surfaces. It does not repair geometry.
+3. Edit Mode box/circle/lasso selection projects sub-elements into screen space and ray-checks candidates against the visible surface. It samples vertices, edge points and ear-clipped triangle centers. Edge loops cross opposite edges in quads; edge rings traverse opposite edges in closed valence-four vertex fans. These deterministic passes stop at boundaries/poles and are not identical to all Blender select modes.
+4. Delete is selection-mode aware: deleting a vertex or edge removes incident faces and dependent unused vertices; face deletion removes selected faces. Dissolve supports consistently wound, single-boundary, simple planar patches, including concave boundaries. Non-planar, self-intersecting, boundary-only and non-manifold cases are deliberately skipped without mutation. Bevel and Loop Cut remain placeholders; extrude/inset and midpoint subdivision retain topology/normal limitations.
+5. The topology validator is diagnostic only. It reports invalid positions/faces, duplicates, non-manifold edges, same-direction shared-edge winding, isolated vertices, non-planar faces, self-intersections and triangulation failures; boundary edges are reported but valid for open surfaces. It does not repair geometry. Ear clipping supports simple concave polygons, but non-planar polygons remain intrinsically ambiguous and are flagged.
 6. Modifier algorithms are first-pass approximations: midpoint triangle subdivision, non-welded mirror, simple array offset and basic solidify.
 7. Transform orientation is currently global-axis oriented. Full local/global orientation toggle, snapping, proportional editing, multi-object pivot aggregation and exact Blender operator feedback remain incomplete. Axis-constrained scaling of rotated objects is approximate because the scene representation stores TRS rather than an arbitrary affine/shear matrix.
 8. Camera-relative G/R/S math captures the camera when an operation begins; changing the view during a modal transform is intentionally disabled until confirm/cancel. Free rotation is a practical virtual trackball, not exact Blender trackball/turntable parity.
@@ -127,11 +131,13 @@ Status meanings: **Working** = implemented end-to-end in the current foundation;
 - [x] Camera-facing free-move plane and projected global-axis movement foundation.
 - [x] Camera-oriented virtual trackball rotation foundation and smoother exponential mouse scaling.
 - [x] OPFS undo/redo with memory fallback.
-- [ ] Preserve polygon boundaries and robustly validate manifold/non-manifold topology.
+- [x] Preserve editable polygon boundaries, triangulate simple concave faces, and diagnose common non-manifold/inconsistent-winding conditions; automatic repair policies remain open.
 - [x] Add visible vertex/edge/face overlays, hit-face screen-space element picking, Shift-click selection toggle, Select All / Deselect / Invert and snapshot persistence.
-- [x] Add box/circle/lasso selection with screen-space sampling and visibility checks; loop/ring selection remains open.
-- [x] Add selection-aware vertex/edge/face deletion and safe convex-planar dissolve, plus diagnostic topology validation.
-- [ ] Extend dissolve/repair to concave, non-planar and non-manifold topology; add loop/ring selection.
+- [x] Add box/circle/lasso selection with screen-space sampling and visibility checks; add topology-based edge loop/ring expansion with boundary/pole stops.
+- [x] Add selection-aware vertex/edge/face deletion and safe simple-planar dissolve, plus diagnostic topology validation.
+- [x] Add ear-clipping triangulation and simple concave planar dissolve; synchronize render, face-picking and overlay triangle mappings.
+- [x] Add edge-loop selection across opposite quad edges and edge-ring selection through closed valence-four vertex fans.
+- [ ] Add explicit non-manifold repair policies, extraordinary-pole traversal and loop-cut topology.
 - [ ] Complete local/global transform orientation, snapping, proportional editing, exact pivot aggregation and Blender-like transform gizmo/feedback.
 - [ ] Implement bevel and loop cut.
 - [ ] Implement true radial pie menus and complete keymap parity.
@@ -208,7 +214,14 @@ Status meanings: **Working** = implemented end-to-end in the current foundation;
 - Added screen-space vertex/edge/face region sampling with ray checks against the visible mesh surface, desktop/mobile gestures, Edit Mesh validation and dissolve controls.
 - Added the two new modules to the service-worker app shell and advanced the cache migration to v7.
 
+
+### 2026-11-26 — `bl3nd-concave-topology-loop-ring.zip` — v0.1.8
+- Added ear-clipping triangulation for simple concave polygons. Rendering, face picking, region selection and edit overlays now use the same per-face triangle mapping; invalid/self-intersecting polygons are not rendered using an unsafe fan fallback.
+- Expanded dissolve to support simple concave planar regions while preserving checks for single boundaries, consistent winding, full-patch planarity and valid triangulation.
+- Expanded topology diagnostics to report invalid positions/faces, duplicates, non-manifold edges, inconsistent winding, isolated vertices, non-planar/self-intersecting faces and triangulation failures. Validation remains read-only.
+- Added quad-opposite edge-loop expansion (`Alt+L`) and regular valence-four vertex-fan edge-ring expansion (`Ctrl+Alt+L`), with safe stops at boundaries and unsupported poles.
+- Advanced the service-worker cache migration to v8 and documented topology/traversal limitations.
+
 ## Next Roadmap Step
 
-Extend topology operations beyond safe convex planar regions: implement robust concave polygon boundaries/triangulation, non-planar and non-manifold diagnostics/repair policies, then add loop/ring selection and expand the desktop/mobile regression matrix. Keep all application updates zero-build and delta-ZIP only.
-
+Add explicit repair policies for non-manifold and inconsistent-winding meshes, then implement loop-cut topology, robust extraordinary-pole traversal and desktop/mobile regression testing. Keep updates zero-build and delta-ZIP only.

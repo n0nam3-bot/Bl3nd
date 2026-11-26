@@ -40,3 +40,6 @@
 .selection-lasso{fill:#ed9b5222;stroke:#ffbd82;stroke-width:1.5;stroke-dasharray:5 3;stroke-linejoin:round}
 .selection-brush{fill:#ed9b521c;stroke:#ffbd82;stroke-width:1.25}
 @media(max-width:650px){.selection-menu-button{height:27px;padding:0 6px;font-size:9px}.viewport-tools{gap:2px}.viewport-tools .seg-button.wide{display:none}}
+
+/* Keep the expanded selection command list usable on short/mobile viewports. */
+.pie-menu{max-height:min(76vh,540px);overflow-y:auto;overscroll-behavior:contain}

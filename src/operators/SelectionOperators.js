@@ -41,11 +41,8 @@ export const SelectionOperators = {
       return { x: (ndc.x + 1) * rect.width / 2, y: (1 - ndc.y) * rect.height / 2, world };
     };
 
-    // SceneDocument triangulates each polygon as a fan in this exact face order.
-    const faceAtTriangle = [];
-    hem.faces.forEach((face, faceId) => {
-      for (let i = 1; i < face.length - 1; i++) faceAtTriangle.push(faceId);
-    });
+    // Match the exact ear-clipped triangles used by SceneDocument rendering.
+    const faceAtTriangle = hem.triangleFaceMap();
     const visible = (screen, world, expectedFace = -1) => {
       if (!screen || !world) return false;
       pointer.set(screen.x / rect.width * 2 - 1, -(screen.y / rect.height) * 2 + 1);
@@ -80,11 +77,11 @@ export const SelectionOperators = {
         if (edgeIntersects(edge.vertices[0], edge.vertices[1])) selected.push(edge.id);
       });
     } else {
-      hem.faces.forEach((face, faceId) => {
-        for (let i = 1; i < face.length - 1; i++) {
-          const center = new THREE.Vector3(...hem.positions[face[0]])
-            .add(new THREE.Vector3(...hem.positions[face[i]]))
-            .add(new THREE.Vector3(...hem.positions[face[i + 1]])).multiplyScalar(1 / 3);
+      hem.faces.forEach((_, faceId) => {
+        for (const triangle of hem.triangulateFace(faceId)) {
+          const center = new THREE.Vector3(...hem.positions[triangle[0]])
+            .add(new THREE.Vector3(...hem.positions[triangle[1]]))
+            .add(new THREE.Vector3(...hem.positions[triangle[2]])).multiplyScalar(1 / 3);
           const screen = project(center);
           if (inRegion(screen, tool, points, radius) && visible(screen, screen.world, faceId)) {
             selected.push(faceId); break;

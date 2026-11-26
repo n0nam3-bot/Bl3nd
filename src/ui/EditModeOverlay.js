@@ -85,10 +85,8 @@ export class EditModeOverlay {
     if (selectionMode === 'face' && hem.faceSelection.size) {
       const positions = [];
       for (const faceId of hem.faceSelection) {
-        const face = hem.faces[faceId];
-        if (!face || face.length < 3) continue;
-        for (let i = 1; i < face.length - 1; i++) {
-          positions.push(...hem.positions[face[0]], ...hem.positions[face[i]], ...hem.positions[face[i + 1]]);
+        for (const triangle of hem.triangulateFace(faceId)) {
+          positions.push(...hem.positions[triangle[0]], ...hem.positions[triangle[1]], ...hem.positions[triangle[2]]);
         }
       }
       if (positions.length) {

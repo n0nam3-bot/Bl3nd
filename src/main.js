@@ -191,7 +191,7 @@ function registerCommands() {
   commandBus.register('mesh.dissolve', async () => {
     if (sceneDocument.mode !== 'edit') return false;
     const result = MeshOperators.dissolveSelected(sceneDocument);
-    if (!result) notify('This selection cannot be safely dissolved as one convex planar surface. Nothing was changed.');
+    if (!result) notify('This selection cannot be safely dissolved as one simple planar surface. Nothing was changed.');
     else await reapplyActiveModifiers();
     refresh(); return result;
   });
@@ -217,9 +217,31 @@ function registerCommands() {
     console.info('[Bl3nd topology validation]', report);
     const c = report.counts;
     if (report.issueCount === 0) notify(`Topology check passed · ${c.boundaryEdges} boundary edges`, 'success');
-    else notify(`Topology warnings · ${c.nonManifoldEdges} non-manifold · ${c.inconsistentWinding} winding · ${c.invalidFaces} invalid faces · ${c.duplicateFaces} duplicates · ${c.isolatedVertices} loose vertices`, 'error');
+    else notify(`Topology warnings · ${c.invalidPositions} invalid positions · ${c.invalidFaces} invalid faces · ${c.duplicateFaces} duplicates · ${c.nonManifoldEdges} non-manifold · ${c.inconsistentWinding} winding · ${c.nonPlanarFaces} non-planar · ${c.selfIntersectingFaces} self-intersecting · ${c.triangulationFailures} triangulation failures`, 'error');
     status(report.issueCount === 0 ? 'Topology validation passed' : `Topology validation found ${report.issueCount} issue(s)`);
     return report;
+  }, { recordUndo: false });
+  commandBus.register('mesh.select_edge_loop', () => {
+    const hem = sceneDocument.activeObject?.userData?.hem;
+    if (sceneDocument.mode !== 'edit' || sceneDocument.selectionMode !== 'edge' || !hem) {
+      notify('Switch to Edge Select and select at least one edge first.'); return false;
+    }
+    const before = hem.edgeSelection.size;
+    const count = hem.expandEdgeLoopSelection();
+    if (!count || hem.edgeSelection.size === before) notify('No quad continuation was found from the selected edge(s).');
+    else status(`Edge loop selected · ${hem.edgeSelection.size} edge(s)`);
+    refresh(); return count > 0;
+  }, { recordUndo: false });
+  commandBus.register('mesh.select_edge_ring', () => {
+    const hem = sceneDocument.activeObject?.userData?.hem;
+    if (sceneDocument.mode !== 'edit' || sceneDocument.selectionMode !== 'edge' || !hem) {
+      notify('Switch to Edge Select and select at least one edge first.'); return false;
+    }
+    const before = hem.edgeSelection.size;
+    const count = hem.expandEdgeRingSelection();
+    if (!count || hem.edgeSelection.size === before) notify('No regular valence-four continuation was found. Ring traversal stops at boundaries and non-quad poles.');
+    else status(`Edge ring selected · ${hem.edgeSelection.size} edge(s)`);
+    refresh(); return count > 0;
   }, { recordUndo: false });
   commandBus.register('mesh.subdivide', async () => { if (sceneDocument.mode !== 'edit') return false; MeshOperators.subdivide(sceneDocument); await reapplyActiveModifiers(); refresh(); return true; });
   commandBus.register('mesh.bevel', () => notify('Bevel (Ctrl+B) is on the Phase 1/2 roadmap; edge-offset topology is not implemented yet.'), { recordUndo: false });
@@ -260,13 +282,7 @@ registerCommands();
 loadingProgress(61, 'Modeling commands registered · preparing workspace controls…');
 
 function faceIdForTriangle(hem, triangleIndex) {
-  let tri = 0;
-  for (let faceId = 0; faceId < hem.faces.length; faceId++) {
-    const face = hem.faces[faceId], count = Math.max(0, face.length - 2);
-    if (triangleIndex >= tri && triangleIndex < tri + count) return faceId;
-    tri += count;
-  }
-  return -1;
+  return hem.triangleFaceMap()[triangleIndex] ?? -1;
 }
 function handleViewportSelection(hit, pointer, event) {
   if (modalTransform.active) return;
@@ -330,8 +346,8 @@ function refresh() {
   viewport.updateEditOverlay(editing ? sceneDocument.activeObject : null, sceneDocument.selectionMode);
   const hintDesktop = $('.hint-desktop'), hintMobile = $('.hint-mobile');
   if (editing) {
-    hintDesktop.textContent = 'Edit: Click vertex / edge / face · Shift-click add/toggle · B/C/L region select · Shift-drag add · Esc exit · X delete · Shift+X dissolve';
-    hintMobile.textContent = 'Edit: Tap topology · Select ▾ for Box/Circle/Lasso · X delete · Shift+X dissolve · G/R/S transform';
+    hintDesktop.textContent = 'Edit: Click vertex / edge / face · B/C/L region select · Alt+L loop · Ctrl+Alt+L ring · X delete · Shift+X dissolve';
+    hintMobile.textContent = 'Edit: Tap topology · Select ▾ for Box/Circle/Lasso/Loop/Ring · X delete · Shift+X dissolve';
   } else {
     hintDesktop.textContent = 'Drag to orbit · Right-drag to pan · Scroll to zoom · Click to select · G/R/S then drag to transform';
     hintMobile.textContent = 'One finger: orbit · Two fingers: pan/zoom · Long press: 3D Cursor · G/R/S: transform';
@@ -355,7 +371,7 @@ ui = {
     const entries=kind==='shading'?
       [['Solid','shade_solid'],['Wireframe','shade_wire'],['Material','shade_material'],['Rendered','shade_render']]:
       kind==='selection'?
-      [['Click Select','tool_tap'],['Box Select (B)','tool_box'],['Circle Select (C)','tool_circle'],['Lasso Select (L)','tool_lasso'],['Select All','select_all'],['Deselect All','clear_selection'],['Invert','invert_selection'],['Delete Selected (X)','delete_selected'],['Dissolve Selected (Shift+X)','dissolve_selected']]:
+      [['Click Select','tool_tap'],['Box Select (B)','tool_box'],['Circle Select (C)','tool_circle'],['Lasso Select (L)','tool_lasso'],['Edge Loop (Alt+L)','edge_loop'],['Edge Ring (Ctrl+Alt+L)','edge_ring'],['Select All','select_all'],['Deselect All','clear_selection'],['Invert','invert_selection'],['Delete Selected (X)','delete_selected'],['Dissolve Selected (Shift+X)','dissolve_selected']]:
       [['Cube','add_cube'],['UV Sphere','add_sphere'],['Cylinder','add_cylinder'],['Plane','add_plane'],['Edit Mode','toggle_mode'],['3D Cursor','cursor_center']];
     menu.replaceChildren();
     for(const [label,command] of entries){const button=document.createElement('button');button.textContent=label;button.dataset.command=command;menu.append(button);}
@@ -432,6 +448,8 @@ $('#pie-menu').addEventListener('click',async event=>{
   else if(command.startsWith('tool_')) await run('selection.tool.set',{tool:command.slice(5)});
   else if(command==='delete_selected') await run('mesh.delete');
   else if(command==='dissolve_selected') await run('mesh.dissolve');
+  else if(command==='edge_loop') await run('mesh.select_edge_loop');
+  else if(command==='edge_ring') await run('mesh.select_edge_ring');
   else if(command.startsWith('shade_')){
     await run('shading.set',{mode:command.slice(6)});
   }

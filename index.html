@@ -230,7 +230,7 @@
         const hadController = Boolean(navigator.serviceWorker.controller);
         if (hadController) {
           try {
-            const refreshKey = 'bl3nd-cache-refresh-v7';
+            const refreshKey = 'bl3nd-cache-refresh-v8';
             if (!sessionStorage.getItem(refreshKey)) {
               navigator.serviceWorker.addEventListener('controllerchange', () => {
                 sessionStorage.setItem(refreshKey, '1');

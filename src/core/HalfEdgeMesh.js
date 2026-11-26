@@ -1,5 +1,162 @@
 function keyFor(a, b) { return a < b ? `${a}:${b}` : `${b}:${a}`; }
 
+function cross2(a, b, c) {
+  return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+}
+
+function newellNormal(positions, face) {
+  const normal = [0, 0, 0];
+  for (let i = 0; i < face.length; i++) {
+    const a = positions[face[i]], b = positions[face[(i + 1) % face.length]];
+    if (!a || !b) return null;
+    normal[0] += (a[1] - b[1]) * (a[2] + b[2]);
+    normal[1] += (a[2] - b[2]) * (a[0] + b[0]);
+    normal[2] += (a[0] - b[0]) * (a[1] + b[1]);
+  }
+  const length = Math.hypot(...normal);
+  return length > 1e-12 ? normal.map(value => value / length) : null;
+}
+
+function projectedPolygon(positions, face) {
+  if (!Array.isArray(face) || face.length < 3 || new Set(face).size !== face.length ||
+      face.some(id => !Number.isInteger(id) || !positions[id] || positions[id].length < 3 || !positions[id].every(Number.isFinite))) return null;
+  let normal = newellNormal(positions, face);
+  // A self-crossing polygon can have zero signed Newell area despite containing
+  // a usable plane. Recover a projection normal so validation can identify it.
+  if (!normal) {
+    const origin = positions[face[0]];
+    for (let i = 1; i < face.length - 1 && !normal; i++) {
+      const b = positions[face[i]], c = positions[face[i + 1]];
+      const u = b.map((value, axis) => value - origin[axis]);
+      const v = c.map((value, axis) => value - origin[axis]);
+      const cross = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+      const length = Math.hypot(...cross);
+      if (length > 1e-12) normal = cross.map(value => value / length);
+    }
+  }
+  if (!normal) return null;
+  const dropAxis = normal.reduce((best, value, axis) => Math.abs(value) > Math.abs(normal[best]) ? axis : best, 0);
+  const points = face.map(id => {
+    const p = positions[id];
+    return dropAxis === 0 ? [p[1], p[2]] : dropAxis === 1 ? [p[0], p[2]] : [p[0], p[1]];
+  });
+  const min = [0, 1].map(axis => Math.min(...points.map(point => point[axis])));
+  const max = [0, 1].map(axis => Math.max(...points.map(point => point[axis])));
+  const scale = Math.max(1, max[0] - min[0], max[1] - min[1]);
+  const origin = positions[face[0]];
+  const deviation = Math.max(...face.map(id => Math.abs(normal.reduce((sum, value, axis) => sum + value * (positions[id][axis] - origin[axis]), 0))));
+  return { normal, points, scale, deviation };
+}
+
+function pointOnSegment2D(p, a, b, epsilon) {
+  if (Math.abs(cross2(a, b, p)) > epsilon) return false;
+  const dot = (p[0] - a[0]) * (p[0] - b[0]) + (p[1] - a[1]) * (p[1] - b[1]);
+  return dot <= epsilon;
+}
+
+function segmentsIntersect2D(a, b, c, d, epsilon) {
+  const abC = cross2(a, b, c), abD = cross2(a, b, d);
+  const cdA = cross2(c, d, a), cdB = cross2(c, d, b);
+  if (((abC > epsilon && abD < -epsilon) || (abC < -epsilon && abD > epsilon)) &&
+      ((cdA > epsilon && cdB < -epsilon) || (cdA < -epsilon && cdB > epsilon))) return true;
+  return (Math.abs(abC) <= epsilon && pointOnSegment2D(c, a, b, epsilon)) ||
+    (Math.abs(abD) <= epsilon && pointOnSegment2D(d, a, b, epsilon)) ||
+    (Math.abs(cdA) <= epsilon && pointOnSegment2D(a, c, d, epsilon)) ||
+    (Math.abs(cdB) <= epsilon && pointOnSegment2D(b, c, d, epsilon));
+}
+
+function polygonSelfIntersects(points, epsilon) {
+  const count = points.length;
+  for (let i = 0; i < count; i++) {
+    const a = points[i], b = points[(i + 1) % count];
+    for (let j = i + 1; j < count; j++) {
+      if (j === i || j === (i + 1) % count || (j + 1) % count === i) continue;
+      const c = points[j], d = points[(j + 1) % count];
+      if (segmentsIntersect2D(a, b, c, d, epsilon)) return true;
+    }
+  }
+  return false;
+}
+
+function signedArea2D(points) {
+  let area = 0;
+  for (let i = 0; i < points.length; i++) {
+    const a = points[i], b = points[(i + 1) % points.length];
+    area += a[0] * b[1] - b[0] * a[1];
+  }
+  return area * 0.5;
+}
+
+function pointInTriangle2D(point, a, b, c, winding, epsilon) {
+  const ab = cross2(a, b, point) * winding;
+  const bc = cross2(b, c, point) * winding;
+  const ca = cross2(c, a, point) * winding;
+  return ab >= -epsilon && bc >= -epsilon && ca >= -epsilon;
+}
+
+/** Ear-clips a simple polygon while preserving the source winding and vertex IDs. */
+function triangulatePolygon(positions, face) {
+  const projection = projectedPolygon(positions, face);
+  if (!projection) return null;
+  const { points, scale } = projection;
+  const epsilon = scale * scale * 1e-10;
+  if (polygonSelfIntersects(points, epsilon)) return null;
+  const area = signedArea2D(points);
+  if (Math.abs(area) <= epsilon) return null;
+  const winding = Math.sign(area);
+  let ring = face.map((id, index) => ({ id, point: points[index] }));
+
+  // Remove redundant collinear points from the triangulation ring; they remain
+  // in the HEM boundary and therefore remain visible as editable edges.
+  let changed = true;
+  while (changed && ring.length > 3) {
+    changed = false;
+    for (let i = 0; i < ring.length; i++) {
+      const prev = ring[(i - 1 + ring.length) % ring.length].point;
+      const current = ring[i].point;
+      const next = ring[(i + 1) % ring.length].point;
+      if (Math.abs(cross2(prev, current, next)) <= epsilon &&
+          (current[0] - prev[0]) * (current[0] - next[0]) +
+          (current[1] - prev[1]) * (current[1] - next[1]) <= epsilon) {
+        ring.splice(i, 1);
+        changed = true;
+        break;
+      }
+    }
+  }
+  if (ring.length < 3) return null;
+
+  const triangles = [];
+  let guard = ring.length * ring.length;
+  while (ring.length > 3 && guard-- > 0) {
+    let earFound = false;
+    for (let i = 0; i < ring.length; i++) {
+      const prev = ring[(i - 1 + ring.length) % ring.length];
+      const current = ring[i];
+      const next = ring[(i + 1) % ring.length];
+      if (cross2(prev.point, current.point, next.point) * winding <= epsilon) continue;
+      let containsVertex = false;
+      for (let j = 0; j < ring.length; j++) {
+        if (j === i || j === (i - 1 + ring.length) % ring.length || j === (i + 1) % ring.length) continue;
+        if (pointInTriangle2D(ring[j].point, prev.point, current.point, next.point, winding, epsilon)) {
+          containsVertex = true;
+          break;
+        }
+      }
+      if (containsVertex) continue;
+      triangles.push([prev.id, current.id, next.id]);
+      ring.splice(i, 1);
+      earFound = true;
+      break;
+    }
+    if (!earFound) return null;
+  }
+  if (ring.length !== 3 || Math.abs(cross2(ring[0].point, ring[1].point, ring[2].point)) <= epsilon) return null;
+  triangles.push([ring[0].id, ring[1].id, ring[2].id]);
+  return triangles;
+}
+
+
 function mergeCoplanarTriangles(vertices, triangles) {
   if (triangles.length < 2) return triangles.map(face => [...face]);
   const planes = triangles.map(face => {
@@ -231,11 +388,24 @@ export class HalfEdgeMesh {
     }
   }
 
+  triangulateFace(faceId) {
+    const face = this.faces[faceId];
+    return face ? triangulatePolygon(this.positions, face) || [] : [];
+  }
+
+  triangleFaceMap() {
+    const faceIds = [];
+    this.faces.forEach((_, faceId) => {
+      for (const _triangle of this.triangulateFace(faceId)) faceIds.push(faceId);
+    });
+    return faceIds;
+  }
+
   toBufferGeometry() {
     const positions = this.positions.flat();
     const indices = [];
-    for (const face of this.faces) {
-      for (let i = 1; i < face.length - 1; i++) indices.push(face[0], face[i], face[i + 1]);
+    for (let faceId = 0; faceId < this.faces.length; faceId++) {
+      for (const triangle of this.triangulateFace(faceId)) indices.push(...triangle);
     }
     return { positions: new Float32Array(positions), indices: new Uint32Array(indices) };
   }
@@ -360,8 +530,7 @@ export class HalfEdgeMesh {
     }
     if (outgoing.size !== boundary.length || incoming.size !== boundary.length) return null;
 
-    const polygon = [];
-    const start = boundary[0].a;
+    const polygon = [], start = boundary[0].a;
     let current = start;
     for (let i = 0; i < boundary.length; i++) {
       if (!outgoing.has(current) || polygon.includes(current)) return null;
@@ -371,56 +540,26 @@ export class HalfEdgeMesh {
     }
     if (current !== start || polygon.length !== boundary.length) return null;
 
-    // This first dissolve pass intentionally accepts only convex, coplanar patches.
-    const points = polygon.map(id => this.positions[id]);
-    let normal = null;
-    for (let i = 1; i < points.length - 1 && !normal; i++) {
-      const a = points[0], b = points[i], c = points[i + 1];
-      const u = b.map((value, axis) => value - a[axis]);
-      const v = c.map((value, axis) => value - a[axis]);
-      const cross = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
-      const length = Math.hypot(...cross);
-      if (length > 1e-10) normal = cross.map(value => value / length);
-    }
-    if (!normal) return null;
-
-    const origin = points[0];
-    const scale = Math.max(1, ...[0, 1, 2].map(axis =>
-      Math.max(...points.map(point => point[axis])) - Math.min(...points.map(point => point[axis]))));
+    // Dissolve can now preserve concave planar boundaries, but still rejects
+    // folded, inconsistent, multi-loop, self-intersecting or non-manifold patches.
+    const boundaryProjection = projectedPolygon(this.positions, polygon);
+    if (!boundaryProjection) return null;
+    const origin = this.positions[polygon[0]];
+    const scale = Math.max(1, boundaryProjection.scale);
     const tolerance = scale * 1e-5;
-    // Validate every vertex in the selected patch, not only its outer boundary.
-    // A folded patch can have a flat outline while hiding off-plane interior points.
     for (const faceId of faceIds) {
       const face = this.faces[faceId];
-      const facePoints = face.map(id => this.positions[id]);
-      if (facePoints.some(point => Math.abs(normal.reduce((sum, value, axis) =>
-        sum + value * (point[axis] - origin[axis]), 0)) > tolerance)) return null;
-
-      let faceNormal = null;
-      for (let i = 1; i < facePoints.length - 1 && !faceNormal; i++) {
-        const a = facePoints[0], b = facePoints[i], c = facePoints[i + 1];
-        const u = b.map((value, axis) => value - a[axis]);
-        const v = c.map((value, axis) => value - a[axis]);
-        const cross = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
-        const length = Math.hypot(...cross);
-        if (length > 1e-10) faceNormal = cross.map(value => value / length);
+      const faceProjection = projectedPolygon(this.positions, face);
+      if (!faceProjection) return null;
+      if (faceProjection.deviation > tolerance) return null;
+      if (faceProjection.normal.reduce((sum, value, axis) => sum + value * boundaryProjection.normal[axis], 0) < 0.999) return null;
+      for (const vertexId of face) {
+        const point = this.positions[vertexId];
+        const distance = boundaryProjection.normal.reduce((sum, value, axis) => sum + value * (point[axis] - origin[axis]), 0);
+        if (Math.abs(distance) > tolerance) return null;
       }
-      if (!faceNormal || faceNormal.reduce((sum, value, axis) => sum + value * normal[axis], 0) < 0.999) return null;
     }
-
-    let turnSign = 0;
-    for (let i = 0; i < points.length; i++) {
-      const a = points[i], b = points[(i + 1) % points.length], c = points[(i + 2) % points.length];
-      const ab = b.map((value, axis) => value - a[axis]);
-      const bc = c.map((value, axis) => value - b[axis]);
-      const cross = [ab[1] * bc[2] - ab[2] * bc[1], ab[2] * bc[0] - ab[0] * bc[2], ab[0] * bc[1] - ab[1] * bc[0]];
-      const turn = cross.reduce((sum, value, axis) => sum + value * normal[axis], 0);
-      if (Math.abs(turn) <= tolerance * tolerance) continue;
-      const sign = Math.sign(turn);
-      if (turnSign && sign !== turnSign) return null;
-      turnSign = sign;
-    }
-    return turnSign ? polygon : null;
+    return triangulatePolygon(this.positions, polygon) ? polygon : null;
   }
 
   dissolveSelected() {
@@ -514,14 +653,81 @@ export class HalfEdgeMesh {
     return true;
   }
 
+
+  expandEdgeLoopSelection({ extend = true } = {}) {
+    if (this.selectionMode !== 'edge' || !this.edgeSelection.size) return 0;
+    const seeds = [...this.edgeSelection];
+    const edgeByKey = new Map(this.edges.map(edge => [keyFor(...edge.vertices), edge.id]));
+    const visited = new Set(seeds), queue = [...seeds];
+    while (queue.length) {
+      const edge = this.edges[queue.shift()];
+      if (!edge) continue;
+      for (const halfEdge of edge.halfEdges) {
+        const face = this.faces[halfEdge.face?.id];
+        if (!face || face.length !== 4) continue;
+        let side = -1;
+        for (let i = 0; i < 4; i++) {
+          if (keyFor(face[i], face[(i + 1) % 4]) === keyFor(...edge.vertices)) { side = i; break; }
+        }
+        if (side < 0) continue;
+        const opposite = edgeByKey.get(keyFor(face[(side + 2) % 4], face[(side + 3) % 4]));
+        if (opposite !== undefined && !visited.has(opposite)) { visited.add(opposite); queue.push(opposite); }
+      }
+    }
+    if (!extend) this.edgeSelection.clear();
+    for (const id of visited) this.edgeSelection.add(id);
+    return visited.size;
+  }
+
+  orderedVertexFan(vertexId) {
+    const start = this.vertices[vertexId]?.halfEdge;
+    if (!start || start.origin !== vertexId) return null;
+    const fan = [], visited = new Set();
+    let current = start;
+    while (current && !visited.has(current.id) && fan.length <= this.halfEdges.length) {
+      if (current.origin !== vertexId) return null;
+      visited.add(current.id);
+      fan.push(current);
+      current = current.prev?.twin || null;
+    }
+    return current === start ? fan : null;
+  }
+
+  expandEdgeRingSelection({ extend = true } = {}) {
+    if (this.selectionMode !== 'edge' || !this.edgeSelection.size) return 0;
+    const seeds = [...this.edgeSelection];
+    const visited = new Set(seeds), queue = [...seeds];
+    while (queue.length) {
+      const edge = this.edges[queue.shift()];
+      if (!edge) continue;
+      for (const vertexId of edge.vertices) {
+        const fan = this.orderedVertexFan(vertexId);
+        // Ring traversal is ambiguous at boundaries and extraordinary poles.
+        // Continue only through a closed regular valence-four quad fan.
+        if (!fan || fan.length !== 4) continue;
+        const currentIndex = fan.findIndex(halfEdge => halfEdge.edge.id === edge.id);
+        if (currentIndex < 0) continue;
+        const opposite = fan[(currentIndex + 2) % 4].edge.id;
+        if (!visited.has(opposite)) { visited.add(opposite); queue.push(opposite); }
+      }
+    }
+    if (!extend) this.edgeSelection.clear();
+    for (const id of visited) this.edgeSelection.add(id);
+    return visited.size;
+  }
+
   validateTopology() {
-    const invalidFaces = [], duplicateFaces = [], nonManifoldEdges = [];
-    const inconsistentWinding = [], isolatedVertices = [];
+    const invalidPositions = [], invalidFaces = [], duplicateFaces = [], nonManifoldEdges = [];
+    const inconsistentWinding = [], isolatedVertices = [], nonPlanarFaces = [];
+    const selfIntersectingFaces = [], triangulationFailures = [];
     const edgeUses = new Map(), usedVertices = new Set(), faceKeys = new Set();
+    this.positions.forEach((position, id) => {
+      if (!Array.isArray(position) || position.length < 3 || !position.slice(0, 3).every(Number.isFinite)) invalidPositions.push(id);
+    });
+    const invalidPositionSet = new Set(invalidPositions);
     this.faces.forEach((face, faceId) => {
       if (!Array.isArray(face) || face.length < 3 || new Set(face).size !== face.length ||
-          face.some(id => !Number.isInteger(id) || id < 0 || id >= this.positions.length ||
-            !Array.isArray(this.positions[id]) || this.positions[id].length < 3 || !this.positions[id].every(Number.isFinite))) {
+          face.some(id => !Number.isInteger(id) || id < 0 || id >= this.positions.length || invalidPositionSet.has(id))) {
         invalidFaces.push(faceId);
         return;
       }
@@ -533,31 +739,34 @@ export class HalfEdgeMesh {
         if (!edgeUses.has(key)) edgeUses.set(key, []);
         edgeUses.get(key).push({ a, b });
       }
-      const points = face.map(id => this.positions[id]);
-      let area = [0, 0, 0];
-      for (let i = 0; i < points.length; i++) {
-        const a = points[i], b = points[(i + 1) % points.length];
-        area[0] += (a[1] - b[1]) * (a[2] + b[2]);
-        area[1] += (a[2] - b[2]) * (a[0] + b[0]);
-        area[2] += (a[0] - b[0]) * (a[1] + b[1]);
-      }
-      if (Math.hypot(...area) < 1e-10) invalidFaces.push(faceId);
+      const projection = projectedPolygon(this.positions, face);
+      if (!projection) { invalidFaces.push(faceId); triangulationFailures.push(faceId); return; }
+      const tolerance = projection.scale * 1e-5;
+      if (projection.deviation > tolerance) nonPlanarFaces.push({ faceId, deviation: projection.deviation, tolerance });
+      if (polygonSelfIntersects(projection.points, projection.scale * projection.scale * 1e-10)) selfIntersectingFaces.push(faceId);
+      if (!triangulatePolygon(this.positions, face)) triangulationFailures.push(faceId);
     });
     for (const [key, incidents] of edgeUses) {
       if (incidents.length > 2) nonManifoldEdges.push(key);
       else if (incidents.length === 2 && incidents[0].a === incidents[1].a && incidents[0].b === incidents[1].b) inconsistentWinding.push(key);
     }
     for (let id = 0; id < this.positions.length; id++) if (!usedVertices.has(id)) isolatedVertices.push(id);
+    const boundaryEdges = [...edgeUses.values()].filter(incidents => incidents.length === 1).length;
     const counts = {
-      invalidFaces: invalidFaces.length, duplicateFaces: duplicateFaces.length,
-      nonManifoldEdges: nonManifoldEdges.length, inconsistentWinding: inconsistentWinding.length,
-      isolatedVertices: isolatedVertices.length,
-      boundaryEdges: [...edgeUses.values()].filter(incidents => incidents.length === 1).length
+      invalidPositions: invalidPositions.length, invalidFaces: invalidFaces.length,
+      duplicateFaces: duplicateFaces.length, nonManifoldEdges: nonManifoldEdges.length,
+      inconsistentWinding: inconsistentWinding.length, isolatedVertices: isolatedVertices.length,
+      nonPlanarFaces: nonPlanarFaces.length, selfIntersectingFaces: selfIntersectingFaces.length,
+      triangulationFailures: triangulationFailures.length, boundaryEdges
     };
-    const issueCount = counts.invalidFaces + counts.duplicateFaces + counts.nonManifoldEdges +
-      counts.inconsistentWinding + counts.isolatedVertices;
-    return { valid: issueCount === 0, issueCount, counts,
-      details: { invalidFaces, duplicateFaces, nonManifoldEdges, inconsistentWinding, isolatedVertices } };
+    const issueCount = counts.invalidPositions + counts.invalidFaces + counts.duplicateFaces +
+      counts.nonManifoldEdges + counts.inconsistentWinding + counts.isolatedVertices +
+      counts.nonPlanarFaces + counts.selfIntersectingFaces + counts.triangulationFailures;
+    return {
+      valid: issueCount === 0, issueCount, counts,
+      details: { invalidPositions, invalidFaces, duplicateFaces, nonManifoldEdges,
+        inconsistentWinding, isolatedVertices, nonPlanarFaces, selfIntersectingFaces, triangulationFailures }
+    };
   }
 
   subdivide() {
