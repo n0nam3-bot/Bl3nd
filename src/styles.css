@@ -45,3 +45,6 @@
 .pie-menu{max-height:min(76vh,540px);overflow-y:auto;overscroll-behavior:contain}
 
 body.loop-cut-modal-active .topbar,body.loop-cut-modal-active .tool-rail,body.loop-cut-modal-active .properties-panel,body.loop-cut-modal-active .viewport-toolbar,body.loop-cut-modal-active .viewport-footer,body.loop-cut-modal-active .mobile-actionbar{pointer-events:none;opacity:.55}body.loop-cut-modal-active #numeric-pad{pointer-events:auto;opacity:1}body.loop-cut-modal-active .modal-readout,body.loop-cut-modal-active .axis-gizmo,body.loop-cut-modal-active .pie-menu{pointer-events:none;opacity:.55}
+
+.pad-count-row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:3px 0 8px}.pad-count-row[hidden]{display:none}.pad-count-row span{flex:1;text-align:center;font-size:9px;letter-spacing:.8px;color:#aeb7c3}.pad-count-row b{color:#ffd0a7;font-size:14px;margin-left:5px}.pad-count-row button{width:38px;height:29px;background:#303640;border-color:#59616e;font-size:17px}
+.modal-readout{max-width:calc(100% - 16px);white-space:normal;text-align:center;line-height:1.35}

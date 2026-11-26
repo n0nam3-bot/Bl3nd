@@ -115,3 +115,39 @@ test('Loop Cut modal establishes a fresh drag anchor when started from the side 
   assert.equal(modal.offset, 0.6);
   await modal.cancel();
 });
+
+test('Loop Cut modal adjusts multiple cuts, slides the group and commits one undo operation', async () => {
+  const session = makeSession();
+  const modal = new LoopCutModal(session);
+  assert.equal(await modal.begin(), true);
+  assert.equal(modal.setCutCount(3), true);
+  assert.equal(modal.cuts, 3);
+  assert.equal(session.mesh.userData.hem.faces.length, 4);
+  assert.equal(modal.setOffset(0.6), true);
+  assert.ok(Math.abs(modal.offset - 0.6) < 1e-10);
+  assert.deepEqual(modal.lastResult.offsets, [0.35, 0.6, 0.85]);
+  assert.equal(session.mesh.userData.hem.validateTopology().valid, true);
+  const result = await modal.confirm();
+  assert.equal(result.cuts, 3);
+  assert.equal(result.insertedVertices, 6);
+  assert.equal(session.commits.length, 1);
+  assert.equal(session.commits[0].label, 'Loop Cut');
+  assert.equal(session.commits[0].after.faces.length, 4);
+});
+
+test('Loop Cut modal clamps group slide limits and enforces the 1–8 cut range', async () => {
+  const session = makeSession();
+  const modal = new LoopCutModal(session);
+  assert.equal(await modal.begin(), true);
+  assert.equal(modal.setCutCount(8), true);
+  assert.equal(modal.setCutCount(9), false);
+  assert.equal(modal.cuts, 8);
+  assert.equal(modal.setOffset(0.99), true);
+  const offsets = modal.lastResult.offsets;
+  assert.equal(offsets.length, 8);
+  assert.ok(offsets.every(value => value > 0 && value < 1));
+  assert.ok(Math.abs(offsets[0] - 0.2122222222222222) < 1e-10);
+  assert.ok(Math.abs(offsets.at(-1) - 0.99) < 1e-10);
+  await modal.cancel();
+  assert.equal(session.commits.length, 0);
+});

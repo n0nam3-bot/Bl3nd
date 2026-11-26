@@ -688,12 +688,21 @@ export class HalfEdgeMesh {
    * The operation is transactional: all incident faces are checked before any
    * vertex or face data is changed. Unsupported topology returns a reason.
    */
-  cutEdgeLoop({ offset = 0.5 } = {}) {
+  cutEdgeLoop({ offset = 0.5, cuts = 1, offsets = null } = {}) {
     if (this.selectionMode !== 'edge' || this.edgeSelection.size !== 1) {
       return { changed: false, reason: 'Select exactly one seed edge in Edge Select mode.' };
     }
-    if (!Number.isFinite(offset) || offset <= 0 || offset >= 1) {
-      return { changed: false, reason: 'Cut offset must be between 0 and 1.' };
+    if (!Number.isInteger(cuts) || cuts < 1 || cuts > 8) {
+      return { changed: false, reason: 'Loop Cut supports between 1 and 8 cuts per operation.' };
+    }
+    const requestedOffsets = Array.isArray(offsets) ? [...offsets] :
+      Array.from({ length: cuts }, (_, index) => (index + 1) / (cuts + 1) + (offset - 0.5));
+    if (requestedOffsets.length !== cuts || requestedOffsets.some(value => !Number.isFinite(value) || value <= 0 || value >= 1)) {
+      return { changed: false, reason: 'Every cut must remain strictly inside its source edge.' };
+    }
+    requestedOffsets.sort((a, b) => a - b);
+    if (requestedOffsets.some((value, index) => index > 0 && value - requestedOffsets[index - 1] < 1e-5)) {
+      return { changed: false, reason: 'Loop Cut positions are too close together to create stable topology.' };
     }
 
     const loopEdgeIds = this.collectEdgeLoop([...this.edgeSelection]);
@@ -761,42 +770,50 @@ export class HalfEdgeMesh {
     }
     if (!splitPlans.length) return { changed: false, reason: 'No complete quad strip was found from the selected edge.' };
 
-    // Propagate the cut fraction through opposite edges. Depending on vertex
-    // indexing, an opposite edge may run in the same or reverse canonical ID
-    // direction; blindly applying the same numeric fraction can twist the cut.
+    // Carry an ordered set of cut fractions across every opposite-edge pair.
+    // Reversing canonical edge direction reverses every fraction, then sorting
+    // restores the local low-to-high ordering used by the vertex lookup below.
     const parameterAdjacency = new Map([...loopEdgeIds].map(edgeId => [edgeId, []]));
     for (const plan of splitPlans) {
       parameterAdjacency.get(plan.edgeABId)?.push([plan.edgeCDId, plan.sameEdgeOrientation]);
       parameterAdjacency.get(plan.edgeCDId)?.push([plan.edgeABId, plan.sameEdgeOrientation]);
     }
-    const edgeParameters = new Map([[this.edgeSelection.values().next().value, offset]]);
-    const parameterQueue = [...edgeParameters.keys()];
+    const seedEdgeId = this.edgeSelection.values().next().value;
+    const edgeParameters = new Map([[seedEdgeId, [...requestedOffsets]]]);
+    const parameterQueue = [seedEdgeId];
     for (let cursor = 0; cursor < parameterQueue.length; cursor++) {
       const edgeId = parameterQueue[cursor];
-      const parameter = edgeParameters.get(edgeId);
+      const parameters = edgeParameters.get(edgeId);
       for (const [nextEdgeId, sameEdgeOrientation] of parameterAdjacency.get(edgeId) || []) {
-        const nextParameter = sameEdgeOrientation ? 1 - parameter : parameter;
+        const nextParameters = (sameEdgeOrientation ? parameters.map(value => 1 - value) : [...parameters]).sort((a, b) => a - b);
         if (!edgeParameters.has(nextEdgeId)) {
-          edgeParameters.set(nextEdgeId, nextParameter);
+          edgeParameters.set(nextEdgeId, nextParameters);
           parameterQueue.push(nextEdgeId);
-        } else if (Math.abs(edgeParameters.get(nextEdgeId) - nextParameter) > 1e-8) {
-          return { changed: false, reason: 'The loop returns with an inconsistent cut offset; no topology was changed.' };
+        } else if (edgeParameters.get(nextEdgeId).some((value, index) => Math.abs(value - nextParameters[index]) > 1e-8)) {
+          return { changed: false, reason: 'The loop returns with inconsistent cut offsets; no topology was changed.' };
         }
       }
     }
     if (edgeParameters.size !== loopEdgeSet.size) {
-      return { changed: false, reason: 'The cut offset could not be propagated across the complete loop.' };
+      return { changed: false, reason: 'The cut offsets could not be propagated across the complete loop.' };
     }
 
     const nextPositions = this.positions.map(position => [...position]);
-    const splitVertexByEdge = new Map();
+    const splitVerticesByEdge = new Map();
     for (const edgeId of loopEdgeIds) {
       const [a, b] = this.edges[edgeId].vertices;
-      const edgeOffset = edgeParameters.get(edgeId);
-      const point = nextPositions[a].map((value, axis) => value + (nextPositions[b][axis] - value) * edgeOffset);
-      splitVertexByEdge.set(edgeId, nextPositions.push(point) - 1);
+      const entries = edgeParameters.get(edgeId).map(parameter => {
+        const point = nextPositions[a].map((value, axis) => value + (nextPositions[b][axis] - value) * parameter);
+        return { parameter, vertex: nextPositions.push(point) - 1 };
+      });
+      splitVerticesByEdge.set(edgeId, entries);
     }
 
+    const verticesAlongEdge = (edgeId, fromVertex) => {
+      const edge = this.edges[edgeId];
+      const entries = splitVerticesByEdge.get(edgeId) || [];
+      return (edge.vertices[0] === fromVertex ? entries : [...entries].reverse()).map(entry => entry.vertex);
+    };
     const nextFaces = [], cutPairs = [];
     const planByFace = new Map(splitPlans.map(plan => [plan.faceId, plan]));
     for (let faceId = 0; faceId < this.faces.length; faceId++) {
@@ -805,14 +822,20 @@ export class HalfEdgeMesh {
       const { face, side } = plan;
       const a = face[side], b = face[(side + 1) % 4];
       const c = face[(side + 2) % 4], d = face[(side + 3) % 4];
-      const edgeAB = edgeByKey.get(keyFor(a, b));
-      const edgeCD = edgeByKey.get(keyFor(c, d));
-      const pAB = splitVertexByEdge.get(edgeAB.id), pCD = splitVertexByEdge.get(edgeCD.id);
-      if (!Number.isInteger(pAB) || !Number.isInteger(pCD)) {
-        return { changed: false, reason: 'The cut path could not be mapped consistently across the quad strip.' };
+      const pAB = verticesAlongEdge(plan.edgeABId, a);
+      const pCD = verticesAlongEdge(plan.edgeCDId, c);
+      if (pAB.length !== cuts || pCD.length !== cuts) {
+        return { changed: false, reason: 'The cut positions could not be mapped consistently across the quad strip.' };
       }
-      nextFaces.push([pAB, b, c, pCD], [pCD, d, a, pAB]);
-      cutPairs.push([pAB, pCD]);
+
+      // The two opposite sides run in opposite spatial directions around the
+      // quad. Pair the first point on AB with the last point on CD.
+      nextFaces.push([pAB[cuts - 1], b, c, pCD[0]]);
+      for (let index = 0; index < cuts - 1; index++) {
+        nextFaces.push([pAB[index], pAB[index + 1], pCD[cuts - 2 - index], pCD[cuts - 1 - index]]);
+      }
+      nextFaces.push([pCD[cuts - 1], d, a, pAB[0]]);
+      for (let index = 0; index < cuts; index++) cutPairs.push([pAB[index], pCD[cuts - 1 - index]]);
     }
 
     this.positions = nextPositions;
@@ -826,8 +849,11 @@ export class HalfEdgeMesh {
     }
     return {
       changed: true,
-      insertedVertices: splitVertexByEdge.size,
+      cuts,
+      offsets: requestedOffsets,
+      insertedVertices: [...splitVerticesByEdge.values()].reduce((sum, entries) => sum + entries.length, 0),
       splitFaces: splitPlans.length,
+      createdFaces: splitPlans.length * (cuts + 1),
       createdCutEdges: cutPairs.length,
       selectedCutEdges: this.edgeSelection.size
     };

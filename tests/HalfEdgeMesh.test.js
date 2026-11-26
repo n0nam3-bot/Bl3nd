@@ -277,3 +277,57 @@ test('Loop Cut carries offset orientation across edges with reordered vertex IDs
   assert.deepEqual(inserted.map(point => point[0]), [0.75, 0.75]);
   assert.equal(hem.validateTopology().valid, true);
 });
+
+test('Multiple Loop Cuts split each crossed quad into correctly wound evenly spaced strips', () => {
+  const { hem, id } = makeGrid(1, 1);
+  hem.setSelectionMode('edge');
+  const seed = hem.edges.find(edge => keyFor(...edge.vertices) === keyFor(id(0,0), id(1,0)));
+  hem.selectEdge(seed.id);
+  const result = hem.cutEdgeLoop({ cuts: 3 });
+  assert.equal(result.changed, true);
+  assert.equal(result.cuts, 3);
+  assert.deepEqual(result.offsets, [0.25, 0.5, 0.75]);
+  assert.equal(result.insertedVertices, 6);
+  assert.equal(result.splitFaces, 1);
+  assert.equal(result.createdFaces, 4);
+  assert.equal(result.createdCutEdges, 3);
+  assert.equal(hem.faces.length, 4);
+  assert.equal(hem.edgeSelection.size, 3);
+  assert.deepEqual(hem.positions.slice(4, 7).map(point => point[0]), [0.25, 0.5, 0.75]);
+  assert.deepEqual(hem.positions.slice(7).map(point => point[0]).sort((a,b)=>a-b), [0.25, 0.5, 0.75]);
+  assert.equal(hem.validateTopology().valid, true);
+});
+
+test('Multiple Loop Cuts preserve a closed cube manifold without boundary or winding errors', () => {
+  const positions = [[-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],[-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1]];
+  const faces = [[0,3,2,1],[4,5,6,7],[0,1,5,4],[1,2,6,5],[2,3,7,6],[3,0,4,7]];
+  const hem = new HalfEdgeMesh(positions, faces);
+  hem.setSelectionMode('edge');
+  const seed = hem.edges.find(edge => keyFor(...edge.vertices) === keyFor(0,1));
+  hem.selectEdge(seed.id);
+  const result = hem.cutEdgeLoop({ cuts: 2, offset: 0.6 });
+  assert.equal(result.changed, true);
+  assert.ok(Math.abs(result.offsets[0] - (1/3 + 0.1)) < 1e-10);
+  assert.ok(Math.abs(result.offsets[1] - (2/3 + 0.1)) < 1e-10);
+  assert.equal(result.insertedVertices, 8);
+  assert.equal(result.splitFaces, 4);
+  assert.equal(result.createdFaces, 12);
+  assert.equal(hem.faces.length, 14);
+  assert.equal(hem.edgeSelection.size, 8);
+  const report = hem.validateTopology();
+  assert.equal(report.valid, true);
+  assert.equal(report.counts.boundaryEdges, 0);
+  assert.equal(report.counts.nonManifoldEdges, 0);
+  assert.equal(report.counts.inconsistentWinding, 0);
+});
+
+test('Multiple Loop Cuts reject excessive counts and too-close parameters transactionally', () => {
+  const { hem, id } = makeGrid(1, 1);
+  hem.setSelectionMode('edge');
+  const seed = hem.edges.find(edge => keyFor(...edge.vertices) === keyFor(id(0,0), id(1,0)));
+  hem.selectEdge(seed.id);
+  const before = JSON.stringify({ positions: hem.positions, faces: hem.faces });
+  assert.equal(hem.cutEdgeLoop({ cuts: 9 }).changed, false);
+  assert.equal(hem.cutEdgeLoop({ cuts: 2, offsets: [0.5, 0.500001] }).changed, false);
+  assert.equal(JSON.stringify({ positions: hem.positions, faces: hem.faces }), before);
+});

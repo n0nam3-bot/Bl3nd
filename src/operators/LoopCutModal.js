@@ -17,6 +17,7 @@ export class LoopCutModal {
     this.onChange = onChange;
     this.active = false;
     this.offset = 0.5;
+    this.cuts = 1;
     this.numeric = '';
     this.lastResult = null;
     this.lastError = '';
@@ -46,6 +47,7 @@ export class LoopCutModal {
       lastPointer.y >= canvasRect.top && lastPointer.y <= canvasRect.bottom
       ? { x: lastPointer.x, y: lastPointer.y } : null;
     this.offset = 0.5;
+    this.cuts = 1;
     this.numeric = '';
     this.lastError = '';
 
@@ -58,16 +60,26 @@ export class LoopCutModal {
     this.lastResult = preview.result;
     this.applyPreview(preview.hem);
     this.active = true;
-    this.status?.('LOOP CUT · drag horizontally to slide · type 0–1 · Enter apply · Esc cancel');
+    this.status?.('LOOP CUT · wheel or +/- changes count · drag horizontally to slide · Enter apply · Esc cancel');
     this.onChange?.();
     return true;
   }
 
-  buildPreview(offset) {
+  offsetsFor(center = this.offset, cuts = this.cuts) {
+    return Array.from({ length: cuts }, (_, index) => (index + 1) / (cuts + 1) + (center - 0.5));
+  }
+
+  centerLimits(cuts = this.cuts) {
+    const first = 1 / (cuts + 1);
+    const last = cuts / (cuts + 1);
+    return { min: 0.01 - first + 0.5, max: 0.99 - last + 0.5 };
+  }
+
+  buildPreview(offset, cuts = this.cuts) {
     const hem = new HalfEdgeMesh(this.basePositions, this.baseFaces);
     hem.setSelectionMode('edge');
     hem.edgeSelection = new Set(this.seedEdgeIds);
-    const result = hem.cutEdgeLoop({ offset });
+    const result = hem.cutEdgeLoop({ cuts, offsets: this.offsetsFor(offset, cuts) });
     return { hem, result };
   }
 
@@ -77,8 +89,9 @@ export class LoopCutModal {
   }
 
   setOffset(value) {
-    if (!this.active || !Number.isFinite(value) || value <= 0 || value >= 1) return false;
-    const next = clamp(value, 0.01, 0.99);
+    if (!this.active || !Number.isFinite(value)) return false;
+    const limits = this.centerLimits();
+    const next = clamp(value, limits.min, limits.max);
     const preview = this.buildPreview(next);
     if (!preview.result?.changed) {
       this.lastError = preview.result?.reason || 'This cut position is not supported.';
@@ -86,12 +99,41 @@ export class LoopCutModal {
       return false;
     }
     this.offset = next;
+    if (Math.abs(next - value) > 1e-8 && this.numeric) this.numeric = next.toFixed(2);
     this.lastResult = preview.result;
     this.lastError = '';
     this.applyPreview(preview.hem);
-    this.status?.(`Loop Cut slide · ${this.offset.toFixed(2)} · Enter apply / Esc cancel`);
+    this.status?.(`Loop Cut · ${this.cuts} cut(s) · slide ${this.offset.toFixed(2)} · Enter apply / Esc cancel`);
     this.onChange?.();
     return true;
+  }
+
+  setCutCount(value) {
+    if (!this.active || !Number.isInteger(value) || value < 1 || value > 8 || value === this.cuts) return false;
+    const previous = this.cuts;
+    this.cuts = value;
+    const limits = this.centerLimits();
+    const nextOffset = clamp(this.offset, limits.min, limits.max);
+    const preview = this.buildPreview(nextOffset, value);
+    if (!preview.result?.changed) {
+      this.cuts = previous;
+      this.lastError = preview.result?.reason || 'This cut count is not supported.';
+      this.status?.(`Loop Cut count rejected · ${this.lastError}`);
+      return false;
+    }
+    this.offset = nextOffset;
+    this.numeric = '';
+    this.lastResult = preview.result;
+    this.lastError = '';
+    this.applyPreview(preview.hem);
+    this.status?.(`Loop Cut · ${this.cuts} cut(s) · drag to slide · Enter apply / Esc cancel`);
+    this.onChange?.();
+    return true;
+  }
+
+  adjustCuts(delta) {
+    if (!this.active || !Number.isFinite(delta)) return false;
+    return this.setCutCount(clamp(this.cuts + Math.sign(delta), 1, 8));
   }
 
   pointerMove(point, fine = false) {
@@ -128,7 +170,7 @@ export class LoopCutModal {
     if (!this.active) return false;
     const after = await this.document.serialize();
     await this.undoManager?.record('Loop Cut', this.before, after);
-    const result = this.lastResult ? { ...this.lastResult, offset: this.offset } : null;
+    const result = this.lastResult ? { ...this.lastResult, offset: this.offset, cuts: this.cuts } : null;
     this.clear();
     this.status?.('Loop Cut applied');
     this.onChange?.();
@@ -147,6 +189,7 @@ export class LoopCutModal {
   clear() {
     this.active = false;
     this.offset = 0.5;
+    this.cuts = 1;
     this.numeric = '';
     this.lastResult = null;
     this.mesh = null;

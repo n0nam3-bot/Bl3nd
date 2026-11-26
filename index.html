@@ -89,6 +89,11 @@
           <div class="numeric-pad" id="numeric-pad" hidden>
             <div class="pad-title">TRANSFORM VALUE</div>
             <div class="pad-value" id="pad-value">0</div>
+            <div class="pad-count-row" id="pad-count-row" hidden>
+              <button type="button" data-cuts="-1" aria-label="Fewer cuts">−</button>
+              <span>LOOP CUTS <b id="pad-cuts">1</b></span>
+              <button type="button" data-cuts="1" aria-label="More cuts">＋</button>
+            </div>
             <div class="pad-grid">
               <button data-key="7">7</button><button data-key="8">8</button><button data-key="9">9</button>
               <button data-key="4">4</button><button data-key="5">5</button><button data-key="6">6</button>
@@ -144,7 +149,7 @@
             <button id="validate-topology-btn" disabled>Validate Mesh</button>
             <button id="repair-topology-btn" disabled>Repair Safe Issues</button>
           </div>
-          <p class="panel-note">Loop Cut: select one edge in Edge Select, then press Ctrl+R. Drag horizontally to slide the preview, type an offset from 0–1, use ←/→ for fine steps, Enter to apply or Esc to cancel.</p>
+          <p class="panel-note">Loop Cut: select one edge in Edge Select, then press Ctrl+R. Drag horizontally to slide the preview; use the mouse wheel or +/- to add/remove up to 8 evenly spaced cuts. Type an offset from 0–1, use ←/→ to slide, Enter to apply or Esc to cancel.</p>
           <div class="panel-heading section-gap">PIVOT POINT</div>
           <select id="pivot-select"><option value="median">Median Point</option><option value="individual">Individual Origins</option><option value="cursor">3D Cursor</option></select>
           <div class="panel-heading section-gap">3D CURSOR</div>
@@ -233,7 +238,7 @@
         const hadController = Boolean(navigator.serviceWorker.controller);
         if (hadController) {
           try {
-            const refreshKey = 'bl3nd-cache-refresh-v11';
+            const refreshKey = 'bl3nd-cache-refresh-v12';
             if (!sessionStorage.getItem(refreshKey)) {
               navigator.serviceWorker.addEventListener('controllerchange', () => {
                 sessionStorage.setItem(refreshKey, '1');

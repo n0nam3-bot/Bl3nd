@@ -288,6 +288,11 @@ function registerCommands() {
     ui.refreshModal();
     return true;
   }, { recordUndo: false });
+  commandBus.register('mesh.loop_cut_count', ({ delta }) => {
+    const changed = loopCutModal.adjustCuts(delta);
+    ui.refreshModal();
+    return changed;
+  }, { recordUndo: false });
   commandBus.register('mesh.loop_cut_confirm', async () => {
     const result = await loopCutModal.confirm();
     viewport.controls.enabled = true;
@@ -297,7 +302,7 @@ function registerCommands() {
     document.body.classList.remove('loop-cut-modal-active');
     if (result) {
       await reapplyActiveModifiers();
-      notify(`Loop Cut applied · ${result.insertedVertices} vertices · ${result.splitFaces} quads · offset ${result.offset.toFixed(2)}.`, 'success');
+      notify(`Loop Cut applied · ${result.cuts} cut(s) · ${result.insertedVertices} vertices · ${result.splitFaces} quads · slide ${result.offset.toFixed(2)}.`, 'success');
     }
     refresh(); ui.refreshModal();
     return Boolean(result);
@@ -459,15 +464,18 @@ ui = {
     const axisButtons=pad.querySelectorAll('[data-axis]');
     if(loopCutModal.active){
       readout.hidden=false;
-      readout.textContent=`LOOP CUT · Offset ${loopCutModal.offset.toFixed(2)} · Drag to slide · Enter apply / Esc cancel`;
+      readout.textContent=`LOOP CUT · ${loopCutModal.cuts} cut(s) · Offset ${loopCutModal.offset.toFixed(2)} · Wheel / +/- count · Enter apply / Esc cancel`;
       pad.hidden=!capabilities.tier.includes('Mobile');
       pad.classList.add('loop-cut-mode');
       padTitle.textContent='CUT OFFSET · TYPE 0–1';
       axisButtons.forEach(button=>button.hidden=true);
       $('#pad-value').textContent=loopCutModal.numeric || loopCutModal.offset.toFixed(2);
+      $('#pad-count-row').hidden=false;
+      $('#pad-cuts').textContent=String(loopCutModal.cuts);
       return;
     }
     pad.classList.remove('loop-cut-mode');
+    $('#pad-count-row').hidden=true;
     padTitle.textContent='TRANSFORM VALUE';
     axisButtons.forEach(button=>button.hidden=false);
     if(!modalTransform.active){readout.hidden=true;pad.hidden=true;return;}
@@ -540,6 +548,7 @@ $('#pie-menu').addEventListener('click',async event=>{
 $('#shading-btn').addEventListener('click',()=>ui.togglePie('shading'));
 $('#numeric-pad').addEventListener('click',async event=>{
   if(loopCutModal.active){
+    const countButton=event.target.closest('button[data-cuts]');if(countButton){await run('mesh.loop_cut_count',{delta:Number(countButton.dataset.cuts)});return;}
     const cutButton=event.target.closest('button[data-key]');if(!cutButton)return;const cutKey=cutButton.dataset.key;
     if(cutKey==='enter'){await run('mesh.loop_cut_confirm');return;}
     if(cutKey==='escape'){await run('mesh.loop_cut_cancel');return;}
@@ -558,6 +567,12 @@ $('#numeric-pad').addEventListener('click',async event=>{
 });
 
 const viewportCanvas=viewport.renderer.domElement;
+viewportCanvas.addEventListener('wheel',event=>{
+  if(!loopCutModal.active)return;
+  event.preventDefault();
+  commandBus.dispatch('mesh.loop_cut_count',{delta:event.deltaY<0?1:-1});
+  ui.refreshModal();
+},{passive:false});
 window.addEventListener('pointermove',event=>{
   if(loopCutModal.active && (event.target===viewportCanvas || viewportCanvas.contains(event.target))){commandBus.dispatch('mesh.loop_cut_pointer',{point:{x:event.clientX,y:event.clientY},fine:event.shiftKey});ui.refreshModal();return;}
   if(modalTransform.active){commandBus.dispatch('transform.modal_update',{point:{x:event.clientX,y:event.clientY}});ui.refreshModal();}

@@ -13,6 +13,8 @@ export class KeyboardController {
       if (key==='enter') { event.preventDefault(); await this.dispatch('mesh.loop_cut_confirm'); return; }
       if (key==='arrowleft' || key==='arrowdown') { event.preventDefault(); await this.dispatch('mesh.loop_cut_nudge',{direction:-1,fine:event.shiftKey}); return; }
       if (key==='arrowright' || key==='arrowup') { event.preventDefault(); await this.dispatch('mesh.loop_cut_nudge',{direction:1,fine:event.shiftKey}); return; }
+      if (key==='+' || key==='=') { event.preventDefault(); await this.dispatch('mesh.loop_cut_count',{delta:1}); return; }
+      if (key==='-') { event.preventDefault(); await this.dispatch('mesh.loop_cut_count',{delta:-1}); return; }
       if (/^\d$/.test(key) || key==='.' || key==='backspace') {
         event.preventDefault(); await this.dispatch('mesh.loop_cut_input',{value:key==='backspace'?'backspace':key}); return;
       }
