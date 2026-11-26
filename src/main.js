@@ -252,8 +252,9 @@ function registerCommands() {
     }
     const before = hem.edgeSelection.size;
     const count = hem.expandEdgeRingSelection();
-    if (!count || hem.edgeSelection.size === before) notify('No regular valence-four continuation was found. Ring traversal stops at boundaries and non-quad poles.');
-    else status(`Edge ring selected · ${hem.edgeSelection.size} edge(s)`);
+    const traversal = hem.lastRingTraversal || {};
+    if (!count || hem.edgeSelection.size === before) notify('No unambiguous ring continuation was found. Extraordinary poles require a closed all-quad fan and one clearly opposite edge.');
+    else status(`Edge ring selected · ${hem.edgeSelection.size} edge(s)${traversal.extraordinaryVertices ? ` · ${traversal.extraordinaryVertices} pole continuation(s)` : ''}`);
     refresh(); return count > 0;
   }, { recordUndo: false });
   commandBus.register('mesh.subdivide', async () => { if (sceneDocument.mode !== 'edit') return false; MeshOperators.subdivide(sceneDocument); await reapplyActiveModifiers(); refresh(); return true; });

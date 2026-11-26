@@ -331,3 +331,58 @@ test('Multiple Loop Cuts reject excessive counts and too-close parameters transa
   assert.equal(hem.cutEdgeLoop({ cuts: 2, offsets: [0.5, 0.500001] }).changed, false);
   assert.equal(JSON.stringify({ positions: hem.positions, faces: hem.faces }), before);
 });
+
+function makeExtraordinaryFan(angles, triangleFaceIndex = -1) {
+  const positions = [[0,0,0]], ring = [];
+  for (const angle of angles) {
+    const radians = angle * Math.PI / 180;
+    ring.push(positions.length);
+    positions.push([Math.cos(radians), Math.sin(radians), 0]);
+  }
+  const faces = [];
+  for (let i = 0; i < ring.length; i++) {
+    const next = (i + 1) % ring.length;
+    const midpoint = (angles[i] + (i === ring.length - 1 ? angles[0] + 360 : angles[next])) * 0.5;
+    const radians = midpoint * Math.PI / 180;
+    const outer = positions.length;
+    positions.push([2 * Math.cos(radians), 2 * Math.sin(radians), 0]);
+    faces.push(i === triangleFaceIndex ? [0, ring[i], ring[next]] : [0, ring[i], outer, ring[next]]);
+  }
+  const hem = new HalfEdgeMesh(positions, faces);
+  hem.setSelectionMode('edge');
+  const seed = hem.edges.find(edge => edge.vertices.includes(0) && edge.vertices.includes(ring[0]));
+  hem.selectEdge(seed.id);
+  return { hem, center: 0, ring, seed };
+}
+
+test('edge ring crosses an extraordinary valence-six pole only through a unique near-opposite edge', () => {
+  const { hem, center, ring } = makeExtraordinaryFan([0,60,120,180,240,300]);
+  assert.equal(hem.orderedVertexFan(center)?.length, 6);
+  assert.equal(hem.expandEdgeRingSelection(), 2);
+  const selected = [...hem.edgeSelection].map(id => hem.edges[id].vertices);
+  assert.ok(selected.some(vertices => vertices.includes(center) && vertices.includes(ring[0])));
+  assert.ok(selected.some(vertices => vertices.includes(center) && vertices.includes(ring[3])));
+  assert.equal(hem.lastRingTraversal.extraordinaryVertices, 1);
+});
+
+test('edge ring stops at an extraordinary pole when no edge is sufficiently opposite', () => {
+  const { hem, center } = makeExtraordinaryFan([0,72,144,216,288]);
+  assert.equal(hem.orderedVertexFan(center)?.length, 5);
+  assert.equal(hem.expandEdgeRingSelection(), 1);
+  assert.equal(hem.lastRingTraversal.ambiguousPoles, 1);
+});
+
+test('edge ring stops when an extraordinary pole has tied opposite candidates', () => {
+  const { hem, center } = makeExtraordinaryFan([0,160,200,240,280,320]);
+  assert.equal(hem.orderedVertexFan(center)?.length, 6);
+  assert.equal(hem.expandEdgeRingSelection(), 1);
+  assert.equal(hem.lastRingTraversal.ambiguousPoles, 1);
+});
+
+test('edge ring refuses extraordinary fans containing non-quad faces', () => {
+  const { hem, center } = makeExtraordinaryFan([0,60,120,180,240,300], 2);
+  assert.equal(hem.orderedVertexFan(center)?.length, 6);
+  assert.equal(hem.expandEdgeRingSelection(), 1);
+  assert.equal(hem.lastRingTraversal.ambiguousPoles, 0);
+  assert.ok(hem.lastRingTraversal.stoppedFans >= 1);
+});

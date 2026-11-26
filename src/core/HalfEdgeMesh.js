@@ -270,6 +270,7 @@ export class HalfEdgeMesh {
     this.vertices = []; this.edges = []; this.halfEdges = []; this.faceRecords = [];
     this.vertexSelection = new Set(); this.edgeSelection = new Set(); this.faceSelection = new Set();
     this.selectionMode = 'face';
+    this.lastRingTraversal = { regularVertices: 0, extraordinaryVertices: 0, ambiguousPoles: 0, stoppedFans: 0 };
     this.rebuild();
   }
 
@@ -873,24 +874,94 @@ export class HalfEdgeMesh {
     return current === start ? fan : null;
   }
 
+  isClosedQuadFan(fan) {
+    if (!Array.isArray(fan) || fan.length < 3) return false;
+    const edgeIds = new Set();
+    for (const halfEdge of fan) {
+      if (!halfEdge?.face || this.faces[halfEdge.face.id]?.length !== 4 ||
+          !halfEdge.edge || halfEdge.edge.halfEdges.length !== 2 || !halfEdge.twin ||
+          edgeIds.has(halfEdge.edge.id)) return false;
+      edgeIds.add(halfEdge.edge.id);
+    }
+    return true;
+  }
+
+  /**
+   * Finds a geometrically unambiguous continuation through a closed
+   * extraordinary all-quad vertex fan. Only near-antiparallel incident edges
+   * are paired; weak or tied candidates deliberately stop at the pole.
+   */
+  oppositeEdgeAtExtraordinaryPole(vertexId, edgeId, fan) {
+    if (!this.isClosedQuadFan(fan) || fan.length === 4) return null;
+    const origin = this.positions[vertexId];
+    if (!origin) return null;
+    const candidates = fan.map(halfEdge => halfEdge.edge);
+    const direction = edge => {
+      const otherId = edge.vertices[0] === vertexId ? edge.vertices[1] : edge.vertices[0];
+      const point = this.positions[otherId];
+      if (!point) return null;
+      const vector = point.map((value, axis) => value - origin[axis]);
+      const length = Math.hypot(...vector);
+      return length > 1e-10 ? vector.map(value => value / length) : null;
+    };
+    const vectors = new Map(fan.map(halfEdge => [halfEdge.edge.id, direction(halfEdge.edge)]));
+    if (!vectors.get(edgeId)) return null;
+    const threshold = -Math.cos(25 * Math.PI / 180); // at least 155 degrees apart
+    const uniquenessMargin = 0.15;
+    const bestPartner = sourceId => {
+      const source = vectors.get(sourceId);
+      if (!source) return null;
+      const ranked = candidates.filter(edge => edge.id !== sourceId && vectors.get(edge.id))
+        .map(edge => ({ id: edge.id, dot: source.reduce((sum, value, axis) => sum + value * vectors.get(edge.id)[axis], 0) }))
+        .sort((a, b) => a.dot - b.dot);
+      if (!ranked.length || ranked[0].dot > threshold) return null;
+      if (ranked[1] && ranked[1].dot - ranked[0].dot < uniquenessMargin) return null;
+      return ranked[0].id;
+    };
+    const partner = bestPartner(edgeId);
+    if (partner === null || bestPartner(partner) !== edgeId) return null;
+    return partner;
+  }
+
   expandEdgeRingSelection({ extend = true } = {}) {
-    if (this.selectionMode !== 'edge' || !this.edgeSelection.size) return 0;
+    if (this.selectionMode !== 'edge' || !this.edgeSelection.size) {
+      this.lastRingTraversal = { regularVertices: 0, extraordinaryVertices: 0, ambiguousPoles: 0, stoppedFans: 0 };
+      return 0;
+    }
     const seeds = [...this.edgeSelection];
     const visited = new Set(seeds), queue = [...seeds];
+    const stats = { regularVertices: 0, extraordinaryVertices: 0, ambiguousPoles: 0, stoppedFans: 0 };
+    const regularVertexIds = new Set(), extraordinaryVertexIds = new Set();
+    const ambiguousPoleIds = new Set(), stoppedFanVertexIds = new Set();
+    const processed = new Set();
     while (queue.length) {
       const edge = this.edges[queue.shift()];
       if (!edge) continue;
       for (const vertexId of edge.vertices) {
+        const visitKey = `${vertexId}:${edge.id}`;
+        if (processed.has(visitKey)) continue;
+        processed.add(visitKey);
         const fan = this.orderedVertexFan(vertexId);
-        // Ring traversal is ambiguous at boundaries and extraordinary poles.
-        // Continue only through a closed regular valence-four quad fan.
-        if (!fan || fan.length !== 4) continue;
+        if (!this.isClosedQuadFan(fan)) { stoppedFanVertexIds.add(vertexId); continue; }
         const currentIndex = fan.findIndex(halfEdge => halfEdge.edge.id === edge.id);
         if (currentIndex < 0) continue;
-        const opposite = fan[(currentIndex + 2) % 4].edge.id;
+        let opposite;
+        if (fan.length === 4) {
+          regularVertexIds.add(vertexId);
+          opposite = fan[(currentIndex + 2) % 4].edge.id;
+        } else {
+          opposite = this.oppositeEdgeAtExtraordinaryPole(vertexId, edge.id, fan);
+          if (opposite === null) { ambiguousPoleIds.add(vertexId); continue; }
+          extraordinaryVertexIds.add(vertexId);
+        }
         if (!visited.has(opposite)) { visited.add(opposite); queue.push(opposite); }
       }
     }
+    stats.regularVertices = regularVertexIds.size;
+    stats.extraordinaryVertices = extraordinaryVertexIds.size;
+    stats.ambiguousPoles = ambiguousPoleIds.size;
+    stats.stoppedFans = stoppedFanVertexIds.size;
+    this.lastRingTraversal = stats;
     if (!extend) this.edgeSelection.clear();
     for (const id of visited) this.edgeSelection.add(id);
     return visited.size;
