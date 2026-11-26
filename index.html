@@ -4,8 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#17191e">
-  <meta name="description" content="A mobile-first, browser-native 3D modeling workspace.">
-  <title>FORGE 3D — Browser Modeler</title>
+  <meta name="application-name" content="Bl3nd">
+  <meta name="apple-mobile-web-app-title" content="Bl3nd">
+  <meta name="description" content="Bl3nd is a mobile-first, browser-native 3D modeling workspace.">
+  <title>Bl3nd — 3D Workspace</title>
   <link rel="manifest" href="./manifest.json">
   <link rel="icon" href="./assets/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="./assets/icon-192.png">
@@ -22,7 +24,7 @@
 <body>
   <div id="app" class="app-shell">
     <header class="topbar">
-      <div class="brand"><span class="brand-mark">F</span><span>FORGE <b>3D</b></span><small>EARLY ACCESS</small></div>
+      <div class="brand"><span class="brand-mark" aria-hidden="true">B</span><span>Bl3nd</span></div>
       <div class="top-actions">
         <button class="mode-pill active" id="object-mode-btn" title="Object Mode (Tab)">Object</button>
         <button class="mode-pill" id="edit-mode-btn" title="Edit Mode (Tab)">Edit</button>
@@ -89,7 +91,18 @@
               <button data-key="backspace">⌫</button><button data-key="escape">Cancel</button><button data-key="enter" class="pad-enter">Apply</button>
             </div>
           </div>
-          <div class="loading-overlay" id="loading-overlay"><div class="loader"></div><span>Preparing 3D workspace…</span></div>
+          <div class="loading-overlay" id="loading-overlay" role="status" aria-live="polite">
+            <div class="loading-card">
+              <div class="loading-brand"><span class="brand-mark" aria-hidden="true">B</span><strong>Bl3nd</strong></div>
+              <div class="loading-title" id="loading-title">Loading 3D engine…</div>
+              <div class="loading-track" id="loading-progress" role="progressbar" aria-label="Workspace loading progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                <span id="loading-progress-fill"></span>
+              </div>
+              <div class="loading-meta"><span id="loading-detail">Connecting the browser graphics engine</span><b id="loading-percent">0%</b></div>
+              <div class="loading-error" id="loading-error" hidden></div>
+              <button class="loading-retry" id="loading-retry" type="button" hidden>Reload workspace</button>
+            </div>
+          </div>
         </div>
         <div class="viewport-footer">
           <div id="status-message">Ready</div>
@@ -154,17 +167,78 @@
     <div class="toast-region" id="toast-region" aria-live="polite"></div>
   </div>
   <script>
-    window.addEventListener('error', event => {
-      const message = String(event.message || event.error?.message || 'A browser module failed to load.');
-      if (/module|three|import|fetch|script/i.test(message)) {
-        const overlay = document.getElementById('loading-overlay');
-        if (overlay) overlay.innerHTML = '<div class="panel-note">The 3D engine could not load. Check the connection to jsDelivr, disable script-blocking extensions, then reload this page.</div>';
+    (() => {
+      const overlay = () => document.getElementById('loading-overlay');
+      const title = () => document.getElementById('loading-title');
+      const detail = () => document.getElementById('loading-detail');
+      const fill = () => document.getElementById('loading-progress-fill');
+      const percent = () => document.getElementById('loading-percent');
+      const progress = () => document.getElementById('loading-progress');
+
+      window.Bl3ndLoading = {
+        update(value, message) {
+          const panel = overlay();
+          if (!panel || panel.classList.contains('done') || panel.classList.contains('failed')) return;
+          const amount = Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
+          if (fill()) fill().style.width = `${amount}%`;
+          if (percent()) percent().textContent = `${amount}%`;
+          if (progress()) progress().setAttribute('aria-valuenow', String(amount));
+          if (message && detail()) detail().textContent = message;
+          if (title()) title().textContent = amount >= 100 ? 'Workspace ready' : 'Preparing Bl3nd';
+        },
+        finish() {
+          this.update(100, 'Your modeling workspace is ready.');
+          const panel = overlay();
+          if (!panel) return;
+          panel.dataset.ready = 'true';
+          window.setTimeout(() => {
+            panel.classList.add('done');
+            window.setTimeout(() => panel.remove(), 350);
+          }, 250);
+        },
+        fail(error) {
+          const panel = overlay();
+          if (!panel || panel.classList.contains('done') || panel.dataset.ready === 'true') return;
+          panel.classList.add('failed');
+          if (title()) title().textContent = 'Bl3nd could not finish starting';
+          if (detail()) detail().textContent = 'The workspace stopped during initialization.';
+          if (fill()) fill().style.width = '100%';
+          if (progress()) progress().setAttribute('aria-valuenow', '100');
+          if (percent()) percent().textContent = 'Error';
+          const message = error?.message || String(error || 'Unknown startup error');
+          const errorBox = document.getElementById('loading-error');
+          if (errorBox) { errorBox.hidden = false; errorBox.textContent = message; }
+          const retry = document.getElementById('loading-retry');
+          if (retry) { retry.hidden = false; retry.onclick = () => window.location.reload(); }
+          console.error('[Bl3nd startup]', error);
+        }
+      };
+
+      if ('serviceWorker' in navigator) {
+        const hadController = Boolean(navigator.serviceWorker.controller);
+        if (hadController) {
+          try {
+            const refreshKey = 'bl3nd-cache-refresh-v2';
+            if (!sessionStorage.getItem(refreshKey)) {
+              navigator.serviceWorker.addEventListener('controllerchange', () => {
+                sessionStorage.setItem(refreshKey, '1');
+                window.location.reload();
+              }, { once: true });
+            }
+          } catch { /* session storage may be disabled; versioned cache still updates */ }
+        }
+        navigator.serviceWorker.register('./sw.js', { scope: './' }).catch(error => {
+          console.warn('[Bl3nd service worker]', error);
+        });
       }
-    });
-    window.addEventListener('unhandledrejection', event => {
-      const overlay = document.getElementById('loading-overlay');
-      if (overlay && !overlay.classList.contains('done')) overlay.innerHTML = '<div class="panel-note">Workspace startup failed. Reload the page after checking your browser connection and storage permissions.</div>';
-    });
+
+      window.addEventListener('error', event => {
+        if (event.message || event.target?.tagName === 'SCRIPT') {
+          window.Bl3ndLoading.fail(event.error || event.message || 'A JavaScript module failed to load.');
+        }
+      });
+      window.addEventListener('unhandledrejection', event => window.Bl3ndLoading.fail(event.reason));
+    })();
   </script>
   <script type="module" src="./src/main.js"></script>
 </body>

@@ -1,5 +1,5 @@
-const SHELL_CACHE = 'forge-shell-v1';
-const RUNTIME_CACHE = 'forge-runtime-v1';
+const SHELL_CACHE = 'bl3nd-shell-v2';
+const RUNTIME_CACHE = 'bl3nd-runtime-v2';
 const APP_SHELL = [
   './', './index.html', './manifest.json', './src/styles.css',
   './src/main.js', './src/core/DeviceCapabilities.js', './src/core/CommandBus.js',
@@ -21,7 +21,7 @@ self.addEventListener('install', event => {
 self.addEventListener('activate', event => {
   event.waitUntil((async () => {
     const keys = await caches.keys();
-    await Promise.all(keys.filter(key => ![SHELL_CACHE, RUNTIME_CACHE].includes(key)).map(key => caches.delete(key)));
+    await Promise.all(keys.filter(key => (key.startsWith('forge-') || key.startsWith('bl3nd-')) && ![SHELL_CACHE, RUNTIME_CACHE].includes(key)).map(key => caches.delete(key)));
     await self.clients.claim();
   })());
 });

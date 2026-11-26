@@ -15,7 +15,12 @@ const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
 const statusEl = $('#status-message');
 const toastRegion = $('#toast-region');
+const loading = window.Bl3ndLoading;
+function loadingProgress(value, message) { loading?.update(value, message); }
+
+loadingProgress(6, 'Checking device and graphics capabilities…');
 const capabilities = await detectCapabilities();
+loadingProgress(22, 'Device profile ready · initializing the 3D renderer…');
 
 function status(message) { if (statusEl) statusEl.textContent = message; }
 function notify(message, type = '') {
@@ -33,11 +38,12 @@ let viewport;
 try {
   viewport = new Viewport($('#viewport'), { pixelRatio: capabilities.pixelRatioCap, onStatus: status, onSelect: handleViewportSelection, onCursor: point => run('cursor.set', { point: point.toArray() }) });
 } catch (error) {
-  $('#loading-overlay').innerHTML = `<div class="panel-note">3D renderer could not start.<br>${String(error.message || error)}</div>`;
+  loading?.fail(error);
   throw error;
 }
 const sceneDocument = new SceneDocument(viewport.scene);
 viewport.setContent(sceneDocument.content);
+loadingProgress(43, 'Viewport created · preparing the scene document…');
 
 let ui;
 const undoManager = new UndoManager({
@@ -49,10 +55,11 @@ const modalTransform = new ModalTransform({ document: sceneDocument, undoManager
 const commandBus = new CommandBus({ undoManager, status });
 const modifierStack = new ModifierStack({ onStatus: status });
 const modelIO = new ModelIO(sceneDocument, notify);
+loadingProgress(50, 'Scene document, undo history and model I/O are initialized…');
 
 async function run(name, payload = {}) {
   try { return await commandBus.dispatch(name, { ...payload, document: sceneDocument }); }
-  catch (error) { notify(error?.message || String(error), 'error'); status('Command failed'); return false; }
+  catch (error) { console.error(`[Bl3nd command: ${name}]`, error); notify(error?.message || String(error), 'error'); status(`Command failed · ${error?.message || name}`); return false; }
 }
 
 async function reapplyModifiers() {
@@ -163,6 +170,7 @@ function registerCommands() {
   });
 }
 registerCommands();
+loadingProgress(61, 'Modeling commands registered · preparing workspace controls…');
 
 function faceIdForTriangle(hem, triangleIndex) {
   let tri = 0;
@@ -258,6 +266,7 @@ ui = {
     pad.hidden=!capabilities.tier.includes('Mobile'); $('#pad-value').textContent=modalTransform.numeric || '0';
   }
 };
+loadingProgress(73, 'Building the workspace panels and editing controls…');
 
 // Header, panels, tools and mobile quick actions all route into the command bus.
 $('#undo-btn').addEventListener('click',()=>ui.undo()); $('#redo-btn').addEventListener('click',()=>ui.redo());
@@ -315,18 +324,24 @@ viewportCanvas.addEventListener('pointermove',event=>{if(modalTransform.active){
 viewportCanvas.addEventListener('contextmenu',event=>{if(modalTransform.active){event.preventDefault();run('transform.modal_cancel');}});
 new TouchController(viewport,notify);
 new KeyboardController({viewport,commandBus,modalTransform,getDocument:()=>sceneDocument,ui,notify});
+loadingProgress(88, 'Keyboard, pointer and touch controls are ready…');
 $('#sw-profile').textContent='Registering…';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js',{scope:'./'}).then(()=>$('#sw-profile').textContent='Registered').catch(()=>$('#sw-profile').textContent='Unavailable');
 } else $('#sw-profile').textContent='Unsupported';
 
 // Initial scene: one editable cube at the world origin.
-await run('object.add_primitive',{primitive:'cube'});
+loadingProgress(94, 'Creating the starter object…');
+const starterObject = await run('object.add_primitive', { primitive: 'cube' });
+if (!starterObject?.isMesh) {
+  throw new Error('The starter cube could not be created. Check the browser console for the command error, then reload Bl3nd.');
+}
 sceneDocument.activeObject.position.set(0,0,0);
 refresh();
-$('#loading-overlay').classList.add('done');
-setTimeout(()=>$('#loading-overlay').remove(),350);
+loadingProgress(98, 'Finalizing the workspace and browser storage…');
 status(`Ready · ${capabilities.tier} tier · ${capabilities.webgpu?'WebGPU detected':'WebGL path'}`);
 if(capabilities.storage){
   try{await navigator.storage.persist?.();}catch{/* persistence is browser-managed */}
 }
+loadingProgress(99, 'All systems initialized…');
+loading?.finish();

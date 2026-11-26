@@ -5,7 +5,7 @@ export class UndoManager {
   }
   async directory() {
     if (!navigator.storage?.getDirectory) return null;
-    if (!this.directoryPromise) this.directoryPromise = navigator.storage.getDirectory().then(root => root.getDirectoryHandle('forge-undo', { create: true })).catch(() => null);
+    if (!this.directoryPromise) this.directoryPromise = navigator.storage.getDirectory().then(root => root.getDirectoryHandle('bl3nd-undo-v1', { create: true })).catch(() => null);
     return this.directoryPromise;
   }
   async saveSnapshot(snapshot) {

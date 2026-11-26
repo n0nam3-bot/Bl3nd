@@ -1,6 +1,6 @@
-# FORGE 3D — Browser Modeler
+# Bl3nd — Browser 3D Workspace
 
-A zero-build, mobile-first browser 3D modeling foundation. The app runs as static HTML/CSS/native JavaScript modules and uses Three.js from a pinned CDN import map.
+Bl3nd is a zero-build, mobile-first browser 3D modeling foundation. The app runs as static HTML/CSS/native JavaScript modules and uses Three.js from a pinned CDN import map.
 
 ## First deployment
 
@@ -8,6 +8,8 @@ A zero-build, mobile-first browser 3D modeling foundation. The app runs as stati
 2. Create `.github/workflows/unpack-update.yml` in the GitHub web editor using the exact bootstrap workflow supplied with this release.
 3. In repository Settings, set Actions → General → Workflow permissions to **Read and write permissions**. Set Pages → Build and deployment → Source to **GitHub Actions**.
 4. Upload `initial-release.zip` into the repository's `uploads/` folder. The action extracts it into the repository root, removes the uploaded ZIP, commits the files, and dispatches the Pages deployment.
+
+The application displays staged startup progress and keeps the exact startup error visible if initialization fails. The progress percentage represents completed initialization phases, not downloaded-byte progress.
 
 The application does not require a build command. Open the GitHub Pages URL after the deployment workflow completes.
 

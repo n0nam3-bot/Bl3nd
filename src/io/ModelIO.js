@@ -49,12 +49,12 @@ export class ModelIO {
       const exporter=new GLTFExporter();
       const result=await new Promise((resolve,reject)=>exporter.parse(group,resolve,reject,{binary:format==='glb',onlyVisible:true,trs:false}));
       blob=format==='glb' ? new Blob([result],{type:'model/gltf-binary'}) : new Blob([JSON.stringify(result,null,2)],{type:'model/gltf+json'});
-      filename=`forge-export.${format}`;
+      filename=`bl3nd-export.${format}`;
     } else if (format === 'obj') {
-      blob=new Blob([new OBJExporter().parse(group)],{type:'text/plain'}); filename='forge-export.obj';
+      blob=new Blob([new OBJExporter().parse(group)],{type:'text/plain'}); filename='bl3nd-export.obj';
     } else if (format === 'stl') {
       const output=new STLExporter().parse(group,{binary:true});
-      blob=new Blob([output],{type:'model/stl'}); filename='forge-export.stl';
+      blob=new Blob([output],{type:'model/stl'}); filename='bl3nd-export.stl';
     } else throw new Error('Unsupported export format.');
     downloadBlob(blob,filename); this.notify?.(`Exported ${filename}`,'success');
   }

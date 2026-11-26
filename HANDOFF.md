@@ -1,4 +1,4 @@
-# FORGE 3D — Living Engineering Handoff
+# Bl3nd — Living Engineering Handoff
 
 ## AI Agent Execution Rules
 
@@ -19,7 +19,7 @@
 - Static root: `index.html`.
 - Native ES modules: browser `<script type="module">` imports under `src/`.
 - Import map: pinned Three.js `0.180.0` modules from jsDelivr; no package manager or build step.
-- PWA shell: `manifest.json` and `sw.js`; first visit needs a network connection for the CDN modules. The service worker caches the application shell and successfully fetched CDN scripts for later use.
+- PWA shell: `manifest.json` and `sw.js`; first visit needs a network connection for the CDN modules. The service worker caches the application shell and successfully fetched CDN scripts for later use. Cache namespace is versioned (`bl3nd-shell-v2` / `bl3nd-runtime-v2`) so deployed updates retire stale FORGE-era assets.
 - The project must remain deployable at a GitHub Pages project path, not only at `/`.
 
 ### Core/presentation separation
@@ -49,7 +49,7 @@
 │       ├── unpack-update.yml       # Extracts uploaded ZIP updates and dispatches Pages deployment
 │       └── pages.yml               # No-build GitHub Pages deployment
 ├── assets/
-│   ├── icon.svg                    # Vector PWA/app icon
+│   ├── icon.svg                    # Bl3nd vector PWA/app icon
 │   ├── icon-192.png                # Home-screen icon
 │   └── icon-512.png                # Installable PWA icon
 ├── uploads/
@@ -94,7 +94,7 @@ Status meanings: **Working** = implemented end-to-end in the current foundation;
 | Zero-build static app | Working | Native modules and pinned Three.js CDN import map; no compile step. |
 | GitHub mobile ZIP workflow | Working after setup | ZIP extraction, safe path checks, cleanup, bot commit, and Pages workflow dispatch. |
 | GitHub Pages workflow | Working after setup | Static artifact copied without a frontend build. Repo Pages source still needs one-time configuration. |
-| Responsive PWA shell | Partial | Manifest, icon, service worker, responsive layout; offline/CDN cache behavior is browser-dependent. |
+| Responsive PWA shell | Partial | Bl3nd manifest/icons, versioned service worker cache, responsive layout; offline/CDN cache behavior is browser-dependent. |
 | Device capability probe | Partial | Detects tier, memory hint, CPU threads, WebGPU adapter, WebGL2 and OPFS. Tier currently affects pixel ratio and history budget only. |
 | 3D renderer | Partial | Three.js WebGL renderer, grid, axes, orbit/pan/zoom, standard view buttons and frame selected. No active WebGPU backend. |
 | Command bus | Working | Named commands, handler registry, and document snapshot boundaries. Some continuous input updates use non-undo commands. |
@@ -108,6 +108,7 @@ Status meanings: **Working** = implemented end-to-end in the current foundation;
 | Undo/redo | Partial | OPFS snapshots, memory fallback, bounded history, undo/redo buttons and shortcuts. Browser storage quota/eviction and crash recovery need more testing. |
 | GLB/GLTF/OBJ/STL I/O | Partial | Browser loader/exporter paths for each format. Complex materials, skinning, animation, multiple material slots and very large model memory use are not fully validated. |
 | PC/Mobile controls | Partial | Mouse MMB orbit, Shift+MMB pan, right-drag pan, wheel zoom; touch orbit and pinch/pan; mobile action bar and on-screen numeric pad. Gesture conflicts require device testing. |
+| Startup diagnostics/progress | Partial | Phase-based progress indicator, exact startup error panel, retry button and detailed command errors are implemented; browser runtime verification remains outstanding. Percentages mark initialization milestones, not network download bytes. |
 | Blender pie menus | Partial | Contextual add and shading menus are currently compact grid menus, not true radial pie geometry. |
 | Bevel / Loop Cut | Not Started | Hotkey commands report that the topology operators are not implemented. |
 | Exact Blender clone | Not Started | No claim of exact operator parity, Blender file compatibility, full BMesh semantics, or full keymap parity. |
@@ -121,18 +122,21 @@ Status meanings: **Working** = implemented end-to-end in the current foundation;
 4. **Mesh operators:** bevel and loop cut are placeholders. Extrude and inset are useful initial polygon operations but have limited region validation, normals handling, and manifold safeguards. Subdivide splits triangles at edge midpoints.
 5. **Modifier fidelity:** Subdivision is a triangle midpoint split, Mirror does not merge center vertices, Array has a simple offset vector, and Solidify is a basic shell. These are not yet Blender-equivalent implementations.
 6. **Modal behavior:** mouse movement is a simplified viewport-space approximation. Plane constraints, local/global mode switching, snapping, proportional editing, transform orientation, individual-origin pivots, and numeric-unit expressions need implementation and tests.
-7. **PWA/CDN:** the first page load requires network access to jsDelivr. A strict CSP, content blocker, CDN outage, or offline first visit can prevent startup. The service worker caches runtime script requests after successful fetch; it does not package vendor code locally.
-8. **Mobile browser behavior:** iOS Safari may not expose `navigator.deviceMemory`; OPFS availability, persistence permission, WebGL memory ceilings, multitouch event ordering, and background-tab suspension vary. Android devices with limited graphics memory may still lose the WebGL context on heavy scenes.
-9. **Large-scene memory:** current serialization creates document snapshots in JavaScript before writing them to OPFS, so peak memory can temporarily rise. No chunked scene serialization, geometry paging, inactive-object disk swap, or OPFS virtual-memory manager is implemented.
-10. **Worker scheduling:** one module Worker evaluates the full mesh payload. There is no chunk scheduler, worker pool, task cancellation, progress protocol, or transfer-buffer reuse.
-11. **File I/O:** imported meshes are flattened into independent document objects. Advanced GLTF scene features and STL unit conventions need validation. Exporting a very large model may temporarily duplicate substantial buffers.
-12. **GitHub Actions:** the upload workflow is configured for branch `main`. Change that branch filter if the repository default branch has a different name. Set repository Actions workflow permissions to **Read and write permissions**. The first package dispatches Pages after the bot commit because a `GITHUB_TOKEN`-authored push does not automatically start a separate push-triggered workflow.
-13. **ZIP safety:** archive entry paths are checked for absolute paths and parent-directory traversal. Only upload trusted project update packages; do not use this workflow as a public untrusted ZIP extraction service.
+7. **PWA/CDN:** the first page load requires network access to jsDelivr. A strict CSP, content blocker, CDN outage, or offline first visit can prevent startup. The service worker caches runtime script requests after successful fetch; it does not package vendor code locally. Cache names must be bumped when app-shell behavior changes; v2 now retires the stale `forge-*` caches that could keep older JavaScript alive.
+8. **Startup progress:** the progress bar advances through initialization milestones. It is intentionally not represented as byte-level CDN download progress because native module imports do not expose reliable per-module byte progress. Startup errors now remain visible with their actual message and a reload action. The current repository has no `refreshModel` symbol; the reported undefined reference was consistent with stale cached JavaScript, so service-worker cache invalidation is included in v0.1.1.
+9. **Mobile browser behavior:** iOS Safari may not expose `navigator.deviceMemory`; OPFS availability, persistence permission, WebGL memory ceilings, multitouch event ordering, and background-tab suspension vary. Android devices with limited graphics memory may still lose the WebGL context on heavy scenes.
+10. **Large-scene memory:** current serialization creates document snapshots in JavaScript before writing them to OPFS, so peak memory can temporarily rise. No chunked scene serialization, geometry paging, inactive-object disk swap, or OPFS virtual-memory manager is implemented.
+11. **Worker scheduling:** one module Worker evaluates the full mesh payload. There is no chunk scheduler, worker pool, task cancellation, progress protocol, or transfer-buffer reuse.
+12. **File I/O:** imported meshes are flattened into independent document objects. Advanced GLTF scene features and STL unit conventions need validation. Exporting a very large model may temporarily duplicate substantial buffers.
+13. **GitHub Actions:** the upload workflow is configured for branch `main`. Change that branch filter if the repository default branch has a different name. Set repository Actions workflow permissions to **Read and write permissions**. The first package dispatches Pages after the bot commit because a `GITHUB_TOKEN`-authored push does not automatically start a separate push-triggered workflow.
+14. **ZIP safety:** archive entry paths are checked for absolute paths and parent-directory traversal. Only upload trusted project update packages; do not use this workflow as a public untrusted ZIP extraction service.
 
 ## Roadmap
 
 ### Phase 1 — Behavioral Core
 - [x] Zero-build static app and GitHub mobile ZIP workflow.
+- [x] Bl3nd product rebrand, refreshed app icons and PWA metadata.
+- [x] Startup progress milestones, actionable startup errors and stale service-worker cache invalidation.
 - [x] Command bus and document serialization boundary.
 - [x] Half-edge connectivity data model.
 - [x] Basic object/edit modes, primitive creation, face selection, extrude, inset, delete and subdivide.
@@ -156,12 +160,19 @@ Status meanings: **Working** = implemented end-to-end in the current foundation;
 - [ ] Extensive iOS Safari, Android Chrome and desktop browser test matrix.
 
 ### Phase 3 — Custom Reskin
-- [ ] Replace FORGE 3D visual identity with the agreed custom product design.
+- [x] Replace the FORGE 3D visual identity with the Bl3nd name, B-mark icon and PWA metadata.
 - [ ] Add configurable workspace layouts, themes, icons, shortcuts and contextual help.
 - [ ] Polish onboarding, install prompt, offline status, recovery messaging and mobile ergonomics.
 - [ ] Performance profiling, accessibility audit and release-quality documentation.
 
 ## Changelog
+
+### 2026-11-26 — `bl3nd-startup-rebrand-fix.zip` — v0.1.1
+- Rebranded the browser title, visible header, PWA name, SVG/PNG icons, undo-storage namespace and export filenames to Bl3nd.
+- Added a staged startup progress bar, percent display, exact startup error message and reload action. The percentage represents completed initialization stages rather than downloaded bytes. The versioned service worker is registered before the app module; an already-controlled startup page reloads once when the new worker takes control.
+- Added detailed console and status reporting for command failures and fail-fast validation of the initial starter cube.
+- Bumped the service-worker cache namespace to `bl3nd-shell-v2` / `bl3nd-runtime-v2` and explicitly removed old `forge-*` caches to prevent stale JavaScript from surviving deployment.
+- Confirmed the current repository source has no `refreshModel` reference; the reported error is addressed as a stale-cache problem rather than by adding an unrelated global shim.
 
 ### 2026-11-26 — `initial-release.zip` — v0.1.0
 - Created the no-build static PWA foundation and mobile-responsive modeling shell.

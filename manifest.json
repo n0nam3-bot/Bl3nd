@@ -1,7 +1,7 @@
 {
-  "name": "FORGE 3D Browser Modeler",
-  "short_name": "FORGE 3D",
-  "description": "A mobile-first, browser-native 3D modeling workspace.",
+  "name": "Bl3nd 3D Workspace",
+  "short_name": "Bl3nd",
+  "description": "Bl3nd is a mobile-first, browser-native 3D modeling workspace.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
