@@ -95,6 +95,75 @@ test('Bevel modal confirm records exactly one undo transaction', async () => {
   assert.equal(session.commits[0].after.faces.length, 7);
 });
 
+function makeValenceFourSession() {
+  const positions = [
+    [-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],
+    [-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1],[0,0,1]
+  ];
+  const faces = [
+    [0,3,2,1], [0,1,5,4], [1,2,6,5], [2,3,7,6], [3,0,4,7],
+    [4,5,8], [5,6,8], [6,7,8], [7,4,8]
+  ];
+  const hem = new HalfEdgeMesh(positions, faces);
+  hem.setSelectionMode('edge');
+  for (const pair of [[0,4],[4,5],[5,1]]) {
+    const edge = hem.edges.find(item => keyFor(...item.vertices) === keyFor(...pair));
+    assert.ok(edge);
+    hem.selectEdge(edge.id, true);
+  }
+  const mesh = { userData: { hem } };
+  const document = {
+    mode: 'edit', selectionMode: 'edge', activeObject: mesh,
+    updateMesh() {},
+    async serialize() {
+      return {
+        selectionMode: this.selectionMode,
+        positions: mesh.userData.hem.positions.map(point => [...point]),
+        faces: mesh.userData.hem.faces.map(face => [...face]),
+        edgeSelection: [...mesh.userData.hem.edgeSelection]
+      };
+    },
+    async restore(snapshot) {
+      const restored = new HalfEdgeMesh(snapshot.positions, snapshot.faces);
+      restored.setSelectionMode('edge');
+      restored.edgeSelection = new Set(snapshot.edgeSelection);
+      mesh.userData.hem = restored;
+    }
+  };
+  const commits = [];
+  const undoManager = { async record(label, before, after) { commits.push({ label, before, after }); } };
+  return { hem, mesh, document, commits, undoManager };
+}
+
+test('Bevel modal previews valence-four cap patches and commits one undo transaction', async () => {
+  const session = makeValenceFourSession();
+  const modal = new BevelModal({ document: session.document, undoManager: session.undoManager, viewport: {}, status() {}, onChange() {} });
+  assert.equal(await modal.begin(), true, modal.lastError);
+  assert.equal(modal.lastResult.capPatches, 2);
+  assert.equal(session.mesh.userData.hem.validateTopology().valid, true);
+  assert.equal(modal.setSegments(3), true, modal.lastError);
+  assert.equal(session.mesh.userData.hem.validateTopology().valid, true);
+  const result = await modal.confirm();
+  assert.equal(result.changed, true);
+  assert.equal(result.capPatches, 2);
+  assert.equal(result.segments, 3);
+  assert.equal(session.mesh.userData.hem.validateTopology().valid, true);
+  assert.equal(session.commits.length, 1);
+  assert.equal(session.commits[0].label, 'Bevel');
+});
+
+test('Bevel modal cancel restores valence-four cap patches without an undo record', async () => {
+  const session = makeValenceFourSession();
+  const before = await session.document.serialize();
+  const modal = new BevelModal({ document: session.document, undoManager: session.undoManager, viewport: {}, status() {}, onChange() {} });
+  assert.equal(await modal.begin(), true, modal.lastError);
+  assert.equal(modal.setSegments(4), true, modal.lastError);
+  assert.notDeepEqual(await session.document.serialize(), before);
+  assert.equal(await modal.cancel(), true);
+  assert.deepEqual(await session.document.serialize(), before);
+  assert.equal(session.commits.length, 0);
+});
+
 test('Bevel modal refuses boundary edges without changing the source mesh', async () => {
   const session = makeSession({ boundary: true });
   const before = await session.document.serialize();

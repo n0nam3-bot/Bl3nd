@@ -399,6 +399,29 @@ function makeCube() {
   return new HalfEdgeMesh(positions, faces);
 }
 
+function makeValenceFourChainFixture() {
+  const positions = [
+    [-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],
+    [-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1],[0,0,1]
+  ];
+  // Split only the top cube face around one center vertex. The four top
+  // corners become closed valence-four fans; the lower corners remain tri-valent.
+  const faces = [
+    [0,3,2,1], [0,1,5,4], [1,2,6,5], [2,3,7,6], [3,0,4,7],
+    [4,5,8], [5,6,8], [6,7,8], [7,4,8]
+  ];
+  return new HalfEdgeMesh(positions, faces);
+}
+
+function selectVertexPath(hem, path) {
+  hem.setSelectionMode('edge');
+  for (let index = 0; index < path.length - 1; index++) {
+    const edge = hem.edges.find(item => keyFor(...item.vertices) === keyFor(path[index], path[index + 1]));
+    assert.ok(edge, `missing path edge ${path[index]}-${path[index + 1]}`);
+    hem.selectEdge(edge.id, index > 0);
+  }
+}
+
 test('Bevel trims a closed cube-like tri-valent edge neighborhood and keeps topology valid', () => {
   const hem = makeCube();
   hem.setSelectionMode('edge');
@@ -863,7 +886,80 @@ test('Connected Bevel rejects higher-valence miter fans without mutating the sou
   const before = JSON.stringify({ positions: hem.positions, faces: hem.faces, selection: [...hem.edgeSelection] });
   const result = hem.bevelSelectedEdges({ amount: 0.25 });
   assert.equal(result.changed, false);
-  assert.match(result.reason, /valence-three/i);
+  assert.match(result.reason, /tri-valent terminal|valence-three/i);
+  assert.equal(JSON.stringify({ positions: hem.positions, faces: hem.faces, selection: [...hem.edgeSelection] }), before);
+});
+
+test('Connected Bevel closes valence-four internal junctions with oriented cap patches', () => {
+  for (const path of [[0,4,5,1], [1,5,4,0], [3,7,6,2], [2,6,7,3], [0,4,7,3], [3,7,4,0], [1,5,6,2], [2,6,5,1]]) {
+    const hem = makeValenceFourChainFixture();
+    assert.equal(hem.validateTopology().valid, true);
+    assert.deepEqual(path.map(vertexId => hem.orderedVertexFan(vertexId)?.length), [3,4,4,3]);
+    selectVertexPath(hem, path);
+    const beforeFaces = hem.faces.length;
+    const result = hem.bevelSelectedEdges({ amount: 0.25 });
+    const report = hem.validateTopology();
+    assert.equal(result.changed, true, `${path.join('-')}: ${result.reason}`);
+    assert.equal(result.miterCount, 2);
+    assert.equal(result.miterEdges, 4);
+    assert.equal(result.capPatches, 2);
+    assert.equal(result.endCaps, 2);
+    assert.equal(result.selectedEdges, 8);
+    assert.equal(hem.faces.length, beforeFaces + 5);
+    assert.equal(report.valid, true);
+    assert.equal(report.counts.boundaryEdges, 0);
+    assert.equal(report.counts.nonManifoldEdges, 0);
+    assert.equal(report.counts.inconsistentWinding, 0);
+  }
+});
+
+test('Connected Bevel supports mixed tri-valent and valence-four internal fans with segments', () => {
+  const hem = makeValenceFourChainFixture();
+  const path = [0,4,5,1,2];
+  assert.deepEqual(path.map(vertexId => hem.orderedVertexFan(vertexId)?.length), [3,4,4,3,3]);
+  selectVertexPath(hem, path);
+  const result = hem.bevelSelectedEdges({ amount: 0.25, segments: 4, profile: 0.65 });
+  const report = hem.validateTopology();
+  assert.equal(result.changed, true, result.reason);
+  assert.equal(result.chainLength, 4);
+  assert.equal(result.miterCount, 3);
+  assert.equal(result.capPatches, 2);
+  assert.equal(result.miterEdges, 5);
+  assert.equal(result.segments, 4);
+  assert.equal(report.valid, true);
+  assert.equal(report.counts.boundaryEdges, 0);
+  assert.equal(report.counts.nonManifoldEdges, 0);
+});
+
+test('Valence-four cap patches stay manifold through all segment counts in a rotated frame', () => {
+  const c = Math.cos(0.37), s = Math.sin(0.37), cx = Math.cos(0.29), sx = Math.sin(0.29);
+  for (let segments = 1; segments <= 8; segments++) {
+    const hem = makeValenceFourChainFixture();
+    hem.positions = hem.positions.map(([x, y, z]) => {
+      const rotatedX = c * x - s * y;
+      const rotatedY = s * x + c * y;
+      return [rotatedX, cx * rotatedY - sx * z, sx * rotatedY + cx * z];
+    });
+    hem.rebuild();
+    selectVertexPath(hem, [0,4,5,1]);
+    const result = hem.bevelSelectedEdges({ amount: 0.25, segments, profile: segments % 2 ? 0 : 1 });
+    const report = hem.validateTopology();
+    assert.equal(result.changed, true, `segments ${segments}: ${result.reason}`);
+    assert.equal(result.capPatches, 2);
+    assert.equal(result.miterEdges, 4);
+    assert.equal(report.valid, true, `segments ${segments} produced invalid topology`);
+    assert.equal(report.counts.boundaryEdges, 0);
+    assert.equal(report.counts.nonManifoldEdges, 0);
+  }
+});
+
+test('Connected Bevel rejects a valence-four terminal fan without mutating the source', () => {
+  const hem = makeValenceFourChainFixture();
+  selectVertexPath(hem, [4,5,1,2]);
+  const before = JSON.stringify({ positions: hem.positions, faces: hem.faces, selection: [...hem.edgeSelection] });
+  const result = hem.bevelSelectedEdges({ amount: 0.25 });
+  assert.equal(result.changed, false);
+  assert.match(result.reason, /tri-valent terminal/i);
   assert.equal(JSON.stringify({ positions: hem.positions, faces: hem.faces, selection: [...hem.edgeSelection] }), before);
 });
 

@@ -731,7 +731,7 @@ export class HalfEdgeMesh {
       segments,
       profile,
       insertedVertices: baseResult.insertedVertices + refined.insertedVertices,
-      createdFaces: refined.createdFaces,
+      createdFaces: refined.createdFaces + (baseResult.capPatches || 0),
       selectedEdges: this.edgeSelection.size
     };
   }
@@ -1152,19 +1152,25 @@ export class HalfEdgeMesh {
       ) * winding > epsilon);
     };
 
-    const incidentEdgesByVertex = new Map();
+    const fanValenceByVertex = new Map();
     const affectedFaceIds = new Set();
-    for (const vertexId of pathVertices) {
+    for (let pathIndex = 0; pathIndex < pathVertices.length; pathIndex++) {
+      const vertexId = pathVertices[pathIndex];
       const incidentFaces = this.faces.reduce((ids, face, faceId) => {
         if (face.includes(vertexId)) ids.push(faceId);
         return ids;
       }, []);
       const incidentEdges = this.edges.filter(edge => edge.vertices.includes(vertexId));
-      if (incidentFaces.length !== 3 || incidentEdges.length !== 3 ||
-          incidentEdges.some(edge => edge.halfEdges.length !== 2 || !edge.halfEdges.every(halfEdge => halfEdge.twin))) {
-        return fail('Connected chain Bevel currently requires closed valence-three fans at every path vertex.');
+      const fan = this.orderedVertexFan(vertexId);
+      const isEndpoint = pathIndex === 0 || pathIndex === pathVertices.length - 1;
+      const supportedValence = isEndpoint ? incidentEdges.length === 3 :
+        (incidentEdges.length === 3 || incidentEdges.length === 4);
+      if (!supportedValence || incidentFaces.length !== incidentEdges.length || !fan || fan.length !== incidentEdges.length ||
+          incidentEdges.some(edge => edge.halfEdges.length !== 2 || !edge.halfEdges.every(halfEdge => halfEdge.twin)) ||
+          fan.some(halfEdge => !halfEdge?.face || !incidentEdges.includes(halfEdge.edge))) {
+        return fail('Connected chain Bevel requires closed tri-valent terminal fans and closed tri- or valence-four internal fans.');
       }
-      incidentEdgesByVertex.set(vertexId, incidentEdges);
+      fanValenceByVertex.set(vertexId, incidentEdges.length);
       incidentFaces.forEach(id => affectedFaceIds.add(id));
     }
     for (const faceId of affectedFaceIds) {
@@ -1296,10 +1302,29 @@ export class HalfEdgeMesh {
 
       const miterId = nextPositions.push(miterPoint) - 1;
       miterByVertexFace.set(`${center}:${sharedFaceId}`, miterId);
-      const thirdEdge = incidentEdgesByVertex.get(center).find(edge => !selectedEdgeIds.has(edge.id));
-      const thirdCut = cutId(center, thirdEdge?.id);
-      if (!thirdEdge || !Number.isInteger(thirdCut)) return fail('A chain miter end-cap edge could not be resolved.');
-      miterInfos.push({ vertexId: center, faceId: sharedFaceId, miterId, thirdCut });
+      const capCutForPlan = plan => {
+        const capFaceId = plan.faceAId === sharedFaceId ? plan.faceBId : plan.faceAId;
+        const capFace = this.faces[capFaceId];
+        const capVertexIndex = capFace?.indexOf(center) ?? -1;
+        if (capVertexIndex < 0) return null;
+        const beforeEdge = edgeIdFor(capFace[(capVertexIndex - 1 + capFace.length) % capFace.length], center);
+        const afterEdge = edgeIdFor(center, capFace[(capVertexIndex + 1) % capFace.length]);
+        const flankEdges = [beforeEdge, afterEdge].filter(id => Number.isInteger(id) && id !== plan.edgeId && !selectedEdgeIds.has(id));
+        if (flankEdges.length !== 1) return null;
+        return cutId(center, flankEdges[0]);
+      };
+      const leftCapCut = capCutForPlan(leftPlan);
+      const rightCapCut = capCutForPlan(rightPlan);
+      if (!Number.isInteger(leftCapCut) || !Number.isInteger(rightCapCut)) {
+        return fail('A chain miter could not resolve both cap-side cut points.');
+      }
+      if (fanValenceByVertex.get(center) === 3 && leftCapCut !== rightCapCut) {
+        return fail('A tri-valent miter must close on one shared cap edge.');
+      }
+      if (fanValenceByVertex.get(center) === 4 && leftCapCut === rightCapCut) {
+        return fail('A valence-four miter requires two distinct cap-side cut points.');
+      }
+      miterInfos.push({ vertexId: center, faceId: sharedFaceId, miterId, capCuts: [leftCapCut, rightCapCut] });
     }
 
     if (miterInfos.length !== edgeCount - 1) {
@@ -1338,6 +1363,7 @@ export class HalfEdgeMesh {
     }
 
     const bevelFaces = [];
+    const bevelFaceStartId = nextFaces.length;
     for (const plan of plans) {
       const pA0 = miterByVertexFace.get(`${plan.start}:${plan.faceAId}`) ?? cutId(plan.start, plan.first.prev.edge.id);
       const pB0 = miterByVertexFace.get(`${plan.end}:${plan.faceAId}`) ?? cutId(plan.end, plan.first.next.edge.id);
@@ -1349,6 +1375,33 @@ export class HalfEdgeMesh {
       nextFaces.push(strip);
     }
 
+    // A valence-four junction leaves a triangular opening between the shared
+    // face miter and the two independently trimmed edges on the opposite fan.
+    // Recover the unique winding that opposes all three existing boundary
+    // half-edges; never guess a cap orientation from geometry alone.
+    const capPatchFaces = [];
+    for (const info of miterInfos) {
+      const [leftCut, rightCut] = info.capCuts;
+      if (leftCut === rightCut) continue; // The tri-valent case is one shared miter edge.
+      const provisional = new HalfEdgeMesh(nextPositions, nextFaces);
+      const options = [
+        [info.miterId, leftCut, rightCut],
+        [info.miterId, rightCut, leftCut]
+      ];
+      const validOrientations = options.filter(face => face.every((start, index) => {
+        const end = face[(index + 1) % face.length];
+        const edge = provisional.edges.find(item => keyFor(...item.vertices) === keyFor(start, end));
+        if (!edge || edge.halfEdges.length !== 1) return false;
+        const existing = edge.halfEdges[0];
+        return existing.origin === end && existing.next?.origin === start;
+      }));
+      if (validOrientations.length !== 1) {
+        return fail('A valence-four cap patch has an ambiguous or incomplete boundary; the original mesh was not changed.');
+      }
+      capPatchFaces.push(validOrientations[0]);
+      nextFaces.push(validOrientations[0]);
+    }
+
     const candidate = new HalfEdgeMesh(nextPositions, nextFaces);
     const compactMap = candidate.compact();
     const report = candidate.validateTopology();
@@ -1357,16 +1410,19 @@ export class HalfEdgeMesh {
       if (!candidate.triangulateFace(faceId).length) return fail('The proposed chain produced a face that could not be triangulated.');
     }
     if (![...affectedFaceIds].every(faceId => isPlanarConvex(candidate.faces[faceId], candidate.positions)) ||
-        !bevelFaces.every(face => isPlanarConvex(face.map(id => compactMap.get(id)), candidate.positions))) {
-      return fail('The chain must preserve planar, convex source faces, end caps and bevel strips.');
+        !bevelFaces.every(face => isPlanarConvex(face.map(id => compactMap.get(id)), candidate.positions)) ||
+        !capPatchFaces.every(face => isPlanarConvex(face.map(id => compactMap.get(id)), candidate.positions))) {
+      return fail('The chain must preserve planar, convex source faces, cap patches, end caps and bevel strips.');
     }
 
-    const miterKeys = new Set(miterInfos.map(info => keyFor(compactMap.get(info.miterId), compactMap.get(info.thirdCut))));
+    const miterKeys = new Set(miterInfos.flatMap(info => info.capCuts.map(cutId =>
+      keyFor(compactMap.get(info.miterId), compactMap.get(cutId))
+    )));
     const edgeIdsByKey = new Map(candidate.edges.map(edge => [keyFor(...edge.vertices), edge.id]));
     for (const key of miterKeys) {
       const miterEdge = candidate.edges.filter(edge => keyFor(...edge.vertices) === key);
       if (miterEdge.length !== 1 || miterEdge[0].halfEdges.length !== 2 || !miterEdge[0].halfEdges.every(halfEdge => halfEdge.twin)) {
-        return fail('Each chain miter must be one shared manifold edge between its bevel strips.');
+        return fail('Each chain miter boundary must be a shared manifold edge between its strip and cap patch.');
       }
     }
     const perimeterKeys = new Set();
@@ -1405,14 +1461,15 @@ export class HalfEdgeMesh {
       maxWidth,
       bevelCount: plans.length,
       miterCount: miterInfos.length,
-      miterEdges: miterInfos.length,
+      miterEdges: miterKeys.size,
+      capPatches: capPatchFaces.length,
       insertedVertices: cutIdByKey.size + miterInfos.length,
-      createdFaces: plans.length,
+      createdFaces: plans.length + capPatchFaces.length,
       selectedEdges: this.edgeSelection.size,
       endCaps: 2,
       chainLength: plans.length,
       bevelFaceRefs: plans.map((plan, index) => ({
-        faceId: candidate.faces.length - plans.length + index,
+        faceId: bevelFaceStartId + index,
         endpointPoints: endpointRefs[index]
       }))
     };
