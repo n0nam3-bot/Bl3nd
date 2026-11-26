@@ -180,9 +180,9 @@ test('Bevel modal previews valence-six cap patches and commits one undo transact
   assert.equal(await modal.begin(), true, modal.lastError);
   assert.equal(modal.lastResult.capPatches, 9);
   assert.equal(modal.lastResult.profileScale, 0.25);
-  assert.ok(statuses.some(message => message.includes('high-valence profile limited to 25%')));
   assert.equal(session.mesh.userData.hem.validateTopology().valid, true);
   assert.equal(modal.setSegments(4), true, modal.lastError);
+  assert.ok(statuses.some(message => message.includes('high-valence profile limited to 25%')));
   assert.equal(session.mesh.userData.hem.validateTopology().valid, true);
   const result = await modal.confirm();
   assert.equal(result.changed, true);
@@ -198,6 +198,93 @@ test('Bevel modal cancellation restores a valence-six cap patch preview without 
   const before = await session.document.serialize();
   const modal = new BevelModal({ document: session.document, undoManager: session.undoManager, viewport: {}, status() {}, onChange() {} });
   assert.equal(await modal.begin(), true, modal.lastError);
+  assert.equal(modal.setSegments(5), true, modal.lastError);
+  assert.notDeepEqual(await session.document.serialize(), before);
+  assert.equal(await modal.cancel(), true);
+  assert.deepEqual(await session.document.serialize(), before);
+  assert.equal(session.commits.length, 0);
+});
+
+function makeValenceTerminalSession(targetValence = 6) {
+  const positions = [
+    [-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],
+    [-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1],[0,0,1],[0,0,-1]
+  ];
+  const faces = [
+    [0,3,9],[3,2,9],[2,1,9],[1,0,9],
+    [0,1,5,4],[1,2,6,5],[2,3,7,6],[3,0,4,7],
+    [4,5,8],[5,6,8],[6,7,8],[7,4,8]
+  ];
+  const splitTriangle = faceIndex => {
+    const [a,b,c] = faces[faceIndex];
+    const centerId = positions.push([0,1,2].map(axis =>
+      (positions[a][axis] + positions[b][axis] + positions[c][axis]) / 3
+    )) - 1;
+    faces.splice(faceIndex, 1, [a,b,centerId], [b,c,centerId], [c,a,centerId]);
+  };
+  if (targetValence >= 5) splitTriangle(faces.findIndex(face => face.length === 3 && face.includes(0) && face.includes(3)));
+  if (targetValence >= 6) {
+    splitTriangle(faces.findIndex(face => face.length === 3 && face.includes(0) && face.includes(1)));
+    splitTriangle(faces.findIndex(face => face.length === 3 && face.includes(1) && face.includes(2)));
+  }
+  const hem = new HalfEdgeMesh(positions, faces);
+  hem.setSelectionMode('edge');
+  for (const pair of [[0,4],[4,5],[5,1]]) {
+    const edge = hem.edges.find(item => keyFor(...item.vertices) === keyFor(...pair));
+    assert.ok(edge);
+    hem.selectEdge(edge.id, true);
+  }
+  const mesh = { userData: { hem } };
+  const document = {
+    mode: 'edit', selectionMode: 'edge', activeObject: mesh,
+    updateMesh() {},
+    async serialize() {
+      return {
+        selectionMode: this.selectionMode,
+        positions: mesh.userData.hem.positions.map(point => [...point]),
+        faces: mesh.userData.hem.faces.map(face => [...face]),
+        edgeSelection: [...mesh.userData.hem.edgeSelection]
+      };
+    },
+    async restore(snapshot) {
+      const restored = new HalfEdgeMesh(snapshot.positions, snapshot.faces);
+      restored.setSelectionMode('edge');
+      restored.edgeSelection = new Set(snapshot.edgeSelection);
+      mesh.userData.hem = restored;
+    }
+  };
+  const commits = [];
+  const undoManager = { async record(label, before, after) { commits.push({ label, before, after }); } };
+  return { hem, mesh, document, commits, undoManager };
+}
+
+test('Bevel modal previews valence-six terminal cap patches and commits one undo transaction', async () => {
+  const session = makeValenceTerminalSession(6);
+  const statuses = [];
+  const modal = new BevelModal({ document: session.document, undoManager: session.undoManager, viewport: {}, status(message) { statuses.push(message); }, onChange() {} });
+  assert.equal(await modal.begin(), true, modal.lastError);
+  assert.equal(modal.lastResult.maxChainValence, 6);
+  assert.equal(modal.lastResult.profileScale, 0.25);
+  assert.equal(session.mesh.userData.hem.validateTopology().valid, true);
+  assert.equal(modal.setSegments(4), true, modal.lastError);
+  assert.ok(statuses.some(message => message.includes('high-valence profile limited to 25%')));
+  assert.equal(modal.setProfile(1), true, modal.lastError);
+  assert.equal(session.mesh.userData.hem.validateTopology().valid, true);
+  const result = await modal.confirm();
+  assert.equal(result.changed, true);
+  assert.equal(result.maxChainValence, 6);
+  assert.equal(result.profileScale, 0.25);
+  assert.equal(session.mesh.userData.hem.validateTopology().valid, true);
+  assert.equal(session.commits.length, 1);
+  assert.equal(session.commits[0].label, 'Bevel');
+});
+
+test('Bevel modal cancellation restores a valence-five terminal cap preview without an undo record', async () => {
+  const session = makeValenceTerminalSession(5);
+  const before = await session.document.serialize();
+  const modal = new BevelModal({ document: session.document, undoManager: session.undoManager, viewport: {}, status() {}, onChange() {} });
+  assert.equal(await modal.begin(), true, modal.lastError);
+  assert.equal(modal.lastResult.maxChainValence, 5);
   assert.equal(modal.setSegments(5), true, modal.lastError);
   assert.notDeepEqual(await session.document.serialize(), before);
   assert.equal(await modal.cancel(), true);

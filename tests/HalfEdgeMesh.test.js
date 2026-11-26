@@ -446,6 +446,40 @@ function makeValenceFiveSixChainFixture(targetValence = 5) {
   return new HalfEdgeMesh(positions, faces);
 }
 
+function makeValenceTerminalChainFixture(targetValence = 4) {
+  const positions = [
+    [-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],
+    [-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1],[0,0,1],[0,0,-1]
+  ];
+  const faces = [
+    [0,3,9],[3,2,9],[2,1,9],[1,0,9],
+    [0,1,5,4],[1,2,6,5],[2,3,7,6],[3,0,4,7],
+    [4,5,8],[5,6,8],[6,7,8],[7,4,8]
+  ];
+  const splitTriangle = faceIndex => {
+    assert.notEqual(faceIndex, -1);
+    const [a,b,c] = faces[faceIndex];
+    const centerId = positions.push([0,1,2].map(axis =>
+      (positions[a][axis] + positions[b][axis] + positions[c][axis]) / 3
+    )) - 1;
+    faces.splice(faceIndex, 1, [a,b,centerId], [b,c,centerId], [c,a,centerId]);
+  };
+  // The bottom cap is triangulated first, giving both chain endpoints
+  // valence four. Further splits increase the first endpoint to valence five
+  // or six without changing the selected 0-4-5-1 path.
+  if (targetValence >= 5) splitTriangle(faces.findIndex(face => face.length === 3 && face.includes(0) && face.includes(3)));
+  if (targetValence >= 6) {
+    splitTriangle(faces.findIndex(face => face.length === 3 && face.includes(0) && face.includes(1)));
+    splitTriangle(faces.findIndex(face => face.length === 3 && face.includes(1) && face.includes(2)));
+  }
+  if (targetValence >= 7) {
+    const faceIndex = faces.findIndex(face => face.join(',') === '0,1,5,4');
+    assert.notEqual(faceIndex, -1);
+    faces.splice(faceIndex, 1, [0,1,5], [0,5,4]);
+  }
+  return new HalfEdgeMesh(positions, faces);
+}
+
 function selectVertexPath(hem, path) {
   hem.setSelectionMode('edge');
   for (let index = 0; index < path.length - 1; index++) {
@@ -905,22 +939,21 @@ test('Connected Bevel accepts the full eight-edge limit on a closed pentagonal p
   assert.equal(report.counts.nonManifoldEdges, 0);
 });
 
-test('Connected Bevel rejects higher-valence miter fans without mutating the source', () => {
+test('Connected Bevel closes a closed valence-four octahedron chain at both terminal caps', () => {
   const positions = [[0,0,1],[0,0,-1],[1,0,0],[0,1,0],[-1,0,0],[0,-1,0]];
   const faces = [[0,2,3],[0,3,4],[0,4,5],[0,5,2],[1,3,2],[1,4,3],[1,5,4],[1,2,5]];
   const hem = new HalfEdgeMesh(positions, faces);
   assert.equal(hem.validateTopology().valid, true);
-  hem.setSelectionMode('edge');
-  for (const pair of [[4,0],[0,3],[3,2]]) {
-    const edge = hem.edges.find(item => keyFor(...item.vertices) === keyFor(...pair));
-    assert.ok(edge);
-    hem.selectEdge(edge.id, true);
-  }
-  const before = JSON.stringify({ positions: hem.positions, faces: hem.faces, selection: [...hem.edgeSelection] });
+  selectVertexPath(hem, [4,0,3,2]);
+  assert.deepEqual([4,0,3,2].map(vertexId => hem.orderedVertexFan(vertexId)?.length), [4,4,4,4]);
   const result = hem.bevelSelectedEdges({ amount: 0.25 });
-  assert.equal(result.changed, false);
-  assert.match(result.reason, /tri-valent terminal|valence-three/i);
-  assert.equal(JSON.stringify({ positions: hem.positions, faces: hem.faces, selection: [...hem.edgeSelection] }), before);
+  const report = hem.validateTopology();
+  assert.equal(result.changed, true, result.reason);
+  assert.equal(result.endCaps, 2);
+  assert.equal(result.capPatches, 4);
+  assert.equal(report.valid, true);
+  assert.equal(report.counts.boundaryEdges, 0);
+  assert.equal(report.counts.nonManifoldEdges, 0);
 });
 
 test('Connected Bevel closes valence-four internal junctions with oriented cap patches', () => {
@@ -1047,13 +1080,68 @@ test('Connected Bevel rejects an internal valence-seven fan without mutating the
   assert.equal(JSON.stringify({ positions: hem.positions, faces: hem.faces, selection: [...hem.edgeSelection] }), before);
 });
 
-test('Connected Bevel rejects a valence-four terminal fan without mutating the source', () => {
+test('Connected Bevel supports a valence-four terminal fan', () => {
   const hem = makeValenceFourChainFixture();
-  selectVertexPath(hem, [4,5,1,2]);
+  const path = [4,5,1,2];
+  assert.deepEqual(path.map(vertexId => hem.orderedVertexFan(vertexId)?.length), [4,4,3,3]);
+  selectVertexPath(hem, path);
+  const result = hem.bevelSelectedEdges({ amount: 0.25, segments: 3, profile: 0.5 });
+  const report = hem.validateTopology();
+  assert.equal(result.changed, true, result.reason);
+  assert.equal(result.capPatches, 2);
+  assert.equal(result.maxChainValence, 4);
+  assert.equal(report.valid, true);
+  assert.equal(report.counts.boundaryEdges, 0);
+  assert.equal(report.counts.nonManifoldEdges, 0);
+});
+
+test('Connected Bevel supports valence-four through valence-six terminal cap patches', () => {
+  for (const valence of [4,5,6]) {
+    for (let segments = 1; segments <= 8; segments++) {
+      const hem = makeValenceTerminalChainFixture(valence);
+      assert.equal(hem.validateTopology().valid, true);
+      const path = valence === 5 ? [1,5,4,0] : [0,4,5,1];
+      const expectedFans = path.map(vertexId => hem.orderedVertexFan(vertexId)?.length);
+      assert.equal(Math.max(...expectedFans), valence);
+      if (valence === 6) {
+        assert.equal(expectedFans[0], 6);
+        assert.equal(expectedFans.at(-1), 6);
+      }
+      // Rotate the fixture without changing its topology so cap planes
+      // are tested without axis-aligned assumptions.
+      const angle = 0.37, tilt = 0.61;
+      const c = Math.cos(angle), sin = Math.sin(angle), ct = Math.cos(tilt), st = Math.sin(tilt);
+      hem.positions = hem.positions.map(([x,y,z]) => {
+        const rx = c*x - sin*y, ry = sin*x + c*y;
+        return [ct*rx + st*z, ry, -st*rx + ct*z];
+      });
+      hem.rebuild();
+      selectVertexPath(hem, path);
+      const profile = segments % 2 ? 0 : 1;
+      const result = hem.bevelSelectedEdges({ amount: 0.22, segments, profile });
+      const report = hem.validateTopology();
+      assert.equal(result.changed, true, `terminal valence ${valence}, ${segments} segments: ${result.reason}`);
+      assert.equal(result.maxChainValence, valence);
+      assert.equal(result.profileScale, valence > 4 ? 0.25 : 1);
+      assert.ok(result.capPatches >= 2);
+      assert.equal(result.endCaps, 2);
+      assert.equal(report.valid, true, `terminal valence ${valence}, ${segments} segments`);
+      assert.equal(report.counts.boundaryEdges, 0);
+      assert.equal(report.counts.nonManifoldEdges, 0);
+      assert.equal(report.counts.inconsistentWinding, 0);
+    }
+  }
+});
+
+test('Connected Bevel rejects a valence-seven terminal fan without mutating the source', () => {
+  const hem = makeValenceTerminalChainFixture(7);
+  assert.equal(hem.validateTopology().valid, true);
+  assert.equal(hem.orderedVertexFan(0)?.length, 7);
+  selectVertexPath(hem, [0,4,5,1]);
   const before = JSON.stringify({ positions: hem.positions, faces: hem.faces, selection: [...hem.edgeSelection] });
   const result = hem.bevelSelectedEdges({ amount: 0.25 });
   assert.equal(result.changed, false);
-  assert.match(result.reason, /tri-valent terminal/i);
+  assert.match(result.reason, /valence three through six/i);
   assert.equal(JSON.stringify({ positions: hem.positions, faces: hem.faces, selection: [...hem.edgeSelection] }), before);
 });
 

@@ -24,7 +24,7 @@ export class BevelModal {
   }
 
   profileSafetyNote() {
-    return this.lastResult?.profileScale < 1 ? ' · high-valence profile limited to 25% when segmented' : '';
+    return this.segments > 1 && this.lastResult?.profileScale < 1 ? ' · high-valence profile limited to 25%' : '';
   }
 
   async begin() {
