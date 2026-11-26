@@ -246,3 +246,45 @@ test('Bevel modal previews and commits multiple independent miter junctions in o
   assert.equal(commits[0].label, 'Bevel');
   assert.equal(commits[0].after.faces.length, 16);
 });
+
+
+test('Bevel modal previews, commits and records a three-edge chain as one undo transaction', async () => {
+  const session = makeSession();
+  session.hem.clearSelection();
+  for (const pair of [[4,5],[5,6],[6,7]]) {
+    const edge = session.hem.edges.find(item => keyFor(...item.vertices) === keyFor(...pair));
+    assert.ok(edge);
+    session.hem.selectEdge(edge.id, true);
+  }
+  const modal = new BevelModal(session);
+  assert.equal(await modal.begin(), true, modal.lastError);
+  assert.equal(modal.seedEdgeIds.length, 3);
+  assert.equal(modal.lastResult.miterCount, 2);
+  assert.equal(modal.lastResult.endCaps, 2);
+  assert.equal(session.mesh.userData.hem.validateTopology().valid, true);
+  assert.equal(modal.setAmount(0.4), true);
+  const result = await modal.confirm();
+  assert.equal(result.changed, true);
+  assert.equal(result.bevelCount, 3);
+  assert.equal(result.miterEdges, 2);
+  assert.equal(result.selectedEdges, 8);
+  assert.equal(session.commits.length, 1);
+  assert.equal(session.commits[0].label, 'Bevel');
+  assert.equal(session.commits[0].after.faces.length, 9);
+});
+
+test('Bevel modal cancellation restores the original three-edge chain without an undo record', async () => {
+  const session = makeSession();
+  session.hem.clearSelection();
+  for (const pair of [[4,5],[5,6],[6,7]]) {
+    const edge = session.hem.edges.find(item => keyFor(...item.vertices) === keyFor(...pair));
+    session.hem.selectEdge(edge.id, true);
+  }
+  const before = await session.document.serialize();
+  const modal = new BevelModal(session);
+  assert.equal(await modal.begin(), true, modal.lastError);
+  assert.notDeepEqual(await session.document.serialize(), before);
+  assert.equal(await modal.cancel(), true);
+  assert.deepEqual(await session.document.serialize(), before);
+  assert.equal(session.commits.length, 0);
+});

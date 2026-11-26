@@ -733,10 +733,13 @@ export class HalfEdgeMesh {
         components.push([...component]);
       }
       if (components.some(component => component.length > 1)) {
+        if (components.length === 1 && components[0].length === 3) {
+          return this.bevelSelectedConnectedChain({ amount, edgeIds: components[0] });
+        }
         if (components.every(component => component.length === 2)) {
           return this.bevelSelectedAdjacentPairs({ amount, edgePairs: components });
         }
-        return fail('Connected multi-edge Bevel currently accepts only separate two-edge miter pairs; longer chains and branches are rejected.');
+        return fail('Connected Bevel accepts one three-edge chain or separate two-edge miter pairs; branches and longer chains are rejected.');
       }
     }
     const sourceReport = this.validateTopology();
@@ -1028,6 +1031,327 @@ export class HalfEdgeMesh {
       createdFaces,
       miterEdges,
       selectedEdges: this.edgeSelection.size
+    };
+  }
+
+  /**
+   * Bevels exactly three consecutive edges as one transactional chain.
+   * The two internal degree-two vertices receive shared-face miters; the two
+   * terminal vertices retain trimmed corner faces as closed end caps.
+   * Branches, cycles, overlapping path vertices and unsupported fans reject.
+   */
+  bevelSelectedConnectedChain({ amount = 0.25, edgeIds = [...this.edgeSelection] } = {}) {
+    const fail = reason => ({ changed: false, reason });
+    if (this.selectionMode !== 'edge' || !Array.isArray(edgeIds) || edgeIds.length !== 3 ||
+        new Set(edgeIds).size !== 3 || !Number.isFinite(amount) || amount <= 0 || amount > 0.95) {
+      return fail('Connected chain Bevel requires exactly three selected edges and a width factor from 0–0.95.');
+    }
+    const selectedEdges = edgeIds.map(id => this.edges[id]);
+    if (selectedEdges.some(edge => !edge)) return fail('A selected chain edge could not be resolved.');
+    const selectedEdgeIds = new Set(edgeIds);
+    const adjacency = new Map();
+    for (const edge of selectedEdges) {
+      for (const vertexId of edge.vertices) {
+        if (!adjacency.has(vertexId)) adjacency.set(vertexId, []);
+        adjacency.get(vertexId).push(edge.id);
+      }
+    }
+    if (adjacency.size !== 4 || [...adjacency.values()].filter(list => list.length === 1).length !== 2 ||
+        [...adjacency.values()].filter(list => list.length === 2).length !== 2 ||
+        [...adjacency.values()].some(list => list.length < 1 || list.length > 2)) {
+      return fail('Connected chain Bevel requires one simple path of exactly three edges; cycles and branches are rejected.');
+    }
+
+    // Recover a deterministic end-to-end path before using any geometry.
+    const pathVertices = [adjacency.keys().find(id => adjacency.get(id).length === 1)];
+    const pathEdges = [];
+    const usedEdges = new Set();
+    while (pathEdges.length < 3) {
+      const currentVertex = pathVertices[pathVertices.length - 1];
+      const nextEdgeId = adjacency.get(currentVertex).find(id => !usedEdges.has(id));
+      if (!Number.isInteger(nextEdgeId)) return fail('The selected edges do not form one unambiguous three-edge chain.');
+      const edge = this.edges[nextEdgeId];
+      const nextVertex = edge.vertices.find(id => id !== currentVertex);
+      if (!Number.isInteger(nextVertex) || pathVertices.includes(nextVertex)) {
+        return fail('Connected chain Bevel does not accept cycles or repeated path vertices.');
+      }
+      pathEdges.push(nextEdgeId);
+      usedEdges.add(nextEdgeId);
+      pathVertices.push(nextVertex);
+    }
+    if (usedEdges.size !== 3 || pathVertices.length !== 4 || pathVertices.at(-1) === pathVertices[0]) {
+      return fail('The selected edges do not form one simple three-edge chain.');
+    }
+
+    const sourceReport = this.validateTopology();
+    if (!sourceReport.valid) return fail('The mesh has existing topology warnings. Validate and repair safe issues before beveling.');
+    const edgeByKey = new Map(this.edges.map(edge => [keyFor(...edge.vertices), edge]));
+    const edgeIdFor = (a, b) => edgeByKey.get(keyFor(a, b))?.id;
+    const isPlanarConvex = (face, positions = this.positions) => {
+      const projection = projectedPolygon(positions, face);
+      if (!projection || projection.deviation > projection.scale * 1e-5 || !triangulatePolygon(positions, face)) return false;
+      const area = signedArea2D(projection.points), winding = Math.sign(area);
+      if (!winding) return false;
+      const epsilon = projection.scale * projection.scale * 1e-9;
+      return projection.points.every((_, index) => cross2(
+        projection.points[(index - 1 + projection.points.length) % projection.points.length],
+        projection.points[index], projection.points[(index + 1) % projection.points.length]
+      ) * winding > epsilon);
+    };
+
+    const incidentEdgesByVertex = new Map();
+    const affectedFaceIds = new Set();
+    for (const vertexId of pathVertices) {
+      const incidentFaces = this.faces.reduce((ids, face, faceId) => {
+        if (face.includes(vertexId)) ids.push(faceId);
+        return ids;
+      }, []);
+      const incidentEdges = this.edges.filter(edge => edge.vertices.includes(vertexId));
+      if (incidentFaces.length !== 3 || incidentEdges.length !== 3 ||
+          incidentEdges.some(edge => edge.halfEdges.length !== 2 || !edge.halfEdges.every(halfEdge => halfEdge.twin))) {
+        return fail('Three-edge chain Bevel requires closed valence-three fans at all four path vertices.');
+      }
+      incidentEdgesByVertex.set(vertexId, incidentEdges);
+      incidentFaces.forEach(id => affectedFaceIds.add(id));
+    }
+    for (const faceId of affectedFaceIds) {
+      if (!isPlanarConvex(this.faces[faceId])) {
+        return fail('All faces around the three-edge chain and its end caps must be simple, planar and convex.');
+      }
+    }
+
+    const inspectEdge = (edgeId, start, end) => {
+      const edge = this.edges[edgeId];
+      if (!edge || edge.halfEdges.length !== 2) return null;
+      const first = edge.halfEdges.find(item => item.origin === start && item.next?.origin === end);
+      const second = edge.halfEdges.find(item => item.origin === end && item.next?.origin === start);
+      if (!first || !second || first.twin !== second || second.twin !== first) return null;
+      const cutInfo = (halfEdge, atStart) => {
+        const vertexId = atStart ? halfEdge.origin : halfEdge.next.origin;
+        const adjacentHalfEdge = atStart ? halfEdge.prev : halfEdge.next;
+        const adjacent = this.edges[adjacentHalfEdge?.edge?.id];
+        if (!adjacent || adjacent.halfEdges.length !== 2 || !adjacent.halfEdges.every(item => item.twin)) return null;
+        const otherId = adjacent.vertices.find(id => id !== vertexId);
+        const from = this.positions[vertexId], to = this.positions[otherId];
+        if (!from || !to) return null;
+        const length = Math.hypot(to[0] - from[0], to[1] - from[1], to[2] - from[2]);
+        if (!Number.isFinite(length) || length <= 1e-10) return null;
+        return { vertexId, edgeId: adjacent.id, otherId, from, to, length };
+      };
+      const cuts = [cutInfo(first, true), cutInfo(first, false), cutInfo(second, true), cutInfo(second, false)];
+      if (cuts.some(item => !item)) return null;
+      return { edgeId, start, end, first, second, faceAId: first.face.id, faceBId: second.face.id, cuts };
+    };
+    const plans = pathEdges.map((edgeId, index) => inspectEdge(edgeId, pathVertices[index], pathVertices[index + 1]));
+    if (plans.some(plan => !plan)) return fail('Every chain edge must have two consistently wound interior manifold faces.');
+
+    const cutInfoByKey = new Map();
+    for (const plan of plans) {
+      for (const info of plan.cuts) {
+        const key = `${info.vertexId}:${info.edgeId}`;
+        const previous = cutInfoByKey.get(key);
+        if (previous && (Math.abs(previous.length - info.length) > 1e-8 ||
+            previous.to.some((value, axis) => Math.abs(value - info.to[axis]) > 1e-8))) {
+          return fail('The chain has inconsistent offset data on a shared neighboring edge.');
+        }
+        cutInfoByKey.set(key, info);
+      }
+    }
+    const maxWidth = Math.min(...[...cutInfoByKey.values()].map(info => info.length)) * 0.45;
+    const width = maxWidth * amount;
+    if (!Number.isFinite(width) || width <= 1e-9) return fail('The selected chain is too small for a stable bevel.');
+    const offsetPoint = info => {
+      if (!info) return null;
+      const ratio = width / info.length;
+      if (!(ratio > 0 && ratio < 0.5)) return null;
+      const point = info.from.map((value, axis) => value + (info.to[axis] - value) * ratio);
+      return point.every(Number.isFinite) ? point : null;
+    };
+
+    const nextPositions = this.positions.map(point => [...point]);
+    const cutIdByKey = new Map();
+    for (const [key, info] of cutInfoByKey) {
+      // Offset points on selected chain edges are used only to solve miters;
+      // those source edges are removed and never become candidate vertices.
+      if (selectedEdgeIds.has(info.edgeId)) continue;
+      const point = offsetPoint(info);
+      if (!point) return fail('A chain endpoint offset is outside a stable neighboring-edge range.');
+      cutIdByKey.set(key, nextPositions.push(point) - 1);
+    }
+    const cutId = (vertexId, edgeId) => cutIdByKey.get(`${vertexId}:${edgeId}`);
+
+    const cross3 = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+    const dot3 = (a, b) => a.reduce((sum, value, axis) => sum + value * b[axis], 0);
+    const miterByVertexFace = new Map();
+    const miterInfos = [];
+    for (let index = 1; index <= 2; index++) {
+      const center = pathVertices[index];
+      const leftPlan = plans[index - 1], rightPlan = plans[index];
+      const commonFaces = [leftPlan.faceAId, leftPlan.faceBId]
+        .filter(id => id === rightPlan.faceAId || id === rightPlan.faceBId);
+      const sharedFaceIds = [...new Set(commonFaces)];
+      if (sharedFaceIds.length !== 1) return fail('Each internal chain junction must have exactly one shared face for its miter.');
+      const sharedFaceId = sharedFaceIds[0];
+      const sharedFace = this.faces[sharedFaceId];
+      const centerIndex = sharedFace.indexOf(center);
+      if (centerIndex < 0) return fail('A chain miter face does not contain its selected junction vertex.');
+      const beforeEdge = edgeIdFor(sharedFace[(centerIndex - 1 + sharedFace.length) % sharedFace.length], center);
+      const afterEdge = edgeIdFor(center, sharedFace[(centerIndex + 1) % sharedFace.length]);
+      if (!selectedEdgeIds.has(beforeEdge) || !selectedEdgeIds.has(afterEdge) ||
+          ![leftPlan.edgeId, rightPlan.edgeId].every(id => id === beforeEdge || id === afterEdge)) {
+        return fail('Each miter pair must be consecutive boundary edges of its common face.');
+      }
+
+      const leftOther = leftPlan.start === center ? leftPlan.end : leftPlan.start;
+      const rightOther = rightPlan.start === center ? rightPlan.end : rightPlan.start;
+      const pointOnLeft = offsetPoint(cutInfoByKey.get(`${center}:${leftPlan.edgeId}`));
+      const pointOnRight = offsetPoint(cutInfoByKey.get(`${center}:${rightPlan.edgeId}`));
+      if (!pointOnLeft || !pointOnRight) return fail('A chain junction could not resolve its selected-edge offset lines.');
+      const directionLeft = this.positions[leftOther].map((value, axis) => value - this.positions[center][axis]);
+      const directionRight = this.positions[rightOther].map((value, axis) => value - this.positions[center][axis]);
+      const normal = newellNormal(this.positions, sharedFace);
+      const denominator = normal ? dot3(cross3(directionLeft, directionRight), normal) : 0;
+      const scale = Math.max(1, Math.hypot(...directionLeft) * Math.hypot(...directionRight));
+      if (!Number.isFinite(denominator) || Math.abs(denominator) <= scale * 1e-8) {
+        return fail('A chain junction has nearly parallel edges and cannot form a stable miter.');
+      }
+      const difference = pointOnLeft.map((value, axis) => value - pointOnRight[axis]);
+      const parameterLeft = dot3(cross3(difference, directionRight), normal) / denominator;
+      const parameterRight = dot3(cross3(difference, directionLeft), normal) / denominator;
+      if (!(parameterLeft > 1e-8 && parameterRight > 1e-8)) {
+        return fail('A chain miter intersection does not lie inside the selected corner.');
+      }
+      const miterLeft = pointOnRight.map((value, axis) => value + parameterLeft * directionLeft[axis]);
+      const miterRight = pointOnLeft.map((value, axis) => value + parameterRight * directionRight[axis]);
+      const mismatch = Math.hypot(...miterLeft.map((value, axis) => value - miterRight[axis]));
+      if (mismatch > Math.max(1e-7, width * 1e-5)) return fail('A chain miter intersection is numerically ambiguous.');
+      const miterPoint = miterLeft.map((value, axis) => (value + miterRight[axis]) * 0.5);
+      const miterLength = Math.hypot(...miterPoint.map((value, axis) => value - this.positions[center][axis]));
+      if (!Number.isFinite(miterLength) || miterLength > width * 4) {
+        return fail('A chain junction requires an excessive miter; reduce the width or bevel edges separately.');
+      }
+      const projection = projectedPolygon(this.positions, sharedFace);
+      const dropAxis = normal.reduce((best, value, axis) => Math.abs(value) > Math.abs(normal[best]) ? axis : best, 0);
+      const project = point => dropAxis === 0 ? [point[1], point[2]] : dropAxis === 1 ? [point[0], point[2]] : [point[0], point[1]];
+      const miter2 = project(miterPoint);
+      const winding = Math.sign(signedArea2D(projection.points));
+      const epsilon = projection.scale * projection.scale * 1e-9;
+      if (projection.points.some((point, pointIndex) =>
+        cross2(point, projection.points[(pointIndex + 1) % projection.points.length], miter2) * winding < -epsilon
+      )) return fail('A chain miter intersection falls outside its shared face.');
+
+      const miterId = nextPositions.push(miterPoint) - 1;
+      miterByVertexFace.set(`${center}:${sharedFaceId}`, miterId);
+      const thirdEdge = incidentEdgesByVertex.get(center).find(edge => !selectedEdgeIds.has(edge.id));
+      const thirdCut = cutId(center, thirdEdge?.id);
+      if (!thirdEdge || !Number.isInteger(thirdCut)) return fail('A chain miter end-cap edge could not be resolved.');
+      miterInfos.push({ vertexId: center, faceId: sharedFaceId, miterId, thirdCut });
+    }
+
+    const nextFaces = [];
+    for (let faceId = 0; faceId < this.faces.length; faceId++) {
+      const face = this.faces[faceId];
+      const output = [];
+      const append = id => {
+        if (!Number.isInteger(id)) return false;
+        if (output.at(-1) !== id) output.push(id);
+        return true;
+      };
+      for (let index = 0; index < face.length; index++) {
+        const startVertex = face[index];
+        const endVertex = face[(index + 1) % face.length];
+        const edgeId = edgeIdFor(startVertex, endVertex);
+        if (!Number.isInteger(edgeId)) return fail('An affected chain face has an unresolved boundary edge.');
+        if (selectedEdgeIds.has(edgeId)) {
+          const edge = this.edges[edgeId];
+          const halfEdge = edge.halfEdges.find(item => item.face.id === faceId && item.origin === startVertex && item.next.origin === endVertex);
+          if (!halfEdge) return fail('A selected chain edge has an inconsistent face-boundary direction.');
+          const startPoint = miterByVertexFace.get(`${startVertex}:${faceId}`) ?? cutId(startVertex, halfEdge.prev.edge.id);
+          const endPoint = miterByVertexFace.get(`${endVertex}:${faceId}`) ?? cutId(endVertex, halfEdge.next.edge.id);
+          if (!append(startPoint) || !append(endPoint)) return fail('A chain edge boundary could not be replaced by its offset points.');
+        } else {
+          const startPoint = cutId(startVertex, edgeId) ?? startVertex;
+          const endPoint = cutId(endVertex, edgeId) ?? endVertex;
+          if (!append(startPoint) || !append(endPoint)) return fail('A chain end cap could not trim a neighboring source edge.');
+        }
+      }
+      if (output.length > 1 && output[0] === output.at(-1)) output.pop();
+      nextFaces.push(output);
+    }
+
+    const bevelFaces = [];
+    for (const plan of plans) {
+      const pA0 = miterByVertexFace.get(`${plan.start}:${plan.faceAId}`) ?? cutId(plan.start, plan.first.prev.edge.id);
+      const pB0 = miterByVertexFace.get(`${plan.end}:${plan.faceAId}`) ?? cutId(plan.end, plan.first.next.edge.id);
+      const pB1 = miterByVertexFace.get(`${plan.end}:${plan.faceBId}`) ?? cutId(plan.end, plan.second.prev.edge.id);
+      const pA1 = miterByVertexFace.get(`${plan.start}:${plan.faceBId}`) ?? cutId(plan.start, plan.second.next.edge.id);
+      if (![pA0, pB0, pB1, pA1].every(Number.isInteger)) return fail('A chain bevel strip could not resolve its four boundary points.');
+      const strip = [pB0, pA0, pA1, pB1];
+      bevelFaces.push(strip);
+      nextFaces.push(strip);
+    }
+
+    const candidate = new HalfEdgeMesh(nextPositions, nextFaces);
+    const compactMap = candidate.compact();
+    const report = candidate.validateTopology();
+    if (!report.valid) return fail(`The proposed three-edge bevel failed topology validation (${report.issueCount} issue(s)); the original mesh was not changed.`);
+    for (let faceId = 0; faceId < candidate.faces.length; faceId++) {
+      if (!candidate.triangulateFace(faceId).length) return fail('The proposed chain produced a face that could not be triangulated.');
+    }
+    if (![...affectedFaceIds].every(faceId => isPlanarConvex(candidate.faces[faceId], candidate.positions)) ||
+        !bevelFaces.every(face => isPlanarConvex(face.map(id => compactMap.get(id)), candidate.positions))) {
+      return fail('The chain must preserve planar, convex source faces, end caps and bevel strips.');
+    }
+
+    const miterKeys = new Set(miterInfos.map(info => keyFor(compactMap.get(info.miterId), compactMap.get(info.thirdCut))));
+    const edgeIdsByKey = new Map(candidate.edges.map(edge => [keyFor(...edge.vertices), edge.id]));
+    for (const key of miterKeys) {
+      const miterEdge = candidate.edges.filter(edge => keyFor(...edge.vertices) === key);
+      if (miterEdge.length !== 1 || miterEdge[0].halfEdges.length !== 2 || !miterEdge[0].halfEdges.every(halfEdge => halfEdge.twin)) {
+        return fail('Each chain miter must be one shared manifold edge between its bevel strips.');
+      }
+    }
+    const perimeterKeys = new Set();
+    for (const face of bevelFaces) {
+      const mapped = face.map(id => compactMap.get(id));
+      for (let index = 0; index < mapped.length; index++) {
+        const key = keyFor(mapped[index], mapped[(index + 1) % mapped.length]);
+        if (!miterKeys.has(key)) perimeterKeys.add(key);
+      }
+    }
+    const expectedPerimeterEdges = 4 * plans.length - 2 * miterInfos.length;
+    candidate.selectionMode = 'edge';
+    candidate.clearSelection();
+    for (const key of perimeterKeys) {
+      const id = edgeIdsByKey.get(key);
+      if (id !== undefined) candidate.edgeSelection.add(id);
+    }
+    if (perimeterKeys.size !== expectedPerimeterEdges || candidate.edgeSelection.size !== expectedPerimeterEdges) {
+      return fail('The chain perimeter could not be recovered unambiguously.');
+    }
+
+    this.positions = candidate.positions.map(point => [...point]);
+    this.faces = candidate.faces.map(face => [...face]);
+    this.selectionMode = 'edge';
+    this.clearSelection();
+    this.rebuild();
+    const committedEdges = new Map(this.edges.map(edge => [keyFor(...edge.vertices), edge.id]));
+    for (const key of perimeterKeys) {
+      const id = committedEdges.get(key);
+      if (id !== undefined) this.edgeSelection.add(id);
+    }
+    return {
+      changed: true,
+      amount,
+      width,
+      maxWidth,
+      bevelCount: plans.length,
+      miterCount: miterInfos.length,
+      miterEdges: miterInfos.length,
+      insertedVertices: cutIdByKey.size + miterInfos.length,
+      createdFaces: plans.length,
+      selectedEdges: this.edgeSelection.size,
+      endCaps: 2
     };
   }
 
