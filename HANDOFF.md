@@ -22,6 +22,7 @@
 - **Workers:** modifier evaluation runs in a module Worker. There is no worker pool or chunk scheduler yet.
 - **PWA:** `manifest.json` and `sw.js` provide install metadata and app-shell/runtime caching. First visit requires network access to CDN modules.
 - **Local-only:** scenes are stored in the browser; import/export uses local file pickers. No cloud sync or remote project database exists.
+- **Transform frame:** modal transforms capture the camera basis, viewport bounds, pointer origin and camera-to-pivot scale at start. Free movement uses the current camera-facing view plane; axis movement projects screen motion into world-axis distance; free rotation uses a camera-oriented virtual trackball.
 - **Deployment:** `.github/workflows/pages.yml` uses two jobs: `build` creates and uploads the `github-pages` artifact; `deploy` waits for `build` and publishes it. The Pages workflow runs on normal `main` changes (excluding `uploads/**`) and after successful completion of `Unpack uploaded update packages`.
 
 ## Repository File Tree
@@ -50,8 +51,8 @@
 │   ├── modifiers/ModifierStack.js # Non-destructive modifier bridge
 │   ├── operators/
 │   │   ├── MeshOperators.js    # Basic extrude/inset/delete/subdivide
-│   │   └── ModalTransform.js   # Modal G/R/S operations
-│   ├── ui/Viewport.js          # Three.js viewport and navigation
+│   │   └── ModalTransform.js   # Camera-aware G/R/S state machine
+│   ├── ui/Viewport.js          # Three.js viewport, navigation and pointer origin
 │   ├── workers/modifier.worker.js # Background modifier evaluation
 │   ├── main.js                 # App composition, commands and UI bindings
 │   └── styles.css              # Responsive desktop/mobile styling
@@ -80,12 +81,12 @@ Status meanings: **Working** = implemented end-to-end in the current foundation;
 | Half-edge topology | Partial | Vertex/Edge/HalfEdge/Face records and adjacency; import triangulates input and is not a production manifold kernel. |
 | Object mode | Working | Primitive creation, object selection/deletion and object transforms. |
 | Edit mode | Partial | Vertex/edge/face selection modes, face picking, extrude, inset, delete and triangle subdivision. |
-| Modal transforms | Partial | G/R/S, axis/plane intent, numeric input, Enter commit and Esc cancel. Local axes, precision and pivot fidelity remain incomplete. |
+| Modal transforms | Partial | Free G follows the current camera-facing view plane; axis movement converts projected pointer travel into global world units; Shift+axis uses a camera-derived perpendicular plane; free R uses a camera-oriented virtual trackball; numeric commit/cancel remain. Local orientation, snapping and full Blender pivot parity remain incomplete. |
 | 3D cursor/pivot | Partial | Cursor placement and UI pivot selection exist; pivot math is incomplete. |
 | Modifiers | Partial | Worker-based midpoint subdivision, mirror, array and solidify; not Blender-equivalent. |
 | Undo/redo | Partial | OPFS snapshots with memory fallback; large snapshots can temporarily increase RAM. |
 | Model I/O | Partial | GLB, GLTF, OBJ and STL browser import/export paths; complex scenes/materials/animation need validation. |
-| Desktop/mobile input | Partial | Desktop left-drag orbit (stationary click still selects), middle-drag orbit, right-drag/Shift+left-drag pan, wheel zoom; mobile one-finger orbit and two-finger dolly-pan; long-press cursor placement is suppressed during multi-touch. Device testing remains. |
+| Desktop/mobile input | Partial | Desktop left-drag orbit, right-drag/Shift+left-drag pan and wheel zoom; modal transforms sample pointer movement at window level; mobile one-finger orbit, two-finger dolly-pan and quick Move/Rotate/Scale actions. Device testing remains. |
 | Pie menus | Partial | Compact command menus; not true radial Blender pie menus. |
 | Bevel/Loop Cut/sculpt | Not Started | No production implementation yet. |
 | Exact Blender clone | Not Started | No claim of full Blender operator, BMesh, UI, or file-format parity. |
@@ -97,17 +98,18 @@ Status meanings: **Working** = implemented end-to-end in the current foundation;
 3. Edit-mode overlays and selection tools are limited; no complete box/circle/lasso/loop/ring selection.
 4. Bevel and Loop Cut are placeholders. Extrude/inset and midpoint subdivision have topology and normal limitations.
 5. Modifier algorithms are first-pass approximations: midpoint triangle subdivision, non-welded mirror, simple array offset and basic solidify.
-6. Transform constraints, local/global orientation, snapping, proportional editing, and individual-origin/3D-cursor pivots are incomplete.
-7. First visit requires network access to jsDelivr. Strict content blockers, CDN outages, or offline first visit may prevent startup.
-8. iOS Safari/Android Chrome OPFS, memory ceilings, WebGL context loss, background suspension and multi-touch behavior require device testing.
-9. Undo snapshots are serialized in memory before OPFS write; no chunked serialization or inactive-scene disk paging exists.
-10. Modifier evaluation uses one worker and a full mesh payload; no worker pool, chunk scheduling, cancellation or progress protocol exists.
-11. Large model import/export may temporarily duplicate large geometry buffers; advanced GLTF materials, skinning and animation are not fully validated.
-12. The application uses a system UI font stack and contains no bundled Inter font files or `@font-face` declarations. Requests to `/assets/fonts/Inter-*.woff2` do not originate in the current repository source; if they persist after a clean reload, check injected browser-extension styles or stale browser caches.
-13. GitHub Actions workflow files must be edited manually because the unpacker deliberately excludes `.github/workflows/**`.
-14. The Pages upload artifact must be created in the `build` job and deployed in the dependent `deploy` job. Do not reintroduce a `gh workflow run pages.yml` step in the unpack workflow; the `workflow_run` event handles deployment after unpack succeeds.
-15. The current Node.js 20 deprecation annotation from older action major versions is a warning, not the cause of the prior artifact lookup failure.
-15. The initial starter object is document bootstrap state, not a user operation. Do not route its creation through the CommandBus or undo snapshots; later user-created objects must continue to use the CommandBus.
+6. Transform orientation is currently global-axis oriented. Full local/global orientation toggle, snapping, proportional editing, multi-object pivot aggregation and exact Blender operator feedback remain incomplete. Axis-constrained scaling of rotated objects is approximate because the scene representation stores TRS rather than an arbitrary affine/shear matrix.
+7. Camera-relative G/R/S math captures the camera when an operation begins; changing the view during a modal transform is intentionally disabled until confirm/cancel. Free rotation is a practical virtual trackball, not exact Blender trackball/turntable parity.
+8. First visit requires network access to jsDelivr. Strict content blockers, CDN outages, or offline first visit may prevent startup.
+9. iOS Safari/Android Chrome OPFS, memory ceilings, WebGL context loss, background suspension and multi-touch behavior require device testing.
+10. Undo snapshots are serialized in memory before OPFS write; no chunked serialization or inactive-scene disk paging exists.
+11. Modifier evaluation uses one worker and a full mesh payload; no worker pool, chunk scheduling, cancellation or progress protocol exists.
+12. Large model import/export may temporarily duplicate large geometry buffers; advanced GLTF materials, skinning and animation are not fully validated.
+13. The application uses a system UI font stack and contains no bundled Inter font files or `@font-face` declarations. Requests to `/assets/fonts/Inter-*.woff2` do not originate in the current repository source; if they persist after a clean reload, check injected browser-extension styles or stale browser caches.
+14. GitHub Actions workflow files must be edited manually because the unpacker deliberately excludes `.github/workflows/**`.
+15. The Pages upload artifact must be created in the `build` job and deployed in the dependent `deploy` job. Do not reintroduce a `gh workflow run pages.yml` step in the unpack workflow; the `workflow_run` event handles deployment after unpack succeeds.
+16. The current Node.js 20 deprecation annotation from older action major versions is a warning, not the cause of the prior artifact lookup failure.
+17. The initial starter object is document bootstrap state, not a user operation. Do not route its creation through the CommandBus or undo snapshots; later user-created objects must continue to use the CommandBus.
 
 ## Roadmap
 
@@ -116,10 +118,12 @@ Status meanings: **Working** = implemented end-to-end in the current foundation;
 - [x] Command bus, document serialization and half-edge connectivity foundation.
 - [x] Basic object/edit modes, primitives, selection modes, extrude, inset, delete and subdivide.
 - [x] Basic G/R/S modal transforms with numeric entry and cancel/confirm.
+- [x] Camera-facing free-move plane and projected global-axis movement foundation.
+- [x] Camera-oriented virtual trackball rotation foundation and smoother exponential mouse scaling.
 - [x] OPFS undo/redo with memory fallback.
 - [ ] Preserve polygon boundaries and robustly validate manifold/non-manifold topology.
 - [ ] Add vertex/edge/face overlays and complete selection tools.
-- [ ] Correct transform orientation, plane constraints, snapping and pivot math.
+- [ ] Complete local/global transform orientation, snapping, proportional editing, exact pivot aggregation and Blender-like transform gizmo/feedback.
 - [ ] Implement bevel, loop cut and delete menu semantics.
 - [ ] Implement true radial pie menus and complete keymap parity.
 
@@ -167,6 +171,16 @@ Status meanings: **Working** = implemented end-to-end in the current foundation;
 - Kept mobile one-finger orbit and two-finger dolly/pan; touch long-press cursor placement now cancels when a second finger joins the gesture.
 - Added visible desktop/mobile navigation hints and advanced the service-worker shell/runtime cache to v3 so deployed clients replace the earlier cached scripts.
 
+
+### 2026-11-26 — `bl3nd-view-relative-transform-fix.zip` — v0.1.5
+- Rebuilt G/R/S pointer math around the camera frame captured when the modal operation begins.
+- Free movement now follows the current camera-facing view plane instead of fixed world X/Z directions.
+- Axis-constrained movement maps pointer displacement along the projected global axis back to world units; Shift+axis uses a camera-derived basis in the perpendicular plane.
+- Free rotation now uses a camera-oriented virtual trackball; axis rotation uses projected tangent motion; numeric rotation remains degrees.
+- Mouse scaling now uses an exponential response instead of the previous small linear `1 + delta` factor.
+- Modal input starts from the current pointer within the viewport when available; pointer movement is observed at window level while transforms are active.
+- Added mobile quick actions for Move, Rotate and Scale plus on-screen global-axis/perpendicular-plane constraints; updated desktop/mobile hints and bumped service-worker caches to v4.
+
 ## Next Roadmap Step
 
-Verify the startup/selection repair and camera gestures in desktop and mobile browsers, then continue Phase 1 by improving mesh-selection visualization and topology correctness. Keep all application updates zero-build and delta-ZIP only.
+Verify view-relative G/R/S movement and trackball rotation in desktop and mobile browsers, then complete transform orientation/pivot semantics and improve mesh-selection visualization and topology correctness. Keep all application updates zero-build and delta-ZIP only.

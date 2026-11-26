@@ -24,7 +24,7 @@ export class KeyboardController {
     if (event.shiftKey && key==='a') { event.preventDefault(); this.ui.togglePie('add'); return; }
     if (!event.ctrlKey && !event.metaKey && !event.altKey && key==='z') { this.ui.togglePie('shading'); return; }
     if (doc.mode==='edit' && ['1','2','3'].includes(key)) { event.preventDefault(); await this.dispatch('mesh.selection_mode',{mode:({'1':'vertex','2':'edge','3':'face'})[key]}); return; }
-    if (key==='g' || key==='r' || key==='s') { event.preventDefault(); const type=({g:'move',r:'rotate',s:'scale'})[key]; await this.dispatch('transform.modal_start',{type,pointer:this.ui.pointerCenter()}); return; }
+    if (key==='g' || key==='r' || key==='s') { event.preventDefault(); const type=({g:'move',r:'rotate',s:'scale'})[key]; await this.dispatch('transform.modal_start',{type,pointer:(this.viewport.getPointerOrigin?.() || this.ui.pointerCenter())}); return; }
     if (key==='e' && doc.mode==='edit') { event.preventDefault(); await this.dispatch('mesh.extrude_region'); return; }
     if (key==='i' && doc.mode==='edit') { event.preventDefault(); await this.dispatch('mesh.inset'); return; }
     if (key==='x') { event.preventDefault(); if (doc.mode==='edit') await this.dispatch('mesh.delete'); else await this.dispatch('object.delete'); return; }

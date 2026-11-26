@@ -51,7 +51,7 @@ const undoManager = new UndoManager({
   status,
   onRestore: async snapshot => { await sceneDocument.restore(snapshot); await reapplyModifiers(); refresh(); }
 });
-const modalTransform = new ModalTransform({ document: sceneDocument, undoManager, status, onChange: () => ui?.refreshModal() });
+const modalTransform = new ModalTransform({ document: sceneDocument, undoManager, viewport, status, onChange: () => ui?.refreshModal() });
 const commandBus = new CommandBus({ undoManager, status });
 const modifierStack = new ModifierStack({ onStatus: status });
 const modelIO = new ModelIO(sceneDocument, notify);
@@ -138,7 +138,7 @@ function registerCommands() {
   commandBus.register('mesh.bevel', () => notify('Bevel (Ctrl+B) is on the Phase 1/2 roadmap; edge-offset topology is not implemented yet.'), { recordUndo: false });
   commandBus.register('mesh.loop_cut', () => notify('Loop Cut (Ctrl+R) is not implemented in this foundation release.'), { recordUndo: false });
   commandBus.register('transform.modal_start', async ({ type, pointer }) => {
-    const started = await modalTransform.begin(type, pointer || ui.pointerCenter());
+    const started = await modalTransform.begin(type, pointer || ui.pointerOrigin());
     if (!started) notify('Select an object before transforming.');
     viewport.controls.enabled = !started; ui.refreshModal(); return started;
   }, { recordUndo: false });
@@ -258,6 +258,7 @@ ui = {
     menu.dataset.kind=kind; menu.hidden=false;
   },
   pointerCenter(){const rect=$('#viewport').getBoundingClientRect();return{x:rect.left+rect.width/2,y:rect.top+rect.height/2};},
+  pointerOrigin(){return this.pointerCenter();},
   refreshModal(){
     const readout=$('#modal-readout'),pad=$('#numeric-pad');
     if(!modalTransform.active){readout.hidden=true;pad.hidden=true;return;}
@@ -277,13 +278,15 @@ $('#open-btn').addEventListener('click',()=>$('#file-input').click());
 $('#file-input').addEventListener('change',async event=>{const file=event.target.files?.[0];if(!file)return;try{const meshes=await modelIO.importFile(file);refresh();viewport.frame(meshes[0]);}catch(e){notify(e.message,'error');}finally{event.target.value='';}});
 $('#add-menu-btn').addEventListener('click',()=>ui.togglePie('add'));
 $('#mobile-add').addEventListener('click',()=>ui.togglePie('add'));
-$('#mobile-move').addEventListener('click',()=>run('transform.modal_start',{type:'move',pointer:ui.pointerCenter()}));
+$('#mobile-move').addEventListener('click',()=>run('transform.modal_start',{type:'move',pointer:ui.pointerOrigin()}));
+$('#mobile-rotate').addEventListener('click',()=>run('transform.modal_start',{type:'rotate',pointer:ui.pointerOrigin()}));
+$('#mobile-scale').addEventListener('click',()=>run('transform.modal_start',{type:'scale',pointer:ui.pointerOrigin()}));
 $('#mobile-edit').addEventListener('click',()=>run('mode.toggle_edit'));
 $('#mobile-more').addEventListener('click',()=>$('.properties-panel').classList.toggle('mobile-open'));
 $$('[data-tool]').forEach(button=>button.addEventListener('click',()=>{
   $$('.tool-button').forEach(item=>item.classList.remove('selected'));button.classList.add('selected');
   const tool=button.dataset.tool;
-  if(['move','rotate','scale'].includes(tool))run('transform.modal_start',{type:tool,pointer:ui.pointerCenter()});
+  if(['move','rotate','scale'].includes(tool))run('transform.modal_start',{type:tool,pointer:ui.pointerOrigin()});
 }));
 $('#extrude-btn').addEventListener('click',()=>run('mesh.extrude_region')); $('#extrude-panel-btn').addEventListener('click',()=>run('mesh.extrude_region')); $('#mobile-extrude').addEventListener('click',()=>run('mesh.extrude_region'));
 $('#inset-btn').addEventListener('click',()=>run('mesh.inset')); $('#inset-panel-btn').addEventListener('click',()=>run('mesh.inset'));
@@ -313,6 +316,11 @@ $('#pie-menu').addEventListener('click',async event=>{
 });
 $('#shading-btn').addEventListener('click',()=>ui.togglePie('shading'));
 $('#numeric-pad').addEventListener('click',async event=>{
+  const axisButton=event.target.closest('button[data-axis]');
+  if(axisButton){
+    await run('transform.modal_axis',{axis:axisButton.dataset.axis,plane:axisButton.dataset.plane==='true'});
+    return;
+  }
   const button=event.target.closest('button[data-key]');if(!button)return;const key=button.dataset.key;
   if(key==='enter'){await run('transform.modal_confirm');return;}
   if(key==='escape'){await run('transform.modal_cancel');return;}
@@ -320,7 +328,7 @@ $('#numeric-pad').addEventListener('click',async event=>{
 });
 
 const viewportCanvas=viewport.renderer.domElement;
-viewportCanvas.addEventListener('pointermove',event=>{if(modalTransform.active){commandBus.dispatch('transform.modal_update',{point:{x:event.clientX,y:event.clientY}});ui.refreshModal();}});
+window.addEventListener('pointermove',event=>{if(modalTransform.active){commandBus.dispatch('transform.modal_update',{point:{x:event.clientX,y:event.clientY}});ui.refreshModal();}});
 viewportCanvas.addEventListener('contextmenu',event=>{if(modalTransform.active){event.preventDefault();run('transform.modal_cancel');}});
 new TouchController(viewport,notify);
 new KeyboardController({viewport,commandBus,modalTransform,getDocument:()=>sceneDocument,ui,notify});

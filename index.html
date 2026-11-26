@@ -65,8 +65,8 @@
         </div>
         <div id="viewport" class="viewport" tabindex="0" aria-label="3D viewport">
           <div class="viewport-hint" id="viewport-hint">
-            <span class="hint-desktop">Drag to orbit · Right-drag to pan · Shift-drag to pan · Scroll to zoom · Click to select</span>
-            <span class="hint-mobile">One finger to orbit · Two fingers to pan/zoom · Long press for 3D Cursor</span>
+            <span class="hint-desktop">Drag to orbit · Right-drag to pan · Scroll to zoom · Click to select · G/R/S then drag to transform</span>
+            <span class="hint-mobile">One finger: orbit · Two fingers: pan/zoom · Long press: 3D Cursor · G/R/S: transform</span>
           </div>
           <div class="axis-gizmo" aria-label="View axes">
             <button data-view="front" class="axis-x">X</button>
@@ -91,6 +91,8 @@
               <button data-key="4">4</button><button data-key="5">5</button><button data-key="6">6</button>
               <button data-key="1">1</button><button data-key="2">2</button><button data-key="3">3</button>
               <button data-key="-">−</button><button data-key="0">0</button><button data-key=".">.</button>
+              <button data-axis="x">X</button><button data-axis="y">Y</button><button data-axis="z">Z</button>
+              <button data-axis="x" data-plane="true">YZ</button><button data-axis="y" data-plane="true">XZ</button><button data-axis="z" data-plane="true">XY</button>
               <button data-key="backspace">⌫</button><button data-key="escape">Cancel</button><button data-key="enter" class="pad-enter">Apply</button>
             </div>
           </div>
@@ -163,6 +165,8 @@
     <nav class="mobile-actionbar" aria-label="Quick actions">
       <button id="mobile-add">＋<small>Add</small></button>
       <button id="mobile-move">✥<small>Move</small></button>
+      <button id="mobile-rotate">⟳<small>Rotate</small></button>
+      <button id="mobile-scale">⤢<small>Scale</small></button>
       <button id="mobile-edit">◫<small>Edit</small></button>
       <button id="mobile-extrude">▱<small>Extrude</small></button>
       <button id="mobile-more">⋯<small>More</small></button>
@@ -221,7 +225,7 @@
         const hadController = Boolean(navigator.serviceWorker.controller);
         if (hadController) {
           try {
-            const refreshKey = 'bl3nd-cache-refresh-v3';
+            const refreshKey = 'bl3nd-cache-refresh-v5';
             if (!sessionStorage.getItem(refreshKey)) {
               navigator.serviceWorker.addEventListener('controllerchange', () => {
                 sessionStorage.setItem(refreshKey, '1');

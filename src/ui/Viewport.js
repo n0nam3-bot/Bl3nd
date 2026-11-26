@@ -32,9 +32,12 @@ export class Viewport {
     this.controls.touches.ONE = THREE.TOUCH.ROTATE;
     this.controls.touches.TWO = THREE.TOUCH.DOLLY_PAN;
     this.activeTouchPointers = new Set();
+    this.lastPointer = null;
     this.raycaster = new THREE.Raycaster(); this.pointer = new THREE.Vector2();
     this.clock = new THREE.Clock(); this.running = true;
     this.setupStage(); this.resizeObserver = new ResizeObserver(() => this.resize()); this.resizeObserver.observe(container); this.resize();
+    this.trackPointer = event => { this.lastPointer = { x: event.clientX, y: event.clientY }; };
+    window.addEventListener('pointermove', this.trackPointer, { passive: true });
     this.renderer.domElement.addEventListener('pointerdown', e => this.onPointerDown(e), { capture: true });
     this.renderer.domElement.addEventListener('pointerup', e => this.onPointerUp(e));
     this.renderer.domElement.addEventListener('pointercancel', e => {
@@ -63,7 +66,17 @@ export class Viewport {
     this.contentGroup = group; this.scene.add(group);
   }
 
+  getPointerOrigin() {
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const pointer = this.lastPointer;
+    if (pointer && pointer.x >= rect.left && pointer.x <= rect.right && pointer.y >= rect.top && pointer.y <= rect.bottom) {
+      return { x: pointer.x, y: pointer.y };
+    }
+    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+  }
+
   onPointerDown(event) {
+    this.lastPointer = { x: event.clientX, y: event.clientY };
     if (event.pointerType === 'touch') {
       this.activeTouchPointers.add(event.pointerId);
       // A second finger starts a gesture, never a tap-selection or cursor long-press.
@@ -147,5 +160,5 @@ export class Viewport {
     requestAnimationFrame(this.animate); this.controls.update(); this.renderer.render(this.scene,this.camera);
   };
 
-  dispose() { this.running=false; this.resizeObserver?.disconnect(); this.controls.dispose(); this.renderer.dispose(); this.renderer.domElement.remove(); }
+  dispose() { this.running=false; window.removeEventListener('pointermove', this.trackPointer); this.resizeObserver?.disconnect(); this.controls.dispose(); this.renderer.dispose(); this.renderer.domElement.remove(); }
 }
