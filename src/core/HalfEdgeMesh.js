@@ -685,11 +685,58 @@ export class HalfEdgeMesh {
   }
 
   /**
-   * Transactionally bevels one edge, one supported adjacent pair, or up to
-   * eight pairwise-disjoint interior edges. The adjacent-pair path constructs
-   * one shared-face miter; longer connected selections are rejected.
+   * Transactionally bevels one edge, a supported two-/three-edge connected
+   * path, or up to eight disjoint edge selections. Multi-segment/profile work
+   * is built on a private candidate and committed only after full validation.
    */
-  bevelSelectedEdges({ amount = 0.25 } = {}) {
+  bevelSelectedEdges({ amount = 0.25, segments = 1, profile = 0.5 } = {}) {
+    const fail = reason => ({ changed: false, reason });
+    if (!Number.isInteger(segments) || segments < 1 || segments > 8) {
+      return fail('Bevel supports between one and eight segments.');
+    }
+    if (!Number.isFinite(profile) || profile < 0 || profile > 1) {
+      return fail('Bevel profile must be between 0 and 1.');
+    }
+    if (segments === 1) {
+      const result = this._bevelSelectedEdgesCore({ amount });
+      if (!result.changed) return result;
+      const { bevelFaceRefs, ...publicResult } = result;
+      return { ...publicResult, segments, profile };
+    }
+
+    // Segment/profile work is performed on a private copy. The source remains
+    // untouched unless every shared split edge, cap boundary and triangle
+    // passes topology validation.
+    const candidate = new HalfEdgeMesh(this.positions, this.faces);
+    candidate.selectionMode = this.selectionMode;
+    candidate.edgeSelection = new Set(this.edgeSelection);
+    const baseResult = candidate._bevelSelectedEdgesCore({ amount });
+    if (!baseResult.changed) return baseResult;
+    const refined = candidate._applyBevelSegments({
+      bevelFaceRefs: baseResult.bevelFaceRefs,
+      segments,
+      profile
+    });
+    if (!refined.changed) return fail(refined.reason || 'Segmented bevel validation failed; the original mesh was not changed.');
+
+    this.positions = candidate.positions.map(point => [...point]);
+    this.faces = candidate.faces.map(face => [...face]);
+    this.selectionMode = 'edge';
+    this.clearSelection();
+    this.rebuild();
+    this.edgeSelection = new Set(candidate.edgeSelection);
+    const { bevelFaceRefs, ...publicResult } = baseResult;
+    return {
+      ...publicResult,
+      segments,
+      profile,
+      insertedVertices: baseResult.insertedVertices + refined.insertedVertices,
+      createdFaces: refined.createdFaces,
+      selectedEdges: this.edgeSelection.size
+    };
+  }
+
+  _bevelSelectedEdgesCore({ amount = 0.25 } = {}) {
     const fail = reason => ({ changed: false, reason });
     if (this.selectionMode !== 'edge' || this.edgeSelection.size < 1 || this.edgeSelection.size > 8) {
       return fail('Select between one and eight edges in Edge Select mode.');
@@ -822,6 +869,7 @@ export class HalfEdgeMesh {
     };
     const selectedPerimeterKeys = [];
     const widths = [];
+    const bevelFaceRefs = [];
     let insertedVertices = 0;
     let createdFaces = 0;
 
@@ -836,6 +884,7 @@ export class HalfEdgeMesh {
       widths.push(result.width);
       insertedVertices += result.insertedVertices;
       createdFaces += result.createdFaces;
+      bevelFaceRefs.push(...(result.bevelFaceRefs || []));
       for (const selectedId of candidate.edgeSelection) {
         const selectedEdge = candidate.edges[selectedId];
         if (!selectedEdge) return fail('A bevel perimeter edge could not be recovered.');
@@ -879,7 +928,8 @@ export class HalfEdgeMesh {
       widths,
       insertedVertices,
       createdFaces,
-      selectedEdges: this.edgeSelection.size
+      selectedEdges: this.edgeSelection.size,
+      bevelFaceRefs
     };
   }
 
@@ -967,6 +1017,7 @@ export class HalfEdgeMesh {
     };
     const selectedPerimeterKeys = [];
     const widths = [];
+    const bevelFaceRefs = [];
     let insertedVertices = 0;
     let createdFaces = 0;
     let miterEdges = 0;
@@ -984,6 +1035,7 @@ export class HalfEdgeMesh {
       insertedVertices += result.insertedVertices;
       createdFaces += result.createdFaces;
       miterEdges += result.miterEdges;
+      bevelFaceRefs.push(...(result.bevelFaceRefs || []));
       for (const edgeId of candidate.edgeSelection) {
         const edge = candidate.edges[edgeId];
         if (!edge) return fail('A connected bevel perimeter edge could not be recovered.');
@@ -1030,7 +1082,8 @@ export class HalfEdgeMesh {
       insertedVertices,
       createdFaces,
       miterEdges,
-      selectedEdges: this.edgeSelection.size
+      selectedEdges: this.edgeSelection.size,
+      bevelFaceRefs
     };
   }
 
@@ -1144,6 +1197,7 @@ export class HalfEdgeMesh {
     };
     const plans = pathEdges.map((edgeId, index) => inspectEdge(edgeId, pathVertices[index], pathVertices[index + 1]));
     if (plans.some(plan => !plan)) return fail('Every chain edge must have two consistently wound interior manifold faces.');
+    const endpointRefs = plans.map(plan => [[...this.positions[plan.start]], [...this.positions[plan.end]]]);
 
     const cutInfoByKey = new Map();
     for (const plan of plans) {
@@ -1351,7 +1405,11 @@ export class HalfEdgeMesh {
       insertedVertices: cutIdByKey.size + miterInfos.length,
       createdFaces: plans.length,
       selectedEdges: this.edgeSelection.size,
-      endCaps: 2
+      endCaps: 2,
+      bevelFaceRefs: plans.map((plan, index) => ({
+        faceId: candidate.faces.length - plans.length + index,
+        endpointPoints: endpointRefs[index]
+      }))
     };
   }
 
@@ -1442,6 +1500,7 @@ export class HalfEdgeMesh {
     };
     const plans = [inspectEdge(edgeA), inspectEdge(edgeB)];
     if (plans.some(plan => !plan)) return fail('Both selected edges must have consistently wound interior manifold neighborhoods.');
+    const endpointRefs = plans.map(plan => [[...this.positions[plan.start]], [...this.positions[plan.end]]]);
 
     const sharedFaces = plans[0].first.face.id === plans[1].first.face.id || plans[0].first.face.id === plans[1].second.face.id
       ? [plans[0].first.face.id] : [];
@@ -1645,7 +1704,11 @@ export class HalfEdgeMesh {
       insertedVertices: cutIdByKey.size + 1,
       createdFaces: 2,
       miterEdges: 1,
-      selectedEdges: this.edgeSelection.size
+      selectedEdges: this.edgeSelection.size,
+      bevelFaceRefs: plans.map((plan, index) => ({
+        faceId: candidate.faces.length - plans.length + index,
+        endpointPoints: endpointRefs[index]
+      }))
     };
   }
 
@@ -1683,6 +1746,7 @@ export class HalfEdgeMesh {
     const faceA = this.faces[faceAId], faceB = this.faces[faceBId];
     if (!faceA || !faceB || faceAId === faceBId) return fail('The selected edge does not have two distinct adjacent faces.');
     const a = first.origin, b = first.next.origin;
+    const endpointPoints = [[...this.positions[a]], [...this.positions[b]]];
     const affectedFaces = new Set([faceAId, faceBId]);
     const edgeByKey = new Map(this.edges.map(item => [keyFor(...item.vertices), item]));
     const vertices = [a, b];
@@ -1840,8 +1904,166 @@ export class HalfEdgeMesh {
       const edgeId = rebuiltEdgeIds.get(key);
       if (edgeId !== undefined) this.edgeSelection.add(edgeId);
     }
-    return { changed: true, amount, width, maxWidth, insertedVertices: 4, createdFaces: 1, selectedEdges: this.edgeSelection.size };
+    return {
+      changed: true, amount, width, maxWidth, insertedVertices: 4, createdFaces: 1,
+      selectedEdges: this.edgeSelection.size,
+      bevelFaceRefs: [{ faceId: candidate.faces.length - 1, endpointPoints }]
+    };
   }
+
+
+
+  /**
+   * Replaces each validated bevel quad with a profiled, triangulated strip.
+   * Cross-section split vertices are shared by adjacent strips. Terminal cap
+   * points are displaced inside their cap-face plane; shared miter edges stay
+   * straight so neighboring bevel strips cannot open a crack.
+   */
+  _applyBevelSegments({ bevelFaceRefs = [], segments = 1, profile = 0.5 } = {}) {
+    const fail = reason => ({ changed: false, reason });
+    if (!Number.isInteger(segments) || segments < 2 || segments > 8 ||
+        !Number.isFinite(profile) || profile < 0 || profile > 1 || !bevelFaceRefs.length) {
+      return fail('The segmented bevel parameters or strip references are invalid.');
+    }
+    const bevelFaceIds = new Set(bevelFaceRefs.map(ref => ref.faceId));
+    if (bevelFaceIds.size !== bevelFaceRefs.length || [...bevelFaceIds].some(id =>
+      !Number.isInteger(id) || !this.faces[id] || this.faces[id].length !== 4)) {
+      return fail('A bevel strip could not be identified unambiguously for segmentation.');
+    }
+
+    const edgeByKey = new Map(this.edges.map(edge => [keyFor(...edge.vertices), edge]));
+    const splitByEdge = new Map();
+    const lerp = (a, b, t) => a.map((value, axis) => value + (b[axis] - value) * t);
+    const distance = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+    const dot = (a, b) => a.reduce((sum, value, axis) => sum + value * b[axis], 0);
+    const profileBulge = 0.14644660940672624 + (profile - 0.5) * 0.5;
+
+    for (const ref of bevelFaceRefs) {
+      const face = this.faces[ref.faceId];
+      const endpoints = ref.endpointPoints;
+      if (!Array.isArray(endpoints) || endpoints.length !== 2 ||
+          endpoints.some(point => !Array.isArray(point) || point.length !== 3 || !point.every(Number.isFinite))) {
+        return fail('A source edge endpoint reference is missing from a bevel strip.');
+      }
+      const crossEdges = [[face[1], face[2]], [face[0], face[3]]];
+      const midpoints = crossEdges.map(([a, b]) => lerp(this.positions[a], this.positions[b], 0.5));
+      const costForward = distance(midpoints[0], endpoints[0]) + distance(midpoints[1], endpoints[1]);
+      const costReverse = distance(midpoints[0], endpoints[1]) + distance(midpoints[1], endpoints[0]);
+      const endpointForEdge = costForward <= costReverse ? [endpoints[0], endpoints[1]] : [endpoints[1], endpoints[0]];
+
+      for (let edgeIndex = 0; edgeIndex < crossEdges.length; edgeIndex++) {
+        const [u, v] = crossEdges[edgeIndex];
+        const key = keyFor(u, v);
+        if (splitByEdge.has(key)) continue;
+        const edge = edgeByKey.get(key);
+        if (!edge || edge.halfEdges.length !== 2 || !edge.halfEdges.every(halfEdge => halfEdge.twin)) {
+          return fail('A bevel cross-section is not a closed two-face manifold edge.');
+        }
+        const neighborFaceIds = edge.halfEdges.map(halfEdge => halfEdge.face?.id);
+        const isSharedMiter = neighborFaceIds.some(id => id !== ref.faceId && bevelFaceIds.has(id));
+        const capFaceId = neighborFaceIds.find(id => id !== ref.faceId && !bevelFaceIds.has(id));
+        const [a, b] = edge.vertices;
+        const start = this.positions[a], end = this.positions[b];
+        const edgeLength = distance(start, end);
+        if (!Number.isFinite(edgeLength) || edgeLength <= 1e-10) return fail('A bevel profile edge is too small to subdivide.');
+        let bendDirection = [0, 0, 0];
+        if (!isSharedMiter) {
+          const capFace = this.faces[capFaceId];
+          const normal = Number.isInteger(capFaceId) ? newellNormal(this.positions, capFace) : null;
+          if (!normal) return fail('A bevel terminal cap has no stable plane for profile shaping.');
+          const midpoint = lerp(start, end, 0.5);
+          const towardCorner = endpointForEdge[edgeIndex].map((value, axis) => value - midpoint[axis]);
+          const projected = towardCorner.map((value, axis) => value - normal[axis] * dot(towardCorner, normal));
+          const length = Math.hypot(...projected);
+          if (!Number.isFinite(length) || length <= 1e-10) return fail('A bevel profile direction is ambiguous at a terminal cap.');
+          bendDirection = projected.map(value => value / length);
+        }
+        const finalIds = [];
+        for (let step = 1; step < segments; step++) {
+          const t = step / segments;
+          const point = lerp(start, end, t);
+          if (!isSharedMiter && profileBulge !== 0) {
+            const height = edgeLength * profileBulge * Math.sin(Math.PI * t);
+            for (let axis = 0; axis < 3; axis++) point[axis] += bendDirection[axis] * height;
+          }
+          finalIds.push(this.positions.length);
+          this.positions.push(point);
+        }
+        splitByEdge.set(key, { a, b, ids: finalIds, sharedMiter: isSharedMiter });
+      }
+    }
+
+    const splitInDirection = (startId, endId) => {
+      const entry = splitByEdge.get(keyFor(startId, endId));
+      if (!entry) return [];
+      return startId === entry.a ? [...entry.ids] : [...entry.ids].reverse();
+    };
+    const nextFaces = [];
+    for (let faceId = 0; faceId < this.faces.length; faceId++) {
+      const face = this.faces[faceId];
+      if (bevelFaceIds.has(faceId)) {
+        const sectionA = [face[1], ...splitInDirection(face[1], face[2]), face[2]];
+        const sectionB = [face[0], ...splitInDirection(face[0], face[3]), face[3]];
+        if (sectionA.length !== segments + 1 || sectionB.length !== segments + 1) {
+          return fail('A shared bevel section could not be divided into matching segment rows.');
+        }
+        for (let step = 0; step < segments; step++) {
+          const b0 = sectionB[step], a0 = sectionA[step], a1 = sectionA[step + 1], b1 = sectionB[step + 1];
+          nextFaces.push([b0, a0, a1], [b0, a1, b1]);
+        }
+      } else {
+        const output = [];
+        for (let index = 0; index < face.length; index++) {
+          const startId = face[index], endId = face[(index + 1) % face.length];
+          output.push(startId, ...splitInDirection(startId, endId));
+        }
+        if (output.length < 3 || new Set(output).size !== output.length) return fail('A cap boundary could not be reconstructed after profile subdivision.');
+        nextFaces.push(output);
+      }
+    }
+
+    const candidate = new HalfEdgeMesh(this.positions, nextFaces);
+    const report = candidate.validateTopology();
+    if (!report.valid) {
+      return fail(`Segmented bevel failed topology validation (${report.issueCount} issue(s)); the original mesh was not changed.`);
+    }
+    for (let faceId = 0; faceId < candidate.faces.length; faceId++) {
+      if (!candidate.triangulateFace(faceId).length) return fail('A segmented bevel face could not be triangulated.');
+    }
+
+    const selectedPairs = [...this.edgeSelection].map(edgeId => {
+      const edge = this.edges[edgeId];
+      return edge ? [...edge.vertices] : null;
+    });
+    if (selectedPairs.some(pair => !pair)) return fail('A bevel perimeter edge disappeared before segmentation.');
+    const edgeIdsByKey = new Map(candidate.edges.map(edge => [keyFor(...edge.vertices), edge.id]));
+    candidate.selectionMode = 'edge';
+    candidate.clearSelection();
+    for (const [startId, endId] of selectedPairs) {
+      const chain = [startId, ...splitInDirection(startId, endId), endId];
+      for (let index = 0; index < chain.length - 1; index++) {
+        const edgeId = edgeIdsByKey.get(keyFor(chain[index], chain[index + 1]));
+        if (edgeId === undefined) return fail('A segmented bevel perimeter edge could not be recovered.');
+        candidate.edgeSelection.add(edgeId);
+      }
+    }
+    const expectedSelected = selectedPairs.reduce((sum, [a, b]) => sum + 1 + (splitByEdge.get(keyFor(a, b))?.ids.length || 0), 0);
+    if (candidate.edgeSelection.size !== expectedSelected) return fail('The segmented bevel perimeter is incomplete or ambiguous.');
+
+    this.positions = candidate.positions.map(point => [...point]);
+    this.faces = candidate.faces.map(face => [...face]);
+    this.selectionMode = 'edge';
+    this.clearSelection();
+    this.rebuild();
+    this.edgeSelection = new Set(candidate.edgeSelection);
+    return {
+      changed: true,
+      insertedVertices: splitByEdge.size * (segments - 1),
+      createdFaces: bevelFaceRefs.length * segments * 2,
+      selectedEdges: this.edgeSelection.size
+    };
+  }
+
 
   /**
    * Inserts a centered/interpolated cut through a regular quad edge loop.

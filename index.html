@@ -94,6 +94,16 @@
               <span>LOOP CUTS <b id="pad-cuts">1</b></span>
               <button type="button" data-cuts="1" aria-label="More cuts">＋</button>
             </div>
+            <div class="pad-count-row" id="pad-bevel-segments-row" hidden>
+              <button type="button" data-bevel-segments="-1" aria-label="Fewer bevel segments">−</button>
+              <span>BEVEL SEGMENTS <b id="pad-bevel-segments">1</b></span>
+              <button type="button" data-bevel-segments="1" aria-label="More bevel segments">＋</button>
+            </div>
+            <div class="pad-count-row" id="pad-bevel-profile-row" hidden>
+              <button type="button" data-bevel-profile="-0.05" aria-label="More concave profile">−</button>
+              <span>PROFILE <b id="pad-bevel-profile">0.50</b></span>
+              <button type="button" data-bevel-profile="0.05" aria-label="More convex profile">＋</button>
+            </div>
             <div class="pad-grid">
               <button data-key="7">7</button><button data-key="8">8</button><button data-key="9">9</button>
               <button data-key="4">4</button><button data-key="5">5</button><button data-key="6">6</button>
@@ -240,7 +250,7 @@
         const hadController = Boolean(navigator.serviceWorker.controller);
         if (hadController) {
           try {
-            const refreshKey = 'bl3nd-cache-refresh-v19';
+            const refreshKey = 'bl3nd-cache-refresh-v20';
             if (!sessionStorage.getItem(refreshKey)) {
               navigator.serviceWorker.addEventListener('controllerchange', () => {
                 sessionStorage.setItem(refreshKey, '1');

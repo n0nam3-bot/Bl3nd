@@ -3,7 +3,7 @@ import { HalfEdgeMesh } from '../core/HalfEdgeMesh.js';
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
 /**
- * Interactive, transactional preview for the first conservative edge Bevel.
+ * Interactive, transactional preview for supported edge Bevel selections.
  * Every update is rebuilt from the immutable source mesh; cancel restores the
  * complete document snapshot and confirm records one undo transaction.
  */
@@ -16,6 +16,8 @@ export class BevelModal {
     this.onChange = onChange;
     this.active = false;
     this.amount = 0.25;
+    this.segments = 1;
+    this.profile = 0.5;
     this.numeric = '';
     this.lastResult = null;
     this.lastError = '';
@@ -43,10 +45,12 @@ export class BevelModal {
       ? { x: pointer.x, y: pointer.y } : null;
     this.startAmount = 0.25;
     this.amount = this.startAmount;
+    this.segments = 1;
+    this.profile = 0.5;
     this.numeric = '';
     this.lastError = '';
 
-    const preview = this.buildPreview(this.amount);
+    const preview = this.buildPreview(this.amount, this.segments, this.profile);
     if (!preview.result?.changed) {
       this.lastError = preview.result?.reason || 'This edge neighborhood is not supported.';
       this.clear();
@@ -55,16 +59,16 @@ export class BevelModal {
     this.lastResult = preview.result;
     this.applyPreview(preview.hem);
     this.active = true;
-    this.status?.(`BEVEL · ${this.seedEdgeIds.length} edge${this.seedEdgeIds.length === 1 ? '' : 's'} · drag to change width · type 0–0.95 · Enter apply · Esc cancel`);
+    this.status?.(`BEVEL · ${this.segments} segment(s) · profile ${this.profile.toFixed(2)} · drag width · +/- segments · [ ] profile · Enter apply · Esc cancel`);
     this.onChange?.();
     return true;
   }
 
-  buildPreview(amount) {
+  buildPreview(amount, segments = this.segments, profile = this.profile) {
     const hem = new HalfEdgeMesh(this.basePositions, this.baseFaces);
     hem.setSelectionMode('edge');
     hem.edgeSelection = new Set(this.seedEdgeIds);
-    const result = hem.bevelSelectedEdges({ amount });
+    const result = hem.bevelSelectedEdges({ amount, segments, profile });
     return { hem, result };
   }
 
@@ -76,7 +80,7 @@ export class BevelModal {
   setAmount(value, { preserveNumeric = false } = {}) {
     if (!this.active || !Number.isFinite(value)) return false;
     const next = clamp(value, 0.01, 0.95);
-    const preview = this.buildPreview(next);
+    const preview = this.buildPreview(next, this.segments, this.profile);
     if (!preview.result?.changed) {
       this.lastError = preview.result?.reason || 'This bevel amount is not supported.';
       this.status?.(`Bevel amount rejected · ${this.lastError}`);
@@ -87,9 +91,55 @@ export class BevelModal {
     this.lastResult = preview.result;
     this.lastError = '';
     this.applyPreview(preview.hem);
-    this.status?.(`Bevel · ${preview.result.bevelCount || 1} edge(s) · amount ${this.amount.toFixed(2)} · width ${preview.result.width.toFixed(3)} · Enter apply / Esc cancel`);
+    this.status?.(`Bevel · ${this.segments} segment(s) · profile ${this.profile.toFixed(2)} · amount ${this.amount.toFixed(2)} · width ${preview.result.width.toFixed(3)} · Enter apply / Esc cancel`);
     this.onChange?.();
     return true;
+  }
+
+  setSegments(value) {
+    if (!this.active || !Number.isFinite(value)) return false;
+    const next = Math.round(clamp(value, 1, 8));
+    const preview = this.buildPreview(this.amount, next, this.profile);
+    if (!preview.result?.changed) {
+      this.lastError = preview.result?.reason || 'This segment count is not supported.';
+      this.status?.(`Bevel segments rejected · ${this.lastError}`);
+      return false;
+    }
+    this.segments = next;
+    this.lastResult = preview.result;
+    this.lastError = '';
+    this.applyPreview(preview.hem);
+    this.status?.(`Bevel · ${this.segments} segment(s) · profile ${this.profile.toFixed(2)} · amount ${this.amount.toFixed(2)} · Enter apply / Esc cancel`);
+    this.onChange?.();
+    return true;
+  }
+
+  changeSegments(delta) {
+    if (!this.active || !Number.isFinite(delta)) return false;
+    return this.setSegments(this.segments + Math.sign(delta));
+  }
+
+  setProfile(value) {
+    if (!this.active || !Number.isFinite(value)) return false;
+    const next = Math.round(clamp(value, 0, 1) * 100) / 100;
+    const preview = this.buildPreview(this.amount, this.segments, next);
+    if (!preview.result?.changed) {
+      this.lastError = preview.result?.reason || 'This profile is not supported.';
+      this.status?.(`Bevel profile rejected · ${this.lastError}`);
+      return false;
+    }
+    this.profile = next;
+    this.lastResult = preview.result;
+    this.lastError = '';
+    this.applyPreview(preview.hem);
+    this.status?.(`Bevel · ${this.segments} segment(s) · profile ${this.profile.toFixed(2)} · amount ${this.amount.toFixed(2)} · Enter apply / Esc cancel`);
+    this.onChange?.();
+    return true;
+  }
+
+  changeProfile(delta, fine = false) {
+    if (!this.active || !Number.isFinite(delta)) return false;
+    return this.setProfile(this.profile + Math.sign(delta) * (fine ? 0.01 : 0.05));
   }
 
   pointerMove(point, fine = false) {
@@ -149,6 +199,8 @@ export class BevelModal {
     this.active = false;
     this.amount = 0.25;
     this.startAmount = 0.25;
+    this.segments = 1;
+    this.profile = 0.5;
     this.numeric = '';
     this.lastResult = null;
     this.mesh = null;

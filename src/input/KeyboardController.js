@@ -13,6 +13,10 @@ export class KeyboardController {
       if (key==='enter') { event.preventDefault(); await this.dispatch('mesh.bevel_confirm'); return; }
       if (key==='arrowleft' || key==='arrowdown') { event.preventDefault(); await this.dispatch('mesh.bevel_nudge',{direction:-1,fine:event.shiftKey}); return; }
       if (key==='arrowright' || key==='arrowup') { event.preventDefault(); await this.dispatch('mesh.bevel_nudge',{direction:1,fine:event.shiftKey}); return; }
+      if (key==='+' || key==='=') { event.preventDefault(); await this.dispatch('mesh.bevel_segments',{delta:1}); return; }
+      if (key==='-') { event.preventDefault(); await this.dispatch('mesh.bevel_segments',{delta:-1}); return; }
+      if (key==='[' || key==='{') { event.preventDefault(); await this.dispatch('mesh.bevel_profile',{delta:-1,fine:event.shiftKey || key==='{'}); return; }
+      if (key===']' || key==='}') { event.preventDefault(); await this.dispatch('mesh.bevel_profile',{delta:1,fine:event.shiftKey || key==='}'}); return; }
       if (/^\d$/.test(key) || key==='.' || key==='backspace') {
         event.preventDefault(); await this.dispatch('mesh.bevel_input',{value:key==='backspace'?'backspace':key}); return;
       }

@@ -291,6 +291,16 @@ function registerCommands() {
     ui.refreshModal();
     return changed;
   }, { recordUndo: false });
+  commandBus.register('mesh.bevel_segments', ({ delta }) => {
+    const changed = bevelModal.changeSegments(delta);
+    ui.refreshModal();
+    return changed;
+  }, { recordUndo: false });
+  commandBus.register('mesh.bevel_profile', ({ delta, fine = false }) => {
+    const changed = bevelModal.changeProfile(delta, fine);
+    ui.refreshModal();
+    return changed;
+  }, { recordUndo: false });
   commandBus.register('mesh.bevel_confirm', async () => {
     const result = await bevelModal.confirm();
     viewport.controls.enabled = true;
@@ -522,7 +532,7 @@ ui = {
     const axisButtons=pad.querySelectorAll('[data-axis]');
     if(bevelModal.active){
       readout.hidden=false;
-      readout.textContent=`BEVEL · ${bevelModal.seedEdgeIds.length} edge(s) · Amount ${bevelModal.amount.toFixed(2)} · Avg width ${bevelModal.lastResult?.width.toFixed(3) || '—'} · Drag / arrows / type · Enter apply / Esc cancel`;
+      readout.textContent=`BEVEL · ${bevelModal.seedEdgeIds.length} edge(s) · ${bevelModal.segments} segment(s) · Profile ${bevelModal.profile.toFixed(2)} · Amount ${bevelModal.amount.toFixed(2)} · Drag / arrows: width · +/-: segments · [ ]: profile · Enter apply / Esc cancel`;
       pad.hidden=!capabilities.tier.includes('Mobile');
       pad.classList.remove('loop-cut-mode','bevel-mode');
       pad.classList.add('bevel-mode');
@@ -530,6 +540,10 @@ ui = {
       axisButtons.forEach(button=>button.hidden=true);
       $('#pad-value').textContent=bevelModal.numeric || bevelModal.amount.toFixed(2);
       $('#pad-count-row').hidden=true;
+      $('#pad-bevel-segments-row').hidden=false;
+      $('#pad-bevel-profile-row').hidden=false;
+      $('#pad-bevel-segments').textContent=String(bevelModal.segments);
+      $('#pad-bevel-profile').textContent=bevelModal.profile.toFixed(2);
       return;
     }
     if(loopCutModal.active){
@@ -543,10 +557,14 @@ ui = {
       $('#pad-value').textContent=loopCutModal.numeric || loopCutModal.offset.toFixed(2);
       $('#pad-count-row').hidden=false;
       $('#pad-cuts').textContent=String(loopCutModal.cuts);
+      $('#pad-bevel-segments-row').hidden=true;
+      $('#pad-bevel-profile-row').hidden=true;
       return;
     }
     pad.classList.remove('loop-cut-mode','bevel-mode');
     $('#pad-count-row').hidden=true;
+    $('#pad-bevel-segments-row').hidden=true;
+    $('#pad-bevel-profile-row').hidden=true;
     padTitle.textContent='TRANSFORM VALUE';
     axisButtons.forEach(button=>button.hidden=false);
     if(!modalTransform.active){readout.hidden=true;pad.hidden=true;return;}
@@ -620,6 +638,10 @@ $('#pie-menu').addEventListener('click',async event=>{
 $('#shading-btn').addEventListener('click',()=>ui.togglePie('shading'));
 $('#numeric-pad').addEventListener('click',async event=>{
   if(bevelModal.active){
+    const segmentButton=event.target.closest('button[data-bevel-segments]');
+    if(segmentButton){await run('mesh.bevel_segments',{delta:Number(segmentButton.dataset.bevelSegments)});return;}
+    const profileButton=event.target.closest('button[data-bevel-profile]');
+    if(profileButton){await run('mesh.bevel_profile',{delta:Number(profileButton.dataset.bevelProfile)});return;}
     const bevelKey=event.target.closest('button[data-key]');if(!bevelKey)return;const key=bevelKey.dataset.key;
     if(key==='enter'){await run('mesh.bevel_confirm');return;}
     if(key==='escape'){await run('mesh.bevel_cancel');return;}

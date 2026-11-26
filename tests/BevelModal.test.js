@@ -288,3 +288,32 @@ test('Bevel modal cancellation restores the original three-edge chain without an
   assert.deepEqual(await session.document.serialize(), before);
   assert.equal(session.commits.length, 0);
 });
+
+test('Bevel modal adjusts segments and profile from the immutable source, then commits once', async () => {
+  const session = makeSession();
+  const modal = new BevelModal(session);
+  assert.equal(await modal.begin(), true, modal.lastError);
+  assert.equal(modal.setSegments(3), true, modal.lastError);
+  assert.equal(modal.setProfile(0.8), true, modal.lastError);
+  assert.equal(modal.segments, 3);
+  assert.equal(modal.profile, 0.8);
+  assert.equal(session.mesh.userData.hem.validateTopology().valid, true);
+  const result = await modal.confirm();
+  assert.equal(result.changed, true);
+  assert.equal(result.segments, 3);
+  assert.equal(result.profile, 0.8);
+  assert.equal(session.commits.length, 1);
+  assert.equal(session.commits[0].label, 'Bevel');
+});
+
+test('Bevel modal cancel restores the source after changing segments and profile', async () => {
+  const session = makeSession();
+  const before = await session.document.serialize();
+  const modal = new BevelModal(session);
+  assert.equal(await modal.begin(), true);
+  assert.equal(modal.setSegments(4), true);
+  assert.equal(modal.setProfile(0.2), true);
+  assert.equal(await modal.cancel(), true);
+  assert.deepEqual(await session.document.serialize(), before);
+  assert.equal(session.commits.length, 0);
+});

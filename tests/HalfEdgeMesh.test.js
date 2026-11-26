@@ -787,3 +787,172 @@ test('Connected Bevel rejects branches, cycles and four-edge chains without muta
     assert.equal(JSON.stringify({ positions: hem.positions, faces: hem.faces, edgeSelection: [...hem.edgeSelection] }), before);
   }
 });
+
+test('Segmented Bevel builds a profiled multi-face strip and preserves closed topology', () => {
+  const build = profile => {
+    const hem = makeCube();
+    hem.setSelectionMode('edge');
+    const seed = hem.edges.find(edge => keyFor(...edge.vertices) === keyFor(4,5));
+    hem.selectEdge(seed.id);
+    const result = hem.bevelSelectedEdges({ amount: 0.25, segments: 4, profile });
+    return { hem, result };
+  };
+  const concave = build(0);
+  const rounded = build(0.5);
+  const convex = build(1);
+  for (const { hem, result } of [concave, rounded, convex]) {
+    assert.equal(result.changed, true, result.reason);
+    assert.equal(result.segments, 4);
+    assert.equal(result.createdFaces, 8);
+    assert.equal(result.selectedEdges, 10);
+    assert.equal(hem.faces.length, 14);
+    const report = hem.validateTopology();
+    assert.equal(report.valid, true);
+    assert.equal(report.counts.boundaryEdges, 0);
+    assert.ok(hem.edges.every(edge => edge.halfEdges.length === 2));
+  }
+  assert.notDeepEqual(concave.hem.positions, rounded.hem.positions, 'the default rounded profile must differ from the concave profile');
+  assert.notDeepEqual(rounded.hem.positions, convex.hem.positions, 'the convex profile must differ from the default rounded profile');
+  assert.notDeepEqual(concave.hem.positions, convex.hem.positions, 'profile values must change the cross-section geometry');
+});
+
+test('Segmented Bevel shares profile subdivisions across a connected two-edge miter', () => {
+  const hem = makeCube();
+  hem.setSelectionMode('edge');
+  for (const pair of [[4,5],[5,6]]) {
+    const edge = hem.edges.find(item => keyFor(...item.vertices) === keyFor(...pair));
+    hem.selectEdge(edge.id, true);
+  }
+  const result = hem.bevelSelectedEdges({ amount: 0.25, segments: 3, profile: 0.65 });
+  assert.equal(result.changed, true, result.reason);
+  assert.equal(result.miterEdges, 1);
+  assert.equal(result.createdFaces, 12);
+  assert.equal(result.selectedEdges, 10);
+  const report = hem.validateTopology();
+  assert.equal(report.valid, true);
+  assert.equal(report.counts.boundaryEdges, 0);
+  assert.ok(hem.edges.every(edge => edge.halfEdges.length === 2));
+});
+
+test('Segmented Bevel preserves both miter junctions and terminal caps on a three-edge chain', () => {
+  const hem = makeCube();
+  hem.setSelectionMode('edge');
+  for (const pair of [[4,5],[5,6],[6,7]]) {
+    const edge = hem.edges.find(item => keyFor(...item.vertices) === keyFor(...pair));
+    hem.selectEdge(edge.id, true);
+  }
+  const result = hem.bevelSelectedEdges({ amount: 0.25, segments: 3, profile: 0.5 });
+  assert.equal(result.changed, true, result.reason);
+  assert.equal(result.miterEdges, 2);
+  assert.equal(result.endCaps, 2);
+  assert.equal(result.createdFaces, 18);
+  assert.equal(result.selectedEdges, 12);
+  const report = hem.validateTopology();
+  assert.equal(report.valid, true);
+  assert.equal(report.counts.boundaryEdges, 0);
+  assert.ok(hem.edges.every(edge => edge.halfEdges.length === 2));
+});
+
+test('Segmented Bevel processes multiple independent miter pairs in one closed candidate', () => {
+  const source = makeCube();
+  const positions = [], faces = [];
+  for (let component = 0; component < 2; component++) {
+    const offset = positions.length;
+    positions.push(...source.positions.map(([x,y,z]) => [x + component * 4,y,z]));
+    faces.push(...source.faces.map(face => face.map(id => id + offset)));
+  }
+  const hem = new HalfEdgeMesh(positions, faces);
+  hem.setSelectionMode('edge');
+  for (const offset of [0,8]) for (const pair of [[4,5],[5,6]]) {
+    const edge = hem.edges.find(item => keyFor(...item.vertices) === keyFor(pair[0] + offset,pair[1] + offset));
+    hem.selectEdge(edge.id, true);
+  }
+  const result = hem.bevelSelectedEdges({ amount: 0.25, segments: 2, profile: 0.7 });
+  assert.equal(result.changed, true, result.reason);
+  assert.equal(result.miterCount, 2);
+  assert.equal(result.createdFaces, 16);
+  assert.equal(result.selectedEdges, 16);
+  assert.equal(hem.validateTopology().valid, true);
+  assert.equal(hem.validateTopology().counts.boundaryEdges, 0);
+});
+
+test('Segmented Bevel rejects invalid segment/profile controls without mutating the source', () => {
+  for (const options of [{ segments: 0 }, { segments: 9 }, { profile: -0.1 }, { profile: 1.1 }]) {
+    const hem = makeCube();
+    hem.setSelectionMode('edge');
+    hem.selectEdge(hem.edges.find(edge => keyFor(...edge.vertices) === keyFor(4,5)).id);
+    const before = JSON.stringify({ positions: hem.positions, faces: hem.faces, selection: [...hem.edgeSelection] });
+    const result = hem.bevelSelectedEdges({ amount: 0.25, ...options });
+    assert.equal(result.changed, false);
+    assert.equal(JSON.stringify({ positions: hem.positions, faces: hem.faces, selection: [...hem.edgeSelection] }), before);
+  }
+});
+
+
+test('Segmented Bevel preserves a skewed three-edge chain with profiled caps', () => {
+  const source = makeCube();
+  const positions = source.positions.map(([x, y, z]) => [
+    2 * x + 0.3 * y + 0.1 * z,
+    0.2 * x + 1.7 * y + 0.15 * z,
+    0.1 * x + 0.25 * y + 1.3 * z
+  ]);
+  const hem = new HalfEdgeMesh(positions, source.faces);
+  hem.setSelectionMode('edge');
+  for (const pair of [[6,7],[4,5],[5,6]]) {
+    const edge = hem.edges.find(item => keyFor(...item.vertices) === keyFor(...pair));
+    assert.ok(edge);
+    hem.selectEdge(edge.id, true);
+  }
+  const result = hem.bevelSelectedEdges({ amount: 0.3, segments: 4, profile: 0.8 });
+  const report = hem.validateTopology();
+  assert.equal(result.changed, true, result.reason);
+  assert.equal(result.segments, 4);
+  assert.equal(result.miterEdges, 2);
+  assert.equal(result.endCaps, 2);
+  assert.equal(result.createdFaces, 24);
+  assert.equal(report.valid, true);
+  assert.equal(report.counts.boundaryEdges, 0);
+  assert.ok(hem.edges.every(edge => edge.halfEdges.length === 2));
+});
+
+test('Segmented Bevel handles disconnected single-edge selections in one candidate', () => {
+  const source = makeCube();
+  const positions = [], faces = [];
+  for (let component = 0; component < 2; component++) {
+    const offset = positions.length;
+    positions.push(...source.positions.map(([x, y, z]) => [x + component * 5, y, z]));
+    faces.push(...source.faces.map(face => face.map(id => id + offset)));
+  }
+  const hem = new HalfEdgeMesh(positions, faces);
+  hem.setSelectionMode('edge');
+  for (const offset of [0, 8]) {
+    const edge = hem.edges.find(item => keyFor(...item.vertices) === keyFor(4 + offset, 5 + offset));
+    assert.ok(edge);
+    hem.selectEdge(edge.id, true);
+  }
+  const result = hem.bevelSelectedEdges({ amount: 0.25, segments: 3, profile: 0.4 });
+  const report = hem.validateTopology();
+  assert.equal(result.changed, true, result.reason);
+  assert.equal(result.bevelCount, 2);
+  assert.equal(result.createdFaces, 12);
+  assert.equal(result.selectedEdges, 16);
+  assert.equal(report.valid, true);
+  assert.equal(report.counts.boundaryEdges, 0);
+});
+
+
+test('Segmented Bevel accepts every supported segment count from one through eight', () => {
+  for (let segments = 1; segments <= 8; segments++) {
+    const hem = makeCube();
+    hem.setSelectionMode('edge');
+    const edge = hem.edges.find(item => keyFor(...item.vertices) === keyFor(4,5));
+    assert.ok(edge);
+    hem.selectEdge(edge.id);
+    const result = hem.bevelSelectedEdges({ amount: 0.25, segments, profile: 0.5 });
+    const report = hem.validateTopology();
+    assert.equal(result.changed, true, `segments ${segments}: ${result.reason}`);
+    assert.equal(result.segments, segments);
+    assert.equal(report.valid, true, `segments ${segments} produced invalid topology`);
+    assert.equal(report.counts.boundaryEdges, 0);
+  }
+});
