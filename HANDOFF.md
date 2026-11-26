@@ -73,7 +73,7 @@ Status meanings: **Working** = implemented end-to-end in the current foundation;
 | Mobile ZIP workflow | Working | ZIP path validation, extraction, cleanup, bot commit; workflow files are excluded. |
 | GitHub Pages deployment | Working after workflow correction | Two-job artifact/deploy pipeline; triggers after successful unpack completion and normal main pushes excluding uploads. Verify with the next deployment run. |
 | Bl3nd branding/PWA | Working | Bl3nd header/title, manifest identity, app icons, service worker cache-version migration. |
-| Startup progress/error UI | Partial | Staged startup progress and visible startup failure message; runtime behavior still needs real-browser verification. |
+| Startup progress/error UI | Partial | Staged progress and visible exceptions. Starter cube now initializes directly through `SceneDocument`, outside command dispatch and undo snapshot I/O; viewport framing and initial panel refresh are isolated as non-fatal steps. Real-browser verification remains. |
 | Device capabilities | Partial | Detects tier, memory, CPU threads, WebGPU, WebGL2 and OPFS. Tier affects render pixel ratio/history budget; WebGPU is not activated. |
 | 3D viewport | Partial | Three.js WebGL renderer, grid, axes, orbit/pan/zoom, standard views and framing. |
 | Command bus | Working | Named command registration and snapshot-based undo boundaries. |
@@ -106,6 +106,7 @@ Status meanings: **Working** = implemented end-to-end in the current foundation;
 12. GitHub Actions workflow files must be edited manually because the unpacker deliberately excludes `.github/workflows/**`.
 13. The Pages upload artifact must be created in the `build` job and deployed in the dependent `deploy` job. Do not reintroduce a `gh workflow run pages.yml` step in the unpack workflow; the `workflow_run` event handles deployment after unpack succeeds.
 14. The current Node.js 20 deprecation annotation from older action major versions is a warning, not the cause of the prior artifact lookup failure.
+15. The initial starter object is document bootstrap state, not a user operation. Do not route its creation through the CommandBus or undo snapshots; later user-created objects must continue to use the CommandBus.
 
 ## Roadmap
 
@@ -152,6 +153,12 @@ Status meanings: **Working** = implemented end-to-end in the current foundation;
 - Kept workflow definitions protected from ZIP extraction and removed the manual `gh workflow run` call.
 - Added a validation check ensuring `index.html` exists in the Pages artifact.
 
+### 2026-11-26 — `bl3nd-starter-cube-startup-fix.zip` — v0.1.3
+- Changed first-run cube initialization to call `SceneDocument.addPrimitive` directly. The startup scene no longer depends on CommandBus availability or undo snapshot persistence.
+- Added explicit editable-mesh validation and reports the underlying creation exception if the scene document cannot produce the starter cube.
+- Isolated viewport framing and initial panel refresh as non-fatal startup steps, allowing a valid cube and workspace to remain available if a secondary presentation update fails.
+- Kept all user-triggered object creation routed through the CommandBus with normal undo recording.
+
 ## Next Roadmap Step
 
-Verify the corrected GitHub Pages workflow from a real mobile ZIP upload, then continue Phase 1 by improving mesh-selection visualization and topology correctness. Keep all application updates zero-build and delta-ZIP only.
+Verify starter-cube creation and recovery behavior in desktop and mobile browsers, then continue Phase 1 by improving mesh-selection visualization and topology correctness. Keep all application updates zero-build and delta-ZIP only.

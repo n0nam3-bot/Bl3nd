@@ -330,14 +330,37 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js',{scope:'./'}).then(()=>$('#sw-profile').textContent='Registered').catch(()=>$('#sw-profile').textContent='Unavailable');
 } else $('#sw-profile').textContent='Unsupported';
 
-// Initial scene: one editable cube at the world origin.
+// Initial scene: bootstrap directly through SceneDocument.
+// The default scene must not depend on command dispatch or undo snapshot I/O.
 loadingProgress(94, 'Creating the starter object…');
-const starterObject = await run('object.add_primitive', { primitive: 'cube' });
-if (!starterObject?.isMesh) {
-  throw new Error('The starter cube could not be created. Check the browser console for the command error, then reload Bl3nd.');
+let starterObject;
+try {
+  starterObject = sceneDocument.addPrimitive('cube');
+} catch (error) {
+  console.error('[Bl3nd startup: starter cube creation]', error);
+  loading?.fail(error);
+  throw new Error(`Starter cube creation failed: ${error?.message || String(error)}`, { cause: error });
 }
-sceneDocument.activeObject.position.set(0,0,0);
-refresh();
+
+if (!starterObject?.isMesh || !starterObject.userData?.hem) {
+  const error = new Error('SceneDocument did not return a valid editable cube mesh.');
+  loading?.fail(error);
+  throw error;
+}
+
+starterObject.position.set(0, 0, 0);
+try {
+  viewport.frame(starterObject);
+} catch (error) {
+  console.error('[Bl3nd startup: starter cube framing]', error);
+  notify(`Starter cube created, but auto-framing failed: ${error?.message || String(error)}`, 'error');
+}
+try {
+  refresh();
+} catch (error) {
+  console.error('[Bl3nd startup: initial UI refresh]', error);
+  notify(`Starter cube created, but some status panels could not refresh: ${error?.message || String(error)}`, 'error');
+}
 loadingProgress(98, 'Finalizing the workspace and browser storage…');
 status(`Ready · ${capabilities.tier} tier · ${capabilities.webgpu?'WebGPU detected':'WebGL path'}`);
 if(capabilities.storage){
