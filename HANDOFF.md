@@ -58,7 +58,8 @@
 │   │   ├── MeshOperators.js    # Basic extrude/inset/delete/subdivide
 │   │   ├── SelectionOperators.js # Visibility-checked screen-space region selection
 │   │   ├── ModalTransform.js   # Camera-aware G/R/S state machine
-│   │   └── LoopCutModal.js     # Transactional interactive loop-cut preview and slide
+│   │   ├── LoopCutModal.js     # Transactional interactive loop-cut preview and slide
+│   │   └── BevelModal.js       # Transactional one-/multi-edge bevel preview
 │   ├── ui/
 │   │   ├── Viewport.js         # Three.js viewport, navigation, pointer origin and overlay lifecycle
 │   │   └── EditModeOverlay.js  # Non-destructive vertex/edge/face selection display
@@ -68,6 +69,7 @@
 ├── .gitignore
 ├── tests/
 │   ├── HalfEdgeMesh.test.js    # Node topology/triangulation regression tests
+│   ├── BevelModal.test.js      # Bevel preview/confirm/cancel regression tests
 │   └── LoopCutModal.test.js    # Loop-cut preview/confirm/cancel regression tests
 ├── HANDOFF.md                  # This document
 ├── README.md                   # Deployment and quick controls
@@ -84,7 +86,7 @@ Status meanings: **Working** = implemented end-to-end in the current foundation;
 |---|---|---|
 | Zero-build static app | Working | Native ES modules, static HTML/CSS, pinned Three.js CDN imports. |
 | Mobile ZIP workflow | Working | ZIP path validation, extraction, cleanup, bot commit; workflow files are excluded. |
-| GitHub Pages deployment | Working after workflow correction | Two-job artifact/deploy pipeline; triggers after successful unpack completion and normal main pushes excluding uploads. Latest deployed baseline for v0.1.12: `main` commit `33ea052` (Pages run #19 succeeded). |
+| GitHub Pages deployment | Working after workflow correction | Two-job artifact/deploy pipeline; triggers after successful unpack completion and normal main pushes excluding uploads. Latest deployed baseline for v0.1.16: `main` commit `02e6d5958cb391e799e6f4682950b6d2db92dde5` (Pages run #24 succeeded). |
 | Bl3nd branding/PWA | Working | Bl3nd header/title, manifest identity, app icons, service worker cache-version migration. |
 | Startup progress/error UI | Partial | Staged progress and visible exceptions. Starter cube now initializes directly through `SceneDocument`, outside command dispatch and undo snapshot I/O; viewport framing and initial panel refresh are isolated as non-fatal steps. Real-browser verification remains. |
 | Device capabilities | Partial | Detects tier, memory, CPU threads, WebGPU, WebGL2 and OPFS. Tier affects render pixel ratio/history budget; WebGPU is not activated. |
@@ -100,7 +102,7 @@ Status meanings: **Working** = implemented end-to-end in the current foundation;
 | Model I/O | Partial | GLB, GLTF, OBJ and STL browser import/export paths; complex scenes/materials/animation need validation. |
 | Desktop/mobile input | Partial | Desktop left-drag orbit, right-drag/Shift+left-drag pan and wheel zoom; B/C/L or the viewport menu activate box/circle/lasso drags, with Esc returning to click selection; Shift adds. Alt+L expands selected quad-edge loops; Ctrl+Alt+L expands regular vertex-fan rings. Mobile supports the same drag tools from the Select menu, two-finger dolly-pan and existing quick actions. Device testing remains. |
 | Pie menus | Partial | Compact command menus; not true radial Blender pie menus. |
-| Bevel/sculpt | Partial | Bevel supports one edge or up to eight pairwise-disjoint edges on closed, convex, planar tri-valent neighborhoods. Multi-edge candidates are rebuilt transactionally, combined topology is validated, and the modal commits one undo record. Contiguous selections are explicitly rejected before preview because shared-face intersection and corner-miter construction are not yet proven. Boundaries, shared affected faces/offset edges, non-manifold or invalid meshes, extraordinary endpoints and concave/non-planar faces are rejected. Segments, profile shaping and sculpting are not implemented. |
+| Bevel/sculpt | Partial | Bevel supports one edge, exactly two adjacent edges meeting at one closed tri-valent corner, or up to eight pairwise-disjoint edges. The connected-pair path intersects the two offset lines in the shared face, creates one manifold miter edge and two joined bevel strips, then validates the complete candidate and affected planar/convex faces before commit. The modal previews from the immutable source and records one undo transaction. Longer chains and branches are rejected. Boundaries, non-manifold or invalid meshes, extraordinary endpoints, ambiguous/excessive miters and concave/non-planar faces remain unsupported. Segments, profile shaping and sculpting are not implemented. |
 | Exact Blender clone | Not Started | No claim of full Blender operator, BMesh, UI, or file-format parity. |
 
 ## Known Issues & Technical Debt
@@ -108,7 +110,7 @@ Status meanings: **Working** = implemented end-to-end in the current foundation;
 1. WebGPU is detected but the renderer is still Three.js WebGL.
 2. Imported geometry is initially triangulated, then adjacent coplanar triangles are merged only when exactly two triangles share each joined edge and a single convex boundary can be reconstructed. Concave faces, holes, duplicated seam vertices, inconsistent winding and non-manifold regions may remain triangulated or lose source polygon semantics.
 3. Edit Mode box/circle/lasso selection projects sub-elements into screen space and ray-checks candidates against the visible surface. It samples vertices, edge points and ear-clipped triangle centers. Edge loops cross opposite edges in quads; edge rings traverse opposite edges in closed all-quad vertex fans, including extraordinary poles only when a unique near-antiparallel pairing is found. These deterministic passes stop at boundaries and ambiguous poles and are not identical to all Blender select modes.
-4. Delete is selection-mode aware: deleting a vertex or edge removes incident faces and dependent unused vertices; face deletion removes selected faces. Dissolve supports consistently wound, single-boundary, simple planar patches, including concave boundaries. Non-planar, self-intersecting, boundary-only and non-manifold cases are deliberately skipped without mutation. Bevel supports one to eight selected edges in closed, planar, convex tri-valent corner neighborhoods; multi-edge candidates are compacted and validated before commit. Multiple-edge mode accepts pairwise-disjoint neighborhoods only. Contiguous selections are rejected before preview: reliable shared-face offset-line intersections, miter caps and face splitting remain unimplemented. Boundary edges, extraordinary vertices, non-manifold inputs, segments and profile shaping are also unsupported. Loop Cut is implemented for validated planar convex quad strips with up to eight evenly spaced cuts, but does not traverse extraordinary poles or multiple distinct seed loops. Extrude/inset and midpoint subdivision retain topology/normal limitations.
+4. Delete is selection-mode aware: deleting a vertex or edge removes incident faces and dependent unused vertices; face deletion removes selected faces. Dissolve supports consistently wound, single-boundary, simple planar patches, including concave boundaries. Non-planar, self-intersecting, boundary-only and non-manifold cases are deliberately skipped without mutation. Bevel supports a single edge, exactly two adjacent edges meeting at one closed tri-valent corner, or up to eight pairwise-disjoint edges. The connected-pair path constructs a shared-face offset-line miter and two connected strip faces on a temporary candidate, then validates topology and affected planarity/convexity before commit. Longer connected chains and branches remain unsupported. Boundary edges, extraordinary vertices, non-manifold or invalid inputs, ambiguous/excessive miters, segments and profile shaping are also unsupported. Loop Cut is implemented for validated planar convex quad strips with up to eight evenly spaced cuts, but does not traverse extraordinary poles or multiple distinct seed loops. Extrude/inset and midpoint subdivision retain topology/normal limitations.
 5. The topology validator is diagnostic only. It reports invalid positions/faces, duplicates, non-manifold edges, same-direction shared-edge winding, isolated vertices, non-planar faces, self-intersections and triangulation failures; boundary edges are reported but valid for open surfaces. It does not repair geometry. Ear clipping supports simple concave polygons, but non-planar polygons remain intrinsically ambiguous and are flagged.
 6. Modifier algorithms are first-pass approximations: midpoint triangle subdivision, non-welded mirror, simple array offset and basic solidify.
 7. Transform orientation is currently global-axis oriented. Full local/global orientation toggle, snapping, proportional editing, multi-object pivot aggregation and exact Blender operator feedback remain incomplete. Axis-constrained scaling of rotated objects is approximate because the scene representation stores TRS rather than an arbitrary affine/shear matrix.
@@ -144,8 +146,9 @@ Status meanings: **Working** = implemented end-to-end in the current foundation;
 - [x] Add a conservative extraordinary-pole continuation for Edge Ring selection when a closed all-quad fan has a unique near-antiparallel edge pairing.
 - [ ] Extend Loop Cut itself across supported extraordinary poles; this remains intentionally unsupported until a reliable split template is implemented.
 - [ ] Complete local/global transform orientation, snapping, proportional editing, exact pivot aggregation and Blender-like transform gizmo/feedback.
-- [x] Implement an initial transactional Bevel preview for one edge and a guarded multi-edge extension for up to eight pairwise-disjoint neighborhoods.
-- [ ] Add contiguous-edge bevel miters and shared-face intersection construction with topology fixtures for both edge orientations, cap winding and failure cases; keep the operator non-destructive until every candidate passes validation.
+- [x] Implement a transactional Bevel preview for one edge and a guarded multi-edge extension for up to eight pairwise-disjoint neighborhoods.
+- [x] Add a validated two-edge connected Bevel miter at one closed tri-valent shared corner; intersect the shared-face offset lines, create two joined strips and retain one manifold miter edge.
+- [ ] Extend connected Bevel to longer chains and multiple junctions with dedicated cap/miter fixtures; reject branches and ambiguous cases until proven.
 - [ ] Add bevel segment count and profile shaping.
 - [ ] Implement true radial pie menus and complete keymap parity.
 
@@ -319,6 +322,17 @@ Extend the conservative Bevel operator beyond its first closed tri-valent corner
 - Advanced service-worker shell/runtime caches to v16 so clients receive the updated guard and UI guidance.
 - A miter prototype was not accepted: candidate face construction did not consistently pass manifold winding and planarity validation. No contiguous bevel functionality is claimed in this increment.
 
+
+## v0.1.17 Two-Edge Contiguous Bevel Miter
+
+- Added a transactional connected Bevel path for exactly two adjacent edges that share one closed, tri-valent corner. Longer connected selections and branches are rejected before mutation.
+- Intersects the two offset lines in their shared face to construct a common miter point, then builds two joined bevel-strip quads sharing one manifold miter edge.
+- Rebuilds the candidate from the immutable source, compacts it, validates complete topology, confirms every face triangulates, and verifies the affected source faces and new bevel strips remain planar and convex before replacing the source mesh.
+- Preserves the existing one-edge bevel and up-to-eight pairwise-disjoint bevel paths. The modal preview supports adjustment, cancellation and one-step undo for the connected pair.
+- Added regression coverage for all 24 adjacent edge-pair orientations on a cube, a skewed planar geometry case, longer-chain/branch rejection, preview cancellation, and single-transaction commit.
+- Advanced service-worker shell/runtime cache migration to v17.
+- This scoped implementation supersedes the v0.1.16 blanket guard only for a selection of exactly two adjacent edges at one closed tri-valent corner.
+
 ## Next Roadmap Step
 
-Implement contiguous-edge beveling only after a reliable shared-face offset-line intersection, corner-cap construction and face-splitting strategy pass dedicated topology fixtures. Start with exactly two adjacent edges at one tri-valent vertex; reject branches and multi-junction chains until they have separate proven fixtures. Keep unsupported geometry non-destructive. Then add bevel segment count and profile shaping. Loop Cut traversal through extraordinary poles remains a separate topology task.
+Extend connected Bevel beyond the proven two-edge/one-corner miter: design and validate cap construction for short chains and multiple junctions, while continuing to reject branches and ambiguous fans non-destructively. Then add bevel segment count and profile shaping. Loop Cut traversal through extraordinary poles remains a separate topology task.

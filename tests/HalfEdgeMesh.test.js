@@ -526,18 +526,94 @@ test('Multi-edge Bevel applies to separated closed neighborhoods as one topology
   assert.equal(hem.edgeSelection.size, 8);
 });
 
-test('Multi-edge Bevel rejects touching selected edges without mutating the mesh', () => {
+test('Connected Bevel miters two adjacent edges at one tri-valent corner', () => {
   const hem = makeCube();
   hem.setSelectionMode('edge');
   for (const pair of [[4,5],[5,6]]) {
     const seed = hem.edges.find(edge => keyFor(...edge.vertices) === keyFor(...pair));
+    assert.ok(seed);
     hem.selectEdge(seed.id, true);
   }
-  const before = JSON.stringify({ positions: hem.positions, faces: hem.faces });
+  const result = hem.bevelSelectedEdges({ amount: 0.25 });
+  const report = hem.validateTopology();
+  assert.equal(result.changed, true, result.reason);
+  assert.equal(result.bevelCount, 2);
+  assert.equal(result.insertedVertices, 6);
+  assert.equal(result.createdFaces, 2);
+  assert.equal(result.miterEdges, 1);
+  assert.equal(result.selectedEdges, 6);
+  assert.equal(hem.positions.length, 11);
+  assert.equal(hem.faces.length, 8);
+  assert.equal(report.valid, true);
+  assert.equal(report.counts.boundaryEdges, 0);
+  assert.equal(hem.edgeSelection.size, 6);
+});
+
+test('Connected Bevel preserves topology for every adjacent pair at every cube corner', () => {
+  const vertexPositions = [
+    [-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],
+    [-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1]
+  ];
+  let cases = 0;
+  for (let center = 0; center < vertexPositions.length; center++) {
+    const topology = makeCube();
+    const neighbors = topology.edges
+      .filter(edge => edge.vertices.includes(center))
+      .map(edge => edge.vertices.find(id => id !== center));
+    for (let a = 0; a < neighbors.length; a++) {
+      for (let b = a + 1; b < neighbors.length; b++) {
+        const hem = makeCube();
+        hem.setSelectionMode('edge');
+        for (const neighbor of [neighbors[a], neighbors[b]]) {
+          const edge = hem.edges.find(item => keyFor(...item.vertices) === keyFor(center, neighbor));
+          assert.ok(edge);
+          hem.selectEdge(edge.id, true);
+        }
+        const result = hem.bevelSelectedEdges({ amount: 0.25 });
+        assert.equal(result.changed, true, `corner ${center}, neighbors ${neighbors[a]} and ${neighbors[b]}: ${result.reason}`);
+        assert.equal(hem.validateTopology().valid, true);
+        assert.equal(hem.validateTopology().counts.boundaryEdges, 0);
+        assert.equal(hem.edgeSelection.size, 6);
+        cases++;
+      }
+    }
+  }
+  assert.equal(cases, 24);
+});
+
+test('Connected Bevel supports skewed planar geometry without axis-aligned assumptions', () => {
+  const source = makeCube();
+  const positions = source.positions.map(([x,y,z]) => [
+    2*x + 0.3*y + 0.1*z,
+    0.2*x + 1.7*y + 0.15*z,
+    0.1*x + 0.25*y + 1.3*z
+  ]);
+  const hem = new HalfEdgeMesh(positions, source.faces);
+  hem.setSelectionMode('edge');
+  for (const pair of [[0,1],[0,3]]) {
+    const edge = hem.edges.find(item => keyFor(...item.vertices) === keyFor(...pair));
+    assert.ok(edge);
+    hem.selectEdge(edge.id, true);
+  }
+  const result = hem.bevelSelectedEdges({ amount: 0.3 });
+  assert.equal(result.changed, true, result.reason);
+  assert.equal(hem.validateTopology().valid, true);
+  assert.equal(hem.validateTopology().counts.boundaryEdges, 0);
+});
+
+test('Connected Bevel rejects longer chains and branches without mutating the mesh', () => {
+  const hem = makeCube();
+  hem.setSelectionMode('edge');
+  for (const pair of [[4,5],[5,6],[5,1]]) {
+    const edge = hem.edges.find(item => keyFor(...item.vertices) === keyFor(...pair));
+    assert.ok(edge);
+    hem.selectEdge(edge.id, true);
+  }
+  const before = JSON.stringify({ positions: hem.positions, faces: hem.faces, selection: [...hem.edgeSelection] });
   const result = hem.bevelSelectedEdges({ amount: 0.25 });
   assert.equal(result.changed, false);
-  assert.match(result.reason, /Contiguous-edge Bevel is not supported yet/i);
-  assert.equal(JSON.stringify({ positions: hem.positions, faces: hem.faces }), before);
+  assert.match(result.reason, /exactly two adjacent edges|longer chains and branches/i);
+  assert.equal(JSON.stringify({ positions: hem.positions, faces: hem.faces, selection: [...hem.edgeSelection] }), before);
 });
 
 test('Multi-edge Bevel rejects separated edges whose corner neighborhoods share faces', () => {

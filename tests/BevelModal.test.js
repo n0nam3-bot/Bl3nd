@@ -119,15 +119,38 @@ test('Bevel modal rejects invalid numeric width and keeps the last valid preview
 });
 
 
-test('Bevel modal refuses contiguous edges before changing the live mesh or undo history', async () => {
+test('Bevel modal previews and commits a two-edge miter in one undo transaction', async () => {
   const session = makeSession();
   const adjacent = session.hem.edges.find(edge => keyFor(...edge.vertices) === keyFor(5, 6));
   assert.ok(adjacent);
   session.hem.selectEdge(adjacent.id, true);
+  const modal = new BevelModal(session);
+  assert.equal(await modal.begin(), true, modal.lastError);
+  assert.equal(modal.active, true);
+  assert.equal(modal.seedEdgeIds.length, 2);
+  assert.equal(modal.lastResult.bevelCount, 2);
+  assert.equal(modal.lastResult.miterEdges, 1);
+  assert.equal(session.mesh.userData.hem.validateTopology().valid, true);
+  assert.equal(modal.setAmount(0.4), true);
+  assert.equal(session.mesh.userData.hem.validateTopology().valid, true);
+  const result = await modal.confirm();
+  assert.equal(result.changed, true);
+  assert.equal(result.bevelCount, 2);
+  assert.equal(result.selectedEdges, 6);
+  assert.equal(session.commits.length, 1);
+  assert.equal(session.commits[0].label, 'Bevel');
+  assert.equal(session.commits[0].after.faces.length, 8);
+});
+
+test('Bevel modal cancellation restores a two-edge miter preview without an undo record', async () => {
+  const session = makeSession();
+  const adjacent = session.hem.edges.find(edge => keyFor(...edge.vertices) === keyFor(5, 6));
+  session.hem.selectEdge(adjacent.id, true);
   const before = await session.document.serialize();
   const modal = new BevelModal(session);
-  assert.equal(await modal.begin(), false);
-  assert.match(modal.lastError, /Contiguous-edge Bevel is not supported yet/i);
+  assert.equal(await modal.begin(), true, modal.lastError);
+  assert.notDeepEqual(await session.document.serialize(), before);
+  assert.equal(await modal.cancel(), true);
   assert.deepEqual(await session.document.serialize(), before);
   assert.equal(session.commits.length, 0);
 });

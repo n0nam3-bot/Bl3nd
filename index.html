@@ -151,7 +151,7 @@
             <button id="repair-topology-btn" disabled>Repair Safe Issues</button>
           </div>
           <p class="panel-note">Loop Cut: select one edge in Edge Select, then press Ctrl+R. Drag horizontally to slide the preview; use the mouse wheel or +/- to add/remove up to 8 evenly spaced cuts. Type an offset from 0–1, use ←/→ to slide, Enter to apply or Esc to cancel.</p>
-          <p class="panel-note">Bevel: select up to eight separated interior edges on closed, cube-like tri-valent corners, then press Ctrl+B. Independent neighborhoods are beveled together; contiguous selections are explicitly rejected until a validated shared-face miter is implemented. Boundaries, poles and non-manifold regions are also rejected. Drag horizontally or enter a width factor from 0–0.95; Enter applies and Esc cancels.</p>
+          <p class="panel-note">Bevel: select one supported interior edge, exactly two adjacent edges meeting at one closed tri-valent corner, or up to eight pairwise-disjoint edges, then press Ctrl+B. The two-edge case creates a shared miter joining two bevel strips; longer chains and branches are rejected. Boundaries, poles, non-manifold, concave and non-planar regions are also rejected. Drag horizontally or enter a width factor from 0–0.95; Enter applies and Esc cancels.</p>
           <div class="panel-heading section-gap">PIVOT POINT</div>
           <select id="pivot-select"><option value="median">Median Point</option><option value="individual">Individual Origins</option><option value="cursor">3D Cursor</option></select>
           <div class="panel-heading section-gap">3D CURSOR</div>
@@ -240,7 +240,7 @@
         const hadController = Boolean(navigator.serviceWorker.controller);
         if (hadController) {
           try {
-            const refreshKey = 'bl3nd-cache-refresh-v16';
+            const refreshKey = 'bl3nd-cache-refresh-v17';
             if (!sessionStorage.getItem(refreshKey)) {
               navigator.serviceWorker.addEventListener('controllerchange', () => {
                 sessionStorage.setItem(refreshKey, '1');
