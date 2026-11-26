@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#17191e">
+  <meta name="description" content="A mobile-first, browser-native 3D modeling workspace.">
+  <title>FORGE 3D — Browser Modeler</title>
+  <link rel="manifest" href="./manifest.json">
+  <link rel="icon" href="./assets/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="./assets/icon-192.png">
+  <link rel="stylesheet" href="./src/styles.css">
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="app" class="app-shell">
+    <header class="topbar">
+      <div class="brand"><span class="brand-mark">F</span><span>FORGE <b>3D</b></span><small>EARLY ACCESS</small></div>
+      <div class="top-actions">
+        <button class="mode-pill active" id="object-mode-btn" title="Object Mode (Tab)">Object</button>
+        <button class="mode-pill" id="edit-mode-btn" title="Edit Mode (Tab)">Edit</button>
+        <span class="top-divider"></span>
+        <button class="icon-button" id="undo-btn" title="Undo (Ctrl+Z)" aria-label="Undo">↶</button>
+        <button class="icon-button" id="redo-btn" title="Redo (Ctrl+Shift+Z)" aria-label="Redo">↷</button>
+        <button class="icon-button" id="save-btn" title="Export model" aria-label="Export">⇩</button>
+        <button class="icon-button" id="open-btn" title="Import model" aria-label="Import">⇧</button>
+        <input id="file-input" type="file" accept=".glb,.gltf,.obj,.stl,model/gltf-binary,model/gltf+json" hidden>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <aside class="tool-rail" aria-label="Tools">
+        <button class="tool-button selected" data-tool="select" title="Select (Q)">⌖<small>Select</small></button>
+        <button class="tool-button" data-tool="move" title="Move (G)">✥<small>Move</small></button>
+        <button class="tool-button" data-tool="rotate" title="Rotate (R)">⟳<small>Rotate</small></button>
+        <button class="tool-button" data-tool="scale" title="Scale (S)">⤢<small>Scale</small></button>
+        <div class="rail-separator"></div>
+        <button class="tool-button" id="extrude-btn" title="Extrude (E)">▱<small>Extrude</small></button>
+        <button class="tool-button" id="inset-btn" title="Inset (I)">▣<small>Inset</small></button>
+        <button class="tool-button" id="delete-btn" title="Delete (X)">⌫<small>Delete</small></button>
+        <div class="rail-spacer"></div>
+        <button class="tool-button" id="add-menu-btn" title="Add (Shift+A)">＋<small>Add</small></button>
+      </aside>
+
+      <section class="viewport-column">
+        <div class="viewport-toolbar">
+          <div class="view-label"><span class="live-dot"></span><span id="view-label">User Perspective</span></div>
+          <div class="viewport-tools">
+            <button id="selection-vertex" class="seg-button" title="Vertex Select (1)">●</button>
+            <button id="selection-edge" class="seg-button" title="Edge Select (2)">╱</button>
+            <button id="selection-face" class="seg-button active" title="Face Select (3)">▰</button>
+            <span class="toolbar-spacer"></span>
+            <button id="shading-btn" class="subtle-button" title="Shading Pie (Z)">Solid ▾</button>
+            <button id="frame-btn" class="subtle-button" title="Frame selected (Home)">Frame</button>
+          </div>
+        </div>
+        <div id="viewport" class="viewport" tabindex="0" aria-label="3D viewport">
+          <div class="viewport-hint" id="viewport-hint">Tap an object to select · Drag with one finger to orbit</div>
+          <div class="axis-gizmo" aria-label="View axes">
+            <button data-view="front" class="axis-x">X</button>
+            <button data-view="right" class="axis-y">Y</button>
+            <button data-view="top" class="axis-z">Z</button>
+          </div>
+          <div class="cursor-reticle" id="cursor-reticle" hidden>＋</div>
+          <div class="modal-readout" id="modal-readout" hidden></div>
+          <div class="pie-menu" id="pie-menu" hidden>
+            <button data-command="add_cube">Cube</button>
+            <button data-command="add_sphere">UV Sphere</button>
+            <button data-command="add_cylinder">Cylinder</button>
+            <button data-command="add_plane">Plane</button>
+            <button data-command="toggle_mode">Edit Mode</button>
+            <button data-command="add_empty">Empty</button>
+          </div>
+          <div class="numeric-pad" id="numeric-pad" hidden>
+            <div class="pad-title">TRANSFORM VALUE</div>
+            <div class="pad-value" id="pad-value">0</div>
+            <div class="pad-grid">
+              <button data-key="7">7</button><button data-key="8">8</button><button data-key="9">9</button>
+              <button data-key="4">4</button><button data-key="5">5</button><button data-key="6">6</button>
+              <button data-key="1">1</button><button data-key="2">2</button><button data-key="3">3</button>
+              <button data-key="-">−</button><button data-key="0">0</button><button data-key=".">.</button>
+              <button data-key="backspace">⌫</button><button data-key="escape">Cancel</button><button data-key="enter" class="pad-enter">Apply</button>
+            </div>
+          </div>
+          <div class="loading-overlay" id="loading-overlay"><div class="loader"></div><span>Preparing 3D workspace…</span></div>
+        </div>
+        <div class="viewport-footer">
+          <div id="status-message">Ready</div>
+          <div class="footer-stats"><span id="object-count">Objects: 0</span><span id="mesh-stats">Verts 0 · Edges 0 · Faces 0</span><span id="device-tier">Detecting device…</span></div>
+        </div>
+      </section>
+
+      <aside class="properties-panel">
+        <div class="panel-tabs"><button class="panel-tab active" data-panel="scene">Scene</button><button class="panel-tab" data-panel="modifiers">Modifiers</button><button class="panel-tab" data-panel="system">System</button></div>
+        <section class="panel-content" id="panel-scene">
+          <div class="panel-heading">TRANSFORM</div>
+          <div class="transform-grid">
+            <label>Location X<input data-transform="position" data-axis="x" type="number" step="0.1"></label>
+            <label>Y<input data-transform="position" data-axis="y" type="number" step="0.1"></label>
+            <label>Z<input data-transform="position" data-axis="z" type="number" step="0.1"></label>
+            <label>Rotation X<input data-transform="rotation" data-axis="x" type="number" step="1"></label>
+            <label>Y<input data-transform="rotation" data-axis="y" type="number" step="1"></label>
+            <label>Z<input data-transform="rotation" data-axis="z" type="number" step="1"></label>
+            <label>Scale X<input data-transform="scale" data-axis="x" type="number" step="0.1"></label>
+            <label>Y<input data-transform="scale" data-axis="y" type="number" step="0.1"></label>
+            <label>Z<input data-transform="scale" data-axis="z" type="number" step="0.1"></label>
+          </div>
+          <div class="panel-heading section-gap">EDIT MESH</div>
+          <div class="button-grid">
+            <button id="extrude-panel-btn">Extrude <kbd>E</kbd></button>
+            <button id="inset-panel-btn">Inset <kbd>I</kbd></button>
+            <button id="subdivide-btn">Subdivide</button>
+            <button id="delete-panel-btn">Delete <kbd>X</kbd></button>
+          </div>
+          <div class="panel-heading section-gap">PIVOT POINT</div>
+          <select id="pivot-select"><option value="median">Median Point</option><option value="individual">Individual Origins</option><option value="cursor">3D Cursor</option></select>
+          <div class="panel-heading section-gap">3D CURSOR</div>
+          <div class="cursor-coords" id="cursor-coords">X 0.00 · Y 0.00 · Z 0.00</div>
+        </section>
+        <section class="panel-content" id="panel-modifiers" hidden>
+          <div class="panel-heading">NON-DESTRUCTIVE STACK</div>
+          <p class="panel-note">Modifiers are evaluated on a worker thread. The editable base mesh remains unchanged.</p>
+          <div class="button-grid modifier-add-grid">
+            <button data-modifier="subdivision">Subdivision</button><button data-modifier="mirror">Mirror</button><button data-modifier="array">Array</button><button data-modifier="solidify">Solidify</button>
+          </div>
+          <div id="modifier-list" class="modifier-list"><div class="empty-state">Select a mesh to manage its modifiers.</div></div>
+        </section>
+        <section class="panel-content" id="panel-system" hidden>
+          <div class="panel-heading">RUNTIME PROFILE</div>
+          <div class="system-row"><span>Renderer</span><b id="renderer-profile">Detecting…</b></div>
+          <div class="system-row"><span>Memory hint</span><b id="memory-profile">Unknown</b></div>
+          <div class="system-row"><span>CPU threads</span><b id="cpu-profile">Unknown</b></div>
+          <div class="system-row"><span>Local storage</span><b id="storage-profile">Checking…</b></div>
+          <div class="system-row"><span>Service worker</span><b id="sw-profile">Checking…</b></div>
+          <p class="panel-note">Large scenes are not automatically safe on every phone. Save exports regularly and keep mobile meshes lightweight.</p>
+        </section>
+      </aside>
+    </main>
+
+    <nav class="mobile-actionbar" aria-label="Quick actions">
+      <button id="mobile-add">＋<small>Add</small></button>
+      <button id="mobile-move">✥<small>Move</small></button>
+      <button id="mobile-edit">◫<small>Edit</small></button>
+      <button id="mobile-extrude">▱<small>Extrude</small></button>
+      <button id="mobile-more">⋯<small>More</small></button>
+    </nav>
+    <div class="toast-region" id="toast-region" aria-live="polite"></div>
+  </div>
+  <script>
+    window.addEventListener('error', event => {
+      const message = String(event.message || event.error?.message || 'A browser module failed to load.');
+      if (/module|three|import|fetch|script/i.test(message)) {
+        const overlay = document.getElementById('loading-overlay');
+        if (overlay) overlay.innerHTML = '<div class="panel-note">The 3D engine could not load. Check the connection to jsDelivr, disable script-blocking extensions, then reload this page.</div>';
+      }
+    });
+    window.addEventListener('unhandledrejection', event => {
+      const overlay = document.getElementById('loading-overlay');
+      if (overlay && !overlay.classList.contains('done')) overlay.innerHTML = '<div class="panel-note">Workspace startup failed. Reload the page after checking your browser connection and storage permissions.</div>';
+    });
+  </script>
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
