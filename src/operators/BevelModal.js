@@ -27,8 +27,8 @@ export class BevelModal {
     const mesh = this.document.activeObject;
     const source = mesh?.userData?.hem;
     if (!source) { this.lastError = 'Select a mesh before using Bevel.'; return false; }
-    if (this.document.selectionMode !== 'edge' || source.selectionMode !== 'edge' || source.edgeSelection.size !== 1) {
-      this.lastError = 'Switch to Edge Select and select exactly one edge.';
+    if (this.document.selectionMode !== 'edge' || source.selectionMode !== 'edge' || source.edgeSelection.size < 1 || source.edgeSelection.size > 8) {
+      this.lastError = 'Switch to Edge Select and select between one and eight edges.';
       return false;
     }
 
@@ -36,7 +36,7 @@ export class BevelModal {
     this.before = await this.document.serialize();
     this.basePositions = source.positions.map(point => [...point]);
     this.baseFaces = source.faces.map(face => [...face]);
-    this.seedEdgeId = [...source.edgeSelection][0];
+    this.seedEdgeIds = [...source.edgeSelection];
     const rect = this.viewport?.renderer?.domElement?.getBoundingClientRect?.();
     const pointer = this.viewport?.lastPointer;
     this.startPointer = pointer && rect && pointer.x >= rect.left && pointer.x <= rect.right && pointer.y >= rect.top && pointer.y <= rect.bottom
@@ -55,7 +55,7 @@ export class BevelModal {
     this.lastResult = preview.result;
     this.applyPreview(preview.hem);
     this.active = true;
-    this.status?.('BEVEL · drag horizontally to change width · type 0–0.95 · Enter apply · Esc cancel');
+    this.status?.(`BEVEL · ${this.seedEdgeIds.length} edge${this.seedEdgeIds.length === 1 ? '' : 's'} · drag to change width · type 0–0.95 · Enter apply · Esc cancel`);
     this.onChange?.();
     return true;
   }
@@ -63,8 +63,8 @@ export class BevelModal {
   buildPreview(amount) {
     const hem = new HalfEdgeMesh(this.basePositions, this.baseFaces);
     hem.setSelectionMode('edge');
-    hem.edgeSelection = new Set([this.seedEdgeId]);
-    const result = hem.bevelSelectedEdge({ amount });
+    hem.edgeSelection = new Set(this.seedEdgeIds);
+    const result = hem.bevelSelectedEdges({ amount });
     return { hem, result };
   }
 
@@ -87,7 +87,7 @@ export class BevelModal {
     this.lastResult = preview.result;
     this.lastError = '';
     this.applyPreview(preview.hem);
-    this.status?.(`Bevel · amount ${this.amount.toFixed(2)} · width ${preview.result.width.toFixed(3)} · Enter apply / Esc cancel`);
+    this.status?.(`Bevel · ${preview.result.bevelCount || 1} edge(s) · amount ${this.amount.toFixed(2)} · width ${preview.result.width.toFixed(3)} · Enter apply / Esc cancel`);
     this.onChange?.();
     return true;
   }
@@ -155,7 +155,7 @@ export class BevelModal {
     this.before = null;
     this.basePositions = [];
     this.baseFaces = [];
-    this.seedEdgeId = null;
+    this.seedEdgeIds = [];
     this.startPointer = null;
   }
 }

@@ -100,7 +100,7 @@ Status meanings: **Working** = implemented end-to-end in the current foundation;
 | Model I/O | Partial | GLB, GLTF, OBJ and STL browser import/export paths; complex scenes/materials/animation need validation. |
 | Desktop/mobile input | Partial | Desktop left-drag orbit, right-drag/Shift+left-drag pan and wheel zoom; B/C/L or the viewport menu activate box/circle/lasso drags, with Esc returning to click selection; Shift adds. Alt+L expands selected quad-edge loops; Ctrl+Alt+L expands regular vertex-fan rings. Mobile supports the same drag tools from the Select menu, two-finger dolly-pan and existing quick actions. Device testing remains. |
 | Pie menus | Partial | Compact command menus; not true radial Blender pie menus. |
-| Bevel/sculpt | Partial | One-edge bevel works on a closed, convex, planar tri-valent neighborhood (cube-like corner). It is a modal preview with transactional rollback and a single undo record. Boundary edges, non-manifold or invalid meshes, extraordinary endpoints, concave/non-planar faces and multi-edge selections are rejected. Sculpting and full Blender bevel parity are not implemented. |
+| Bevel/sculpt | Partial | Bevel supports up to eight pairwise-disjoint edges on closed, convex, planar tri-valent neighborhoods. Each candidate is rebuilt transactionally, combined topology is validated, and the modal commits one undo record. Touching edges, shared affected faces/offset edges, boundaries, non-manifold or invalid meshes, extraordinary endpoints and concave/non-planar faces are rejected. Contiguous mitering, segments, profile shaping and sculpting are not implemented. |
 | Exact Blender clone | Not Started | No claim of full Blender operator, BMesh, UI, or file-format parity. |
 
 ## Known Issues & Technical Debt
@@ -108,7 +108,7 @@ Status meanings: **Working** = implemented end-to-end in the current foundation;
 1. WebGPU is detected but the renderer is still Three.js WebGL.
 2. Imported geometry is initially triangulated, then adjacent coplanar triangles are merged only when exactly two triangles share each joined edge and a single convex boundary can be reconstructed. Concave faces, holes, duplicated seam vertices, inconsistent winding and non-manifold regions may remain triangulated or lose source polygon semantics.
 3. Edit Mode box/circle/lasso selection projects sub-elements into screen space and ray-checks candidates against the visible surface. It samples vertices, edge points and ear-clipped triangle centers. Edge loops cross opposite edges in quads; edge rings traverse opposite edges in closed all-quad vertex fans, including extraordinary poles only when a unique near-antiparallel pairing is found. These deterministic passes stop at boundaries and ambiguous poles and are not identical to all Blender select modes.
-4. Delete is selection-mode aware: deleting a vertex or edge removes incident faces and dependent unused vertices; face deletion removes selected faces. Dissolve supports consistently wound, single-boundary, simple planar patches, including concave boundaries. Non-planar, self-intersecting, boundary-only and non-manifold cases are deliberately skipped without mutation. Bevel is implemented only for one selected edge in a closed, planar, convex tri-valent corner neighborhood; its candidate topology is compacted and validated before commit. It does not yet support boundary edges, extraordinary vertices, non-manifold inputs, multiple edges, segments or profile shaping. Loop Cut is implemented for validated planar convex quad strips with up to eight evenly spaced cuts, but does not traverse extraordinary poles or multiple distinct seed loops. Extrude/inset and midpoint subdivision retain topology/normal limitations.
+4. Delete is selection-mode aware: deleting a vertex or edge removes incident faces and dependent unused vertices; face deletion removes selected faces. Dissolve supports consistently wound, single-boundary, simple planar patches, including concave boundaries. Non-planar, self-intersecting, boundary-only and non-manifold cases are deliberately skipped without mutation. Bevel supports one to eight selected edges in closed, planar, convex tri-valent corner neighborhoods; multi-edge candidates are compacted and validated before commit. It does not yet support boundary edges, extraordinary vertices, non-manifold inputs, contiguous-edge miters, segments or profile shaping. Multiple-edge mode accepts pairwise-disjoint neighborhoods only. Loop Cut is implemented for validated planar convex quad strips with up to eight evenly spaced cuts, but does not traverse extraordinary poles or multiple distinct seed loops. Extrude/inset and midpoint subdivision retain topology/normal limitations.
 5. The topology validator is diagnostic only. It reports invalid positions/faces, duplicates, non-manifold edges, same-direction shared-edge winding, isolated vertices, non-planar faces, self-intersections and triangulation failures; boundary edges are reported but valid for open surfaces. It does not repair geometry. Ear clipping supports simple concave polygons, but non-planar polygons remain intrinsically ambiguous and are flagged.
 6. Modifier algorithms are first-pass approximations: midpoint triangle subdivision, non-welded mirror, simple array offset and basic solidify.
 7. Transform orientation is currently global-axis oriented. Full local/global orientation toggle, snapping, proportional editing, multi-object pivot aggregation and exact Blender operator feedback remain incomplete. Axis-constrained scaling of rotated objects is approximate because the scene representation stores TRS rather than an arbitrary affine/shear matrix.
@@ -144,7 +144,8 @@ Status meanings: **Working** = implemented end-to-end in the current foundation;
 - [x] Add a conservative extraordinary-pole continuation for Edge Ring selection when a closed all-quad fan has a unique near-antiparallel edge pairing.
 - [ ] Extend Loop Cut itself across supported extraordinary poles; this remains intentionally unsupported until a reliable split template is implemented.
 - [ ] Complete local/global transform orientation, snapping, proportional editing, exact pivot aggregation and Blender-like transform gizmo/feedback.
-- [ ] Implement bevel, interactive loop-cut placement/sliding and multi-cut support.
+- [x] Implement an initial transactional Bevel preview for one edge and a guarded multi-edge extension for up to eight pairwise-disjoint neighborhoods.
+- [ ] Add contiguous-edge bevel miters, corner intersection construction, segments and profile shaping.
 - [ ] Implement true radial pie menus and complete keymap parity.
 
 ### Phase 2 — Modifiers, Sculpt, Render
@@ -299,3 +300,17 @@ Extend the conservative Bevel operator beyond its first closed tri-valent corner
 - Candidate topology must pass the read-only topology validator before it can replace the source mesh. Boundary, non-manifold, invalid, concave, non-planar, extraordinary and ambiguous neighborhoods are rejected without mutation.
 - Added core and modal regression tests for successful cube-edge bevels, distance bounds, invalid factors, boundary/non-manifold edges, extraordinary fans, preview updates, cancellation and one-step undo records.
 - Advanced the service-worker shell/runtime cache migration to v14.
+
+
+## v0.1.15 Multi-Edge Bevel Increment
+
+- Extended the bevel core to accept one to eight selected edges. The existing single-edge implementation remains the primitive operation; each selected edge is resolved on a temporary candidate and processed sequentially.
+- Multi-edge eligibility is preflighted before any source mutation. Selected neighborhoods must have distinct endpoints, four distinct affected faces per edge, and no shared affected faces or offset edges. Every edge remains subject to the existing closed manifold, planar, convex and tri-valent checks.
+- Duplicate-coordinate endpoint references and ambiguous regenerated edges are rejected rather than guessed. The combined temporary mesh is topology-validated and all bevel perimeter edges are selected before commit.
+- Updated Bevel modal preview, numeric entry, undo and status reporting to support multi-selection with one transactional preview and one undo record.
+- Added regressions for two separated bevel neighborhoods, touching-edge rejection, shared-face rejection and multi-edge modal confirmation.
+- Advanced service-worker shell/runtime cache migration to v15.
+
+## Next Roadmap Step
+
+Implement contiguous-edge beveling only after a reliable corner-intersection/miter construction and dedicated topology fixtures exist. Then add bevel segment count and profile shaping. Keep boundary, non-manifold, extraordinary, concave, non-planar and ambiguous neighborhoods non-destructive. Loop Cut traversal through extraordinary poles remains a separate topology task.

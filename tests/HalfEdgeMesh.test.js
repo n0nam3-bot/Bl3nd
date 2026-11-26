@@ -499,3 +499,57 @@ test('Bevel rejects a zero or out-of-range width without changing the source mes
     assert.equal(JSON.stringify({ positions: hem.positions, faces: hem.faces }), before);
   }
 });
+
+
+test('Multi-edge Bevel applies to separated closed neighborhoods as one topology transaction', () => {
+  const positions = [
+    [-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],[-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1],
+    [4,-1,-1],[6,-1,-1],[6,1,-1],[4,1,-1],[4,-1,1],[6,-1,1],[6,1,1],[4,1,1]
+  ];
+  const cubeFaces = [[0,3,2,1],[4,5,6,7],[0,1,5,4],[1,2,6,5],[2,3,7,6],[3,0,4,7]];
+  const faces = [...cubeFaces, ...cubeFaces.map(face => face.map(id => id + 8))];
+  const hem = new HalfEdgeMesh(positions, faces);
+  hem.setSelectionMode('edge');
+  for (const pair of [[4,5],[12,13]]) {
+    const seed = hem.edges.find(edge => keyFor(...edge.vertices) === keyFor(...pair));
+    assert.ok(seed);
+    hem.selectEdge(seed.id, true);
+  }
+  const result = hem.bevelSelectedEdges({ amount: 0.25 });
+  assert.equal(result.changed, true);
+  assert.equal(result.bevelCount, 2);
+  assert.equal(result.insertedVertices, 8);
+  assert.equal(result.createdFaces, 2);
+  assert.equal(result.selectedEdges, 8);
+  assert.equal(hem.faces.length, 14);
+  assert.equal(hem.validateTopology().valid, true);
+  assert.equal(hem.edgeSelection.size, 8);
+});
+
+test('Multi-edge Bevel rejects touching selected edges without mutating the mesh', () => {
+  const hem = makeCube();
+  hem.setSelectionMode('edge');
+  for (const pair of [[4,5],[5,6]]) {
+    const seed = hem.edges.find(edge => keyFor(...edge.vertices) === keyFor(...pair));
+    hem.selectEdge(seed.id, true);
+  }
+  const before = JSON.stringify({ positions: hem.positions, faces: hem.faces });
+  const result = hem.bevelSelectedEdges({ amount: 0.25 });
+  assert.equal(result.changed, false);
+  assert.match(result.reason, /touch at a vertex|contiguous-edge/i);
+  assert.equal(JSON.stringify({ positions: hem.positions, faces: hem.faces }), before);
+});
+
+test('Multi-edge Bevel rejects separated edges whose corner neighborhoods share faces', () => {
+  const hem = makeCube();
+  hem.setSelectionMode('edge');
+  for (const pair of [[4,5],[6,7]]) {
+    const seed = hem.edges.find(edge => keyFor(...edge.vertices) === keyFor(...pair));
+    hem.selectEdge(seed.id, true);
+  }
+  const before = JSON.stringify({ positions: hem.positions, faces: hem.faces });
+  const result = hem.bevelSelectedEdges({ amount: 0.25 });
+  assert.equal(result.changed, false);
+  assert.match(result.reason, /share a face|contiguous-edge/i);
+  assert.equal(JSON.stringify({ positions: hem.positions, faces: hem.faces }), before);
+});

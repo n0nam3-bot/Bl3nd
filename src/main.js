@@ -300,7 +300,7 @@ function registerCommands() {
     document.body.classList.remove('bevel-modal-active');
     if (result) {
       await reapplyActiveModifiers();
-      notify(`Bevel applied · ${result.insertedVertices} vertices · ${result.createdFaces} face · width ${result.width.toFixed(3)}.`, 'success');
+      notify(`Bevel applied · ${result.bevelCount || 1} edge(s) · ${result.insertedVertices} vertices · ${result.createdFaces} faces · avg width ${result.width.toFixed(3)}.`, 'success');
     }
     refresh(); ui.refreshModal();
     return Boolean(result);
@@ -522,7 +522,7 @@ ui = {
     const axisButtons=pad.querySelectorAll('[data-axis]');
     if(bevelModal.active){
       readout.hidden=false;
-      readout.textContent=`BEVEL · Amount ${bevelModal.amount.toFixed(2)} · Width ${bevelModal.lastResult?.width.toFixed(3) || '—'} · Drag / arrows / type · Enter apply / Esc cancel`;
+      readout.textContent=`BEVEL · ${bevelModal.seedEdgeIds.length} edge(s) · Amount ${bevelModal.amount.toFixed(2)} · Avg width ${bevelModal.lastResult?.width.toFixed(3) || '—'} · Drag / arrows / type · Enter apply / Esc cancel`;
       pad.hidden=!capabilities.tier.includes('Mobile');
       pad.classList.remove('loop-cut-mode','bevel-mode');
       pad.classList.add('bevel-mode');

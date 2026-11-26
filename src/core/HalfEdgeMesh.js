@@ -685,6 +685,163 @@ export class HalfEdgeMesh {
   }
 
   /**
+   * Transactionally bevels a small set of pairwise-disjoint interior edges.
+   * Each edge is processed by the proven single-edge template on a temporary
+   * mesh. Neighborhoods that share endpoints, affected faces or offset edges
+   * are rejected: this first multi-edge pass intentionally does not attempt
+   * contiguous-edge mitering or corner caps.
+   */
+  bevelSelectedEdges({ amount = 0.25 } = {}) {
+    const fail = reason => ({ changed: false, reason });
+    if (this.selectionMode !== 'edge' || this.edgeSelection.size < 1 || this.edgeSelection.size > 8) {
+      return fail('Select between one and eight edges in Edge Select mode.');
+    }
+    if (this.edgeSelection.size === 1) return this.bevelSelectedEdge({ amount });
+    if (!Number.isFinite(amount) || amount <= 0 || amount > 0.95) {
+      return fail('Bevel amount must be greater than 0 and no more than 0.95.');
+    }
+    const sourceReport = this.validateTopology();
+    if (!sourceReport.valid) return fail('The mesh has existing topology warnings. Validate and repair safe issues before beveling.');
+
+    const occupiedVertices = new Set();
+    const occupiedFaces = new Set();
+    const occupiedCutEdges = new Set();
+    const sourceRefs = [];
+    for (const edgeId of this.edgeSelection) {
+      const edge = this.edges[edgeId];
+      if (!edge || edge.halfEdges.length !== 2 || !edge.halfEdges.every(halfEdge => halfEdge.twin)) {
+        return fail('Multi-edge Bevel requires closed interior manifold edges only.');
+      }
+      const [first, second] = edge.halfEdges;
+      if (first.next.origin !== second.origin || second.next.origin !== first.origin || first.twin !== second || second.twin !== first) {
+        return fail('A selected edge has inconsistent face winding. Repair or orient the mesh before beveling.');
+      }
+      const endpoints = edge.vertices;
+      const localFaces = new Set([first.face?.id, second.face?.id]);
+      if (localFaces.has(undefined) || localFaces.size !== 2) return fail('A selected edge has an ambiguous adjacent face pair.');
+      const localCutEdges = new Set();
+      for (const vertexId of endpoints) {
+        const incidentFaces = this.faces.reduce((ids, face, faceId) => {
+          if (face.includes(vertexId)) ids.push(faceId);
+          return ids;
+        }, []);
+        const incidentEdges = this.edges.filter(item => item.vertices.includes(vertexId));
+        if (incidentFaces.length !== 3 || incidentEdges.length !== 3 || incidentEdges.some(item => item.halfEdges.length !== 2)) {
+          return fail('Multi-edge Bevel currently supports closed valence-three corners only.');
+        }
+        const thirdFaces = incidentFaces.filter(id => !localFaces.has(id));
+        if (thirdFaces.length !== 1) return fail('A selected edge has an ambiguous three-face endpoint fan.');
+        localFaces.add(thirdFaces[0]);
+        for (const item of incidentEdges) {
+          if (item.id !== edgeId) localCutEdges.add(item.id);
+        }
+        if (occupiedVertices.has(vertexId)) return fail('Selected bevels touch at a vertex; contiguous-edge mitering is not supported yet.');
+      }
+      if (localFaces.size !== 4) return fail('A selected edge does not have four distinct affected faces.');
+      if ([...localFaces].some(id => occupiedFaces.has(id))) {
+        return fail('Selected bevel neighborhoods share a face; contiguous-edge mitering is not supported yet.');
+      }
+      if ([...localCutEdges].some(id => occupiedCutEdges.has(id))) {
+        return fail('Selected bevel neighborhoods share an offset edge and cannot be separated safely.');
+      }
+      endpoints.forEach(id => occupiedVertices.add(id));
+      localFaces.forEach(id => occupiedFaces.add(id));
+      localCutEdges.forEach(id => occupiedCutEdges.add(id));
+      const points = endpoints.map(id => [...this.positions[id]]);
+      const pointKey = point => JSON.stringify(point);
+      sourceRefs.push(points.map(pointKey));
+    }
+
+    // Endpoint coordinates are used only as stable references across the
+    // temporary single-edge rebuilds. Reject duplicate coordinates rather
+    // than guessing which disconnected vertex instance should be bevelled.
+    const originalPointCounts = new Map();
+    this.positions.forEach(point => {
+      const key = JSON.stringify(point);
+      originalPointCounts.set(key, (originalPointCounts.get(key) || 0) + 1);
+    });
+    if (sourceRefs.flat().some(key => originalPointCounts.get(key) !== 1)) {
+      return fail('Selected edges have duplicate-position endpoint vertices; unique topology references are required.');
+    }
+
+    const candidate = new HalfEdgeMesh(this.positions, this.faces);
+    const edgeIdFromPointRefs = refs => {
+      const verticesByPoint = new Map();
+      candidate.positions.forEach((point, id) => {
+        const key = JSON.stringify(point);
+        if (!verticesByPoint.has(key)) verticesByPoint.set(key, []);
+        verticesByPoint.get(key).push(id);
+      });
+      const aIds = verticesByPoint.get(refs[0]) || [], bIds = verticesByPoint.get(refs[1]) || [];
+      if (aIds.length !== 1 || bIds.length !== 1) return null;
+      const key = keyFor(aIds[0], bIds[0]);
+      const matches = candidate.edges.filter(item => keyFor(...item.vertices) === key);
+      return matches.length === 1 ? matches[0].id : null;
+    };
+    const selectedPerimeterKeys = [];
+    const widths = [];
+    let insertedVertices = 0;
+    let createdFaces = 0;
+
+    for (const refs of sourceRefs) {
+      const edgeId = edgeIdFromPointRefs(refs);
+      if (!Number.isInteger(edgeId)) return fail('A selected edge could not be found after rebuilding a separate bevel preview.');
+      candidate.selectionMode = 'edge';
+      candidate.clearSelection();
+      candidate.edgeSelection.add(edgeId);
+      const result = candidate.bevelSelectedEdge({ amount });
+      if (!result.changed) return fail(`Multi-edge Bevel was cancelled: ${result.reason}`);
+      widths.push(result.width);
+      insertedVertices += result.insertedVertices;
+      createdFaces += result.createdFaces;
+      for (const selectedId of candidate.edgeSelection) {
+        const selectedEdge = candidate.edges[selectedId];
+        if (!selectedEdge) return fail('A bevel perimeter edge could not be recovered.');
+        const points = selectedEdge.vertices.map(id => JSON.stringify(candidate.positions[id])).sort();
+        selectedPerimeterKeys.push(points.join('|'));
+      }
+    }
+
+    const report = candidate.validateTopology();
+    if (!report.valid) return fail(`Combined bevel failed topology validation (${report.issueCount} issue(s)); the original mesh was not changed.`);
+    const finalEdgesByPointKey = new Map();
+    candidate.edges.forEach(edge => {
+      const points = edge.vertices.map(id => JSON.stringify(candidate.positions[id])).sort();
+      const key = points.join('|');
+      if (!finalEdgesByPointKey.has(key)) finalEdgesByPointKey.set(key, []);
+      finalEdgesByPointKey.get(key).push(edge.id);
+    });
+    candidate.selectionMode = 'edge';
+    candidate.clearSelection();
+    for (const key of selectedPerimeterKeys) {
+      const ids = finalEdgesByPointKey.get(key) || [];
+      if (ids.length === 1) candidate.edgeSelection.add(ids[0]);
+    }
+    if (candidate.edgeSelection.size !== selectedPerimeterKeys.length || candidate.edgeSelection.size !== sourceRefs.length * 4) {
+      return fail('The combined bevel perimeter was ambiguous; the original mesh was not changed.');
+    }
+
+    this.positions = candidate.positions.map(point => [...point]);
+    this.faces = candidate.faces.map(face => [...face]);
+    this.selectionMode = 'edge';
+    this.clearSelection();
+    this.rebuild();
+    // Rebuild order is deterministic for identical positions/faces, so the
+    // candidate's already-validated edge IDs map directly to this mesh.
+    this.edgeSelection = new Set(candidate.edgeSelection);
+    return {
+      changed: true,
+      amount,
+      bevelCount: sourceRefs.length,
+      width: widths.reduce((sum, width) => sum + width, 0) / widths.length,
+      widths,
+      insertedVertices,
+      createdFaces,
+      selectedEdges: this.edgeSelection.size
+    };
+  }
+
+  /**
    * Bevels one interior edge on a closed, convex tri-valent neighborhood.
    * This deliberately narrow first pass supports cube-like corners only:
    * both endpoints must have three incident faces, all affected faces must be

@@ -117,3 +117,37 @@ test('Bevel modal rejects invalid numeric width and keeps the last valid preview
   assert.deepEqual(await session.document.serialize(), before);
   await modal.cancel();
 });
+
+
+test('Bevel modal previews and commits multiple separated edges as one undo step', async () => {
+  const basePositions = [
+    [-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],[-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1],
+    [4,-1,-1],[6,-1,-1],[6,1,-1],[4,1,-1],[4,-1,1],[6,-1,1],[6,1,1],[4,1,1]
+  ];
+  const cubeFaces = [[0,3,2,1],[4,5,6,7],[0,1,5,4],[1,2,6,5],[2,3,7,6],[3,0,4,7]];
+  const hem = new HalfEdgeMesh(basePositions, [...cubeFaces, ...cubeFaces.map(face => face.map(id => id + 8))]);
+  hem.setSelectionMode('edge');
+  for (const pair of [[4,5],[12,13]]) {
+    const edge = hem.edges.find(item => keyFor(...item.vertices) === keyFor(...pair));
+    hem.selectEdge(edge.id, true);
+  }
+  const mesh = { userData: { hem } };
+  const document = {
+    mode: 'edit', selectionMode: 'edge', activeObject: mesh,
+    updateMesh() {},
+    async serialize() { return { selectionMode: this.selectionMode, positions: mesh.userData.hem.positions.map(point => [...point]), faces: mesh.userData.hem.faces.map(face => [...face]), edgeSelection: [...mesh.userData.hem.edgeSelection] }; },
+    async restore(snapshot) { const restored = new HalfEdgeMesh(snapshot.positions, snapshot.faces); restored.setSelectionMode('edge'); restored.edgeSelection = new Set(snapshot.edgeSelection); mesh.userData.hem = restored; }
+  };
+  const commits = [];
+  const undoManager = { async record(label, before, after) { commits.push({ label, before, after }); } };
+  const modal = new BevelModal({ document, undoManager, viewport: {}, status() {}, onChange() {} });
+  assert.equal(await modal.begin(), true);
+  assert.equal(modal.seedEdgeIds.length, 2);
+  modal.setAmount(0.4);
+  assert.equal(mesh.userData.hem.validateTopology().valid, true);
+  const result = await modal.confirm();
+  assert.equal(result.bevelCount, 2);
+  assert.equal(result.insertedVertices, 8);
+  assert.equal(commits.length, 1);
+  assert.equal(commits[0].label, 'Bevel');
+});
