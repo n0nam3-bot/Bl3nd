@@ -71,7 +71,8 @@
 │   ├── HalfEdgeMesh.test.js    # Node topology/triangulation regression tests
 │   ├── BevelModal.test.js      # Bevel preview/confirm/cancel regression tests
 │   ├── LoopCutModal.test.js    # Loop-cut preview/confirm/cancel regression tests
-│   └── MixedFanBevel.test.js    # Mixed terminal/internal Bevel fan regression matrix
+│   ├── MixedFanBevel.test.js    # Mixed terminal/internal Bevel fan regression matrix
+│   └── BROWSER_REGRESSION.md    # Desktop/mobile browser regression procedure
 ├── HANDOFF.md                  # This document
 ├── README.md                   # Deployment and quick controls
 ├── index.html                  # Static app entry and Bl3nd identity
@@ -87,7 +88,7 @@ Status meanings: **Working** = implemented end-to-end in the current foundation;
 |---|---|---|
 | Zero-build static app | Working | Native ES modules, static HTML/CSS, pinned Three.js CDN imports. |
 | Mobile ZIP workflow | Working | ZIP path validation, extraction, cleanup, bot commit; workflow files are excluded. |
-| GitHub Pages deployment | Working after workflow correction | Two-job artifact/deploy pipeline; triggers after successful unpack completion and normal main pushes excluding uploads. Latest deployed baseline for v0.1.23: `main` commit `627bee70f66bce140abb5b8519d766e496a2c3ff` (Pages run #31 succeeded). |
+| GitHub Pages deployment | Working after workflow correction | Two-job artifact/deploy pipeline; triggers after successful unpack completion and normal main pushes excluding uploads. Latest deployed baseline for v0.1.25: `main` commit `8931a2d863961477b2321e107c3f27575775a3ea` (Pages run #33 succeeded on 2026-11-26). |
 | Bl3nd branding/PWA | Working | Bl3nd header/title, manifest identity, app icons, service worker cache-version migration. |
 | Startup progress/error UI | Partial | Staged progress and visible exceptions. Starter cube now initializes directly through `SceneDocument`, outside command dispatch and undo snapshot I/O; viewport framing and initial panel refresh are isolated as non-fatal steps. Real-browser verification remains. |
 | Device capabilities | Partial | Detects tier, memory, CPU threads, WebGPU, WebGL2 and OPFS. Tier affects render pixel ratio/history budget; WebGPU is not activated. |
@@ -409,6 +410,13 @@ Extend the conservative Bevel operator beyond its first closed tri-valent corner
 - Added nine strongly skewed affine cases across the same valence pairings. The current candidate can produce a non-planar face under this geometry; every case must reject during candidate validation and preserve the original positions, faces and edge selection exactly.
 - No Bevel operator or runtime code changed. Direct execution against the current HalfEdgeMesh module completed 27 supported cases and nine non-destructive skew rejections. The complete Node test suite was not run in this agent environment; both new Node regression tests are included for the repository's existing test command.
 
+## v0.1.26 Desktop/Mobile Browser Regression Protocol
+
+- Added `tests/BROWSER_REGRESSION.md` with reproducible desktop and Android Chrome checks for startup, viewport navigation, edge selection, Bevel modal controls, cancellation, commit and undo.
+- Updated the documented Pages deployment baseline to v0.1.25 commit `8931a2d863961477b2321e107c3f27575775a3ea`; GitHub Actions Pages run #33 completed successfully.
+- Documentation-only update. No application runtime, operator, workflow, dependency or configuration changes.
+- Real desktop/mobile execution remains pending; a successful Pages deployment is not evidence of pointer/touch interaction correctness.
+
 ## Next Roadmap Step
 
-Perform real desktop/mobile browser regression of selection, Bevel preview, profile controls, cancellation and undo. Record device-specific failures without weakening topology validation or the non-destructive rejection guards. Fans above valence six, boundaries, non-manifold geometry, branches, cycles, ambiguous cap patches and strongly skewed candidates that fail planar validation must remain unchanged. Loop Cut traversal through extraordinary poles remains a separate task.
+Execute `tests/BROWSER_REGRESSION.md` on a desktop browser and Android Chrome, then record device/browser-specific results before changing input, selection or Bevel code. Cover startup, orbit/pan/zoom, Edge Select, Bevel preview width, segments/profile, cancel, confirm and undo. Keep fans above valence six, boundaries, non-manifold geometry, branches, cycles, ambiguous cap patches and strongly skewed candidates that fail planar validation non-destructive. Loop Cut traversal through extraordinary poles remains a separate task.
