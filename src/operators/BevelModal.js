@@ -23,6 +23,10 @@ export class BevelModal {
     this.lastError = '';
   }
 
+  profileSafetyNote() {
+    return this.lastResult?.profileScale < 1 ? ' · high-valence profile limited to 25% when segmented' : '';
+  }
+
   async begin() {
     if (this.active) return false;
     if (this.document.mode !== 'edit') { this.lastError = 'Bevel is available in Edit Mode.'; return false; }
@@ -59,7 +63,7 @@ export class BevelModal {
     this.lastResult = preview.result;
     this.applyPreview(preview.hem);
     this.active = true;
-    this.status?.(`BEVEL · ${this.segments} segment(s) · profile ${this.profile.toFixed(2)} · drag width · +/- segments · [ ] profile · Enter apply · Esc cancel`);
+    this.status?.(`BEVEL · ${this.segments} segment(s) · profile ${this.profile.toFixed(2)}${this.profileSafetyNote()} · drag width · +/- segments · [ ] profile · Enter apply · Esc cancel`);
     this.onChange?.();
     return true;
   }
@@ -91,7 +95,7 @@ export class BevelModal {
     this.lastResult = preview.result;
     this.lastError = '';
     this.applyPreview(preview.hem);
-    this.status?.(`Bevel · ${this.segments} segment(s) · profile ${this.profile.toFixed(2)} · amount ${this.amount.toFixed(2)} · width ${preview.result.width.toFixed(3)} · Enter apply / Esc cancel`);
+    this.status?.(`Bevel · ${this.segments} segment(s) · profile ${this.profile.toFixed(2)}${this.profileSafetyNote()} · amount ${this.amount.toFixed(2)} · width ${preview.result.width.toFixed(3)} · Enter apply / Esc cancel`);
     this.onChange?.();
     return true;
   }
@@ -109,7 +113,7 @@ export class BevelModal {
     this.lastResult = preview.result;
     this.lastError = '';
     this.applyPreview(preview.hem);
-    this.status?.(`Bevel · ${this.segments} segment(s) · profile ${this.profile.toFixed(2)} · amount ${this.amount.toFixed(2)} · Enter apply / Esc cancel`);
+    this.status?.(`Bevel · ${this.segments} segment(s) · profile ${this.profile.toFixed(2)}${this.profileSafetyNote()} · amount ${this.amount.toFixed(2)} · Enter apply / Esc cancel`);
     this.onChange?.();
     return true;
   }
@@ -132,7 +136,7 @@ export class BevelModal {
     this.lastResult = preview.result;
     this.lastError = '';
     this.applyPreview(preview.hem);
-    this.status?.(`Bevel · ${this.segments} segment(s) · profile ${this.profile.toFixed(2)} · amount ${this.amount.toFixed(2)} · Enter apply / Esc cancel`);
+    this.status?.(`Bevel · ${this.segments} segment(s) · profile ${this.profile.toFixed(2)}${this.profileSafetyNote()} · amount ${this.amount.toFixed(2)} · Enter apply / Esc cancel`);
     this.onChange?.();
     return true;
   }

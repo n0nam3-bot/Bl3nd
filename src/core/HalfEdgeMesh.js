@@ -701,7 +701,8 @@ export class HalfEdgeMesh {
       const result = this._bevelSelectedEdgesCore({ amount });
       if (!result.changed) return result;
       const { bevelFaceRefs, ...publicResult } = result;
-      return { ...publicResult, segments, profile };
+      const profileScale = (result.maxInternalValence || 3) > 4 ? 0.25 : 1;
+      return { ...publicResult, segments, profile, profileScale };
     }
 
     // Segment/profile work is performed on a private copy. The source remains
@@ -712,10 +713,12 @@ export class HalfEdgeMesh {
     candidate.edgeSelection = new Set(this.edgeSelection);
     const baseResult = candidate._bevelSelectedEdgesCore({ amount });
     if (!baseResult.changed) return baseResult;
+    const profileScale = (baseResult.maxInternalValence || 3) > 4 ? 0.25 : 1;
     const refined = candidate._applyBevelSegments({
       bevelFaceRefs: baseResult.bevelFaceRefs,
       segments,
-      profile
+      profile,
+      profileScale
     });
     if (!refined.changed) return fail(refined.reason || 'Segmented bevel validation failed; the original mesh was not changed.');
 
@@ -730,6 +733,7 @@ export class HalfEdgeMesh {
       ...publicResult,
       segments,
       profile,
+      profileScale,
       insertedVertices: baseResult.insertedVertices + refined.insertedVertices,
       createdFaces: refined.createdFaces + (baseResult.capPatches || 0),
       selectedEdges: this.edgeSelection.size
@@ -1153,6 +1157,7 @@ export class HalfEdgeMesh {
     };
 
     const fanValenceByVertex = new Map();
+    const fanByVertex = new Map();
     const affectedFaceIds = new Set();
     for (let pathIndex = 0; pathIndex < pathVertices.length; pathIndex++) {
       const vertexId = pathVertices[pathIndex];
@@ -1164,13 +1169,14 @@ export class HalfEdgeMesh {
       const fan = this.orderedVertexFan(vertexId);
       const isEndpoint = pathIndex === 0 || pathIndex === pathVertices.length - 1;
       const supportedValence = isEndpoint ? incidentEdges.length === 3 :
-        (incidentEdges.length === 3 || incidentEdges.length === 4);
+        (incidentEdges.length >= 3 && incidentEdges.length <= 6);
       if (!supportedValence || incidentFaces.length !== incidentEdges.length || !fan || fan.length !== incidentEdges.length ||
           incidentEdges.some(edge => edge.halfEdges.length !== 2 || !edge.halfEdges.every(halfEdge => halfEdge.twin)) ||
           fan.some(halfEdge => !halfEdge?.face || !incidentEdges.includes(halfEdge.edge))) {
-        return fail('Connected chain Bevel requires closed tri-valent terminal fans and closed tri- or valence-four internal fans.');
+        return fail('Connected chain Bevel requires closed tri-valent terminal fans and closed internal fans with valence three through six.');
       }
       fanValenceByVertex.set(vertexId, incidentEdges.length);
+      fanByVertex.set(vertexId, fan);
       incidentFaces.forEach(id => affectedFaceIds.add(id));
     }
     for (const faceId of affectedFaceIds) {
@@ -1205,16 +1211,68 @@ export class HalfEdgeMesh {
     if (plans.some(plan => !plan)) return fail('Every chain edge must have two consistently wound interior manifold faces.');
     const endpointRefs = plans.map(plan => [[...this.positions[plan.start]], [...this.positions[plan.end]]]);
 
+    // Resolve the complete opposite fan arc at each internal junction. Every
+    // non-selected radial edge receives a shared cut point, so valence-five
+    // and valence-six fans close with a triangulated cap patch rather than
+    // leaving the original pole vertex exposed inside the bevel.
+    const fanCapEdgeIdsByVertex = new Map();
+    for (let index = 1; index < pathVertices.length - 1; index++) {
+      const center = pathVertices[index];
+      const leftPlan = plans[index - 1], rightPlan = plans[index];
+      const commonFaces = [leftPlan.faceAId, leftPlan.faceBId]
+        .filter(id => id === rightPlan.faceAId || id === rightPlan.faceBId);
+      const sharedFaceIds = [...new Set(commonFaces)];
+      if (sharedFaceIds.length !== 1) return fail('Each internal chain junction must have exactly one shared face for its miter.');
+      const sharedFaceId = sharedFaceIds[0];
+      const fan = fanByVertex.get(center) || [];
+      const sectorIndex = fan.findIndex((halfEdge, fanIndex) => {
+        const next = fan[(fanIndex + 1) % fan.length];
+        return halfEdge.face?.id === sharedFaceId && next &&
+          ((halfEdge.edge.id === leftPlan.edgeId && next.edge.id === rightPlan.edgeId) ||
+           (halfEdge.edge.id === rightPlan.edgeId && next.edge.id === leftPlan.edgeId));
+      });
+      if (sectorIndex < 0) return fail('The shared miter face does not occupy one unique sector of the ordered vertex fan.');
+      const capEdgeIds = [];
+      for (let offset = 2; offset < fan.length; offset++) {
+        const edgeId = fan[(sectorIndex + offset) % fan.length]?.edge?.id;
+        if (!Number.isInteger(edgeId) || selectedEdgeIds.has(edgeId)) {
+          return fail('The opposite vertex-fan arc contains a selected or unresolved edge.');
+        }
+        capEdgeIds.push(edgeId);
+      }
+      if (capEdgeIds.length !== fan.length - 2 || new Set(capEdgeIds).size !== capEdgeIds.length) {
+        return fail('The opposite vertex-fan arc is incomplete or ambiguous.');
+      }
+      fanCapEdgeIdsByVertex.set(center, capEdgeIds);
+    }
+
     const cutInfoByKey = new Map();
+    const addCutInfo = info => {
+      if (!info) return false;
+      const key = `${info.vertexId}:${info.edgeId}`;
+      const previous = cutInfoByKey.get(key);
+      if (previous && (Math.abs(previous.length - info.length) > 1e-8 ||
+          previous.to.some((value, axis) => Math.abs(value - info.to[axis]) > 1e-8))) return false;
+      cutInfoByKey.set(key, info);
+      return true;
+    };
     for (const plan of plans) {
       for (const info of plan.cuts) {
-        const key = `${info.vertexId}:${info.edgeId}`;
-        const previous = cutInfoByKey.get(key);
-        if (previous && (Math.abs(previous.length - info.length) > 1e-8 ||
-            previous.to.some((value, axis) => Math.abs(value - info.to[axis]) > 1e-8))) {
-          return fail('The chain has inconsistent offset data on a shared neighboring edge.');
+        if (!addCutInfo(info)) return fail('The chain has inconsistent offset data on a shared neighboring edge.');
+      }
+    }
+    for (const [vertexId, edgeIds] of fanCapEdgeIdsByVertex) {
+      for (const edgeId of edgeIds) {
+        const edge = this.edges[edgeId];
+        const otherId = edge?.vertices.find(id => id !== vertexId);
+        const from = this.positions[vertexId], to = this.positions[otherId];
+        if (!edge || edge.halfEdges.length !== 2 || !edge.halfEdges.every(item => item.twin) || !from || !to) {
+          return fail('A higher-valence cap edge is not a closed manifold edge.');
         }
-        cutInfoByKey.set(key, info);
+        const length = Math.hypot(to[0] - from[0], to[1] - from[1], to[2] - from[2]);
+        if (!Number.isFinite(length) || length <= 1e-10 || !addCutInfo({ vertexId, edgeId, otherId, from, to, length })) {
+          return fail('A higher-valence cap edge has invalid or conflicting offset data.');
+        }
       }
     }
     const maxWidth = Math.min(...[...cutInfoByKey.values()].map(info => info.length)) * 0.45;
@@ -1302,29 +1360,13 @@ export class HalfEdgeMesh {
 
       const miterId = nextPositions.push(miterPoint) - 1;
       miterByVertexFace.set(`${center}:${sharedFaceId}`, miterId);
-      const capCutForPlan = plan => {
-        const capFaceId = plan.faceAId === sharedFaceId ? plan.faceBId : plan.faceAId;
-        const capFace = this.faces[capFaceId];
-        const capVertexIndex = capFace?.indexOf(center) ?? -1;
-        if (capVertexIndex < 0) return null;
-        const beforeEdge = edgeIdFor(capFace[(capVertexIndex - 1 + capFace.length) % capFace.length], center);
-        const afterEdge = edgeIdFor(center, capFace[(capVertexIndex + 1) % capFace.length]);
-        const flankEdges = [beforeEdge, afterEdge].filter(id => Number.isInteger(id) && id !== plan.edgeId && !selectedEdgeIds.has(id));
-        if (flankEdges.length !== 1) return null;
-        return cutId(center, flankEdges[0]);
-      };
-      const leftCapCut = capCutForPlan(leftPlan);
-      const rightCapCut = capCutForPlan(rightPlan);
-      if (!Number.isInteger(leftCapCut) || !Number.isInteger(rightCapCut)) {
-        return fail('A chain miter could not resolve both cap-side cut points.');
+      const capEdgeIds = fanCapEdgeIdsByVertex.get(center) || [];
+      const capCuts = capEdgeIds.map(edgeId => cutId(center, edgeId));
+      if (capCuts.length !== fanValenceByVertex.get(center) - 2 ||
+          capCuts.some(id => !Number.isInteger(id)) || new Set(capCuts).size !== capCuts.length) {
+        return fail('A chain miter could not resolve every ordered cap-side cut point.');
       }
-      if (fanValenceByVertex.get(center) === 3 && leftCapCut !== rightCapCut) {
-        return fail('A tri-valent miter must close on one shared cap edge.');
-      }
-      if (fanValenceByVertex.get(center) === 4 && leftCapCut === rightCapCut) {
-        return fail('A valence-four miter requires two distinct cap-side cut points.');
-      }
-      miterInfos.push({ vertexId: center, faceId: sharedFaceId, miterId, capCuts: [leftCapCut, rightCapCut] });
+      miterInfos.push({ vertexId: center, faceId: sharedFaceId, miterId, capCuts });
     }
 
     if (miterInfos.length !== edgeCount - 1) {
@@ -1375,19 +1417,16 @@ export class HalfEdgeMesh {
       nextFaces.push(strip);
     }
 
-    // A valence-four junction leaves a triangular opening between the shared
-    // face miter and the two independently trimmed edges on the opposite fan.
-    // Recover the unique winding that opposes all three existing boundary
-    // half-edges; never guess a cap orientation from geometry alone.
+    // A tri-valent junction closes on one shared miter edge. Higher-valence
+    // fans leave a polygon bounded by the miter and every cut point along the
+    // opposite fan arc. Triangulate that boundary as a patch; only accept the
+    // winding that opposes every existing boundary half-edge.
     const capPatchFaces = [];
     for (const info of miterInfos) {
-      const [leftCut, rightCut] = info.capCuts;
-      if (leftCut === rightCut) continue; // The tri-valent case is one shared miter edge.
+      if (info.capCuts.length === 1) continue;
       const provisional = new HalfEdgeMesh(nextPositions, nextFaces);
-      const options = [
-        [info.miterId, leftCut, rightCut],
-        [info.miterId, rightCut, leftCut]
-      ];
+      const boundary = [info.miterId, ...info.capCuts];
+      const options = [boundary, [info.miterId, ...info.capCuts.slice().reverse()]];
       const validOrientations = options.filter(face => face.every((start, index) => {
         const end = face[(index + 1) % face.length];
         const edge = provisional.edges.find(item => keyFor(...item.vertices) === keyFor(start, end));
@@ -1396,10 +1435,48 @@ export class HalfEdgeMesh {
         return existing.origin === end && existing.next?.origin === start;
       }));
       if (validOrientations.length !== 1) {
-        return fail('A valence-four cap patch has an ambiguous or incomplete boundary; the original mesh was not changed.');
+        return fail('A higher-valence cap patch has an ambiguous or incomplete boundary; the original mesh was not changed.');
       }
-      capPatchFaces.push(validOrientations[0]);
-      nextFaces.push(validOrientations[0]);
+      const orientedBoundary = validOrientations[0];
+      if (orientedBoundary.length === 3) {
+        capPatchFaces.push(orientedBoundary);
+        nextFaces.push(orientedBoundary);
+        continue;
+      }
+      const projection = projectedPolygon(nextPositions, orientedBoundary);
+      if (!projection) return fail('A higher-valence cap boundary has no stable projection.');
+      const polygonEpsilon = projection.scale * projection.scale * 1e-9;
+      if (polygonSelfIntersects(projection.points, polygonEpsilon)) {
+        return fail('A higher-valence cap boundary self-intersects; the original mesh was not changed.');
+      }
+      const area = signedArea2D(projection.points);
+      const winding = Math.sign(area);
+      if (!winding || Math.abs(area) <= polygonEpsilon || projection.points.some((point, pointIndex) =>
+        cross2(projection.points[(pointIndex - 1 + projection.points.length) % projection.points.length], point,
+          projection.points[(pointIndex + 1) % projection.points.length]) * winding < -polygonEpsilon
+      )) return fail('A higher-valence cap boundary is not a simple convex patch.');
+
+      // A warped cap boundary cannot safely become one polygon face. Add a
+      // center point and triangulate each boundary segment into an individually
+      // planar triangle; this also preserves collinear boundary vertices.
+      const capCenter = [0, 1, 2].map(axis =>
+        orientedBoundary.reduce((sum, id) => sum + nextPositions[id][axis], 0) / orientedBoundary.length
+      );
+      const capCenterId = nextPositions.push(capCenter) - 1;
+      const capTriangles = [];
+      for (let index = 0; index < orientedBoundary.length; index++) {
+        const a = orientedBoundary[index], b = orientedBoundary[(index + 1) % orientedBoundary.length];
+        const pa = nextPositions[a], pb = nextPositions[b];
+        const u = pa.map((value, axis) => value - capCenter[axis]);
+        const v = pb.map((value, axis) => value - capCenter[axis]);
+        const normal = cross3(u, v);
+        if (Math.hypot(...normal) <= projection.scale * projection.scale * 1e-10) {
+          return fail('A higher-valence cap patch would contain a degenerate triangle.');
+        }
+        capTriangles.push([capCenterId, a, b]);
+      }
+      capPatchFaces.push(...capTriangles);
+      nextFaces.push(...capTriangles);
     }
 
     const candidate = new HalfEdgeMesh(nextPositions, nextFaces);
@@ -1415,9 +1492,12 @@ export class HalfEdgeMesh {
       return fail('The chain must preserve planar, convex source faces, cap patches, end caps and bevel strips.');
     }
 
-    const miterKeys = new Set(miterInfos.flatMap(info => info.capCuts.map(cutId =>
-      keyFor(compactMap.get(info.miterId), compactMap.get(cutId))
-    )));
+    // Only the first and last patch spokes touch bevel strips. Intermediate
+    // spokes are internal triangulation edges shared by cap-patch triangles.
+    const miterKeys = new Set(miterInfos.flatMap(info => {
+      const boundaryCuts = [...new Set([info.capCuts[0], info.capCuts.at(-1)])];
+      return boundaryCuts.map(cutId => keyFor(compactMap.get(info.miterId), compactMap.get(cutId)));
+    }));
     const edgeIdsByKey = new Map(candidate.edges.map(edge => [keyFor(...edge.vertices), edge.id]));
     for (const key of miterKeys) {
       const miterEdge = candidate.edges.filter(edge => keyFor(...edge.vertices) === key);
@@ -1468,6 +1548,7 @@ export class HalfEdgeMesh {
       selectedEdges: this.edgeSelection.size,
       endCaps: 2,
       chainLength: plans.length,
+      maxInternalValence: Math.max(...pathVertices.slice(1, -1).map(vertexId => fanValenceByVertex.get(vertexId))),
       bevelFaceRefs: plans.map((plan, index) => ({
         faceId: bevelFaceStartId + index,
         endpointPoints: endpointRefs[index]
@@ -1981,10 +2062,11 @@ export class HalfEdgeMesh {
    * points are displaced inside their cap-face plane; shared miter edges stay
    * straight so neighboring bevel strips cannot open a crack.
    */
-  _applyBevelSegments({ bevelFaceRefs = [], segments = 1, profile = 0.5 } = {}) {
+  _applyBevelSegments({ bevelFaceRefs = [], segments = 1, profile = 0.5, profileScale = 1 } = {}) {
     const fail = reason => ({ changed: false, reason });
     if (!Number.isInteger(segments) || segments < 2 || segments > 8 ||
-        !Number.isFinite(profile) || profile < 0 || profile > 1 || !bevelFaceRefs.length) {
+        !Number.isFinite(profile) || profile < 0 || profile > 1 ||
+        !Number.isFinite(profileScale) || profileScale <= 0 || profileScale > 1 || !bevelFaceRefs.length) {
       return fail('The segmented bevel parameters or strip references are invalid.');
     }
     const bevelFaceIds = new Set(bevelFaceRefs.map(ref => ref.faceId));
@@ -1998,7 +2080,7 @@ export class HalfEdgeMesh {
     const lerp = (a, b, t) => a.map((value, axis) => value + (b[axis] - value) * t);
     const distance = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
     const dot = (a, b) => a.reduce((sum, value, axis) => sum + value * b[axis], 0);
-    const profileBulge = 0.14644660940672624 + (profile - 0.5) * 0.5;
+    const profileBulge = (0.14644660940672624 + (profile - 0.5) * 0.5) * profileScale;
 
     for (const ref of bevelFaceRefs) {
       const face = this.faces[ref.faceId];

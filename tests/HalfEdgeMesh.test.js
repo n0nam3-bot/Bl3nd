@@ -413,6 +413,39 @@ function makeValenceFourChainFixture() {
   return new HalfEdgeMesh(positions, faces);
 }
 
+function makeValenceFiveSixChainFixture(targetValence = 5) {
+  const positions = [
+    [-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],
+    [-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1],[0,0,1]
+  ];
+  const faces = [
+    [0,3,2,1], [0,1,5,4], [1,2,6,5], [2,3,7,6], [3,0,4,7],
+    [4,5,8], [5,6,8], [6,7,8], [7,4,8]
+  ];
+  const splitFace = (faceKey, center) => {
+    const faceIndex = faces.findIndex(face => face.join(',') === faceKey);
+    assert.notEqual(faceIndex, -1, `fixture face ${faceKey} exists`);
+    const [a,b,c] = faces[faceIndex];
+    const centerId = positions.push(center) - 1;
+    faces.splice(faceIndex, 1, [a,b,centerId], [b,c,centerId], [c,a,centerId]);
+    return centerId;
+  };
+  // Splitting the opposite cap-side triangle increases both selected
+  // internal vertices from valence four to five without changing endpoints.
+  const firstCenter = splitFace('4,5,8', [0,-2/3,1]);
+  if (targetValence >= 6) splitFace('5,6,8', [2/3,0,1]);
+  if (targetValence >= 7) {
+    const faceKey = `5,8,${firstCenter}`;
+    const faceIndex = faces.findIndex(face => face.join(',') === faceKey);
+    assert.notEqual(faceIndex, -1);
+    const [a,b,c] = faces[faceIndex];
+    const center = [0,1,2].map(axis => (positions[a][axis] + positions[b][axis] + positions[c][axis]) / 3);
+    const centerId = positions.push(center) - 1;
+    faces.splice(faceIndex, 1, [a,b,centerId], [b,c,centerId], [c,a,centerId]);
+  }
+  return new HalfEdgeMesh(positions, faces);
+}
+
 function selectVertexPath(hem, path) {
   hem.setSelectionMode('edge');
   for (let index = 0; index < path.length - 1; index++) {
@@ -951,6 +984,67 @@ test('Valence-four cap patches stay manifold through all segment counts in a rot
     assert.equal(report.counts.boundaryEdges, 0);
     assert.equal(report.counts.nonManifoldEdges, 0);
   }
+});
+
+test('Connected Bevel closes valence-five and valence-six internal fans with triangulated cap patches', () => {
+  for (const valence of [5, 6]) {
+    const hem = makeValenceFiveSixChainFixture(valence);
+    assert.equal(hem.validateTopology().valid, true);
+    assert.deepEqual([0,4,5,1].map(vertexId => hem.orderedVertexFan(vertexId)?.length),
+      valence === 5 ? [3,5,5,3] : [3,5,6,3]);
+    const path = valence === 5 ? [0,4,5,1] : [1,5,4,0];
+    selectVertexPath(hem, path);
+    const result = hem.bevelSelectedEdges({ amount: 0.22 });
+    const report = hem.validateTopology();
+    assert.equal(result.changed, true, `valence ${valence}: ${result.reason}`);
+    assert.equal(result.chainLength, 3);
+    assert.equal(result.miterCount, 2);
+    assert.equal(result.miterEdges, 4);
+    assert.equal(result.capPatches, valence === 5 ? 8 : 9);
+    assert.equal(result.endCaps, 2);
+    assert.equal(report.valid, true);
+    assert.equal(report.counts.boundaryEdges, 0);
+    assert.equal(report.counts.nonManifoldEdges, 0);
+    assert.equal(report.counts.inconsistentWinding, 0);
+  }
+});
+
+test('Valence-five and valence-six cap patches remain closed through every segment count in rotated geometry', () => {
+  const c = Math.cos(0.31), s = Math.sin(0.31), cx = Math.cos(0.27), sx = Math.sin(0.27);
+  for (const valence of [5, 6]) {
+    for (let segments = 1; segments <= 8; segments++) {
+      const hem = makeValenceFiveSixChainFixture(valence);
+      hem.positions = hem.positions.map(([x,y,z]) => {
+        const rotatedX = c*x - s*y;
+        const rotatedY = s*x + c*y;
+        return [rotatedX, cx*rotatedY - sx*z, sx*rotatedY + cx*z];
+      });
+      hem.rebuild();
+      selectVertexPath(hem, [0,4,5,1]);
+      const result = hem.bevelSelectedEdges({ amount: 0.22, segments, profile: segments % 2 ? 0 : 1 });
+      const report = hem.validateTopology();
+      assert.equal(result.changed, true, `valence ${valence}, segments ${segments}: ${result.reason}`);
+      assert.equal(result.capPatches, valence === 5 ? 8 : 9);
+      assert.equal(result.miterEdges, 4);
+      assert.equal(result.profileScale, 0.25);
+      assert.equal(report.valid, true, `valence ${valence}, segments ${segments} topology`);
+      assert.equal(report.counts.boundaryEdges, 0);
+      assert.equal(report.counts.nonManifoldEdges, 0);
+      assert.equal(report.counts.inconsistentWinding, 0);
+    }
+  }
+});
+
+test('Connected Bevel rejects an internal valence-seven fan without mutating the source', () => {
+  const hem = makeValenceFiveSixChainFixture(7);
+  assert.equal(hem.validateTopology().valid, true);
+  assert.equal(hem.orderedVertexFan(5)?.length, 7);
+  selectVertexPath(hem, [0,4,5,1]);
+  const before = JSON.stringify({ positions: hem.positions, faces: hem.faces, selection: [...hem.edgeSelection] });
+  const result = hem.bevelSelectedEdges({ amount: 0.25 });
+  assert.equal(result.changed, false);
+  assert.match(result.reason, /valence three through six/i);
+  assert.equal(JSON.stringify({ positions: hem.positions, faces: hem.faces, selection: [...hem.edgeSelection] }), before);
 });
 
 test('Connected Bevel rejects a valence-four terminal fan without mutating the source', () => {
