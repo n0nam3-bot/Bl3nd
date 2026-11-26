@@ -654,13 +654,11 @@ export class HalfEdgeMesh {
   }
 
 
-  expandEdgeLoopSelection({ extend = true } = {}) {
-    if (this.selectionMode !== 'edge' || !this.edgeSelection.size) return 0;
-    const seeds = [...this.edgeSelection];
+  collectEdgeLoop(seedEdgeIds) {
     const edgeByKey = new Map(this.edges.map(edge => [keyFor(...edge.vertices), edge.id]));
-    const visited = new Set(seeds), queue = [...seeds];
-    while (queue.length) {
-      const edge = this.edges[queue.shift()];
+    const visited = new Set(seedEdgeIds), queue = [...seedEdgeIds];
+    for (let cursor = 0; cursor < queue.length; cursor++) {
+      const edge = this.edges[queue[cursor]];
       if (!edge) continue;
       for (const halfEdge of edge.halfEdges) {
         const face = this.faces[halfEdge.face?.id];
@@ -674,9 +672,165 @@ export class HalfEdgeMesh {
         if (opposite !== undefined && !visited.has(opposite)) { visited.add(opposite); queue.push(opposite); }
       }
     }
+    return visited;
+  }
+
+  expandEdgeLoopSelection({ extend = true } = {}) {
+    if (this.selectionMode !== 'edge' || !this.edgeSelection.size) return 0;
+    const visited = this.collectEdgeLoop([...this.edgeSelection]);
     if (!extend) this.edgeSelection.clear();
     for (const id of visited) this.edgeSelection.add(id);
     return visited.size;
+  }
+
+  /**
+   * Inserts a centered/interpolated cut through a regular quad edge loop.
+   * The operation is transactional: all incident faces are checked before any
+   * vertex or face data is changed. Unsupported topology returns a reason.
+   */
+  cutEdgeLoop({ offset = 0.5 } = {}) {
+    if (this.selectionMode !== 'edge' || this.edgeSelection.size !== 1) {
+      return { changed: false, reason: 'Select exactly one seed edge in Edge Select mode.' };
+    }
+    if (!Number.isFinite(offset) || offset <= 0 || offset >= 1) {
+      return { changed: false, reason: 'Cut offset must be between 0 and 1.' };
+    }
+
+    const loopEdgeIds = this.collectEdgeLoop([...this.edgeSelection]);
+    const loopEdgeSet = new Set(loopEdgeIds);
+    const edgeFaces = new Map();
+    for (const edgeId of loopEdgeIds) {
+      const edge = this.edges[edgeId];
+      if (!edge || edge.halfEdges.length < 1 || edge.halfEdges.length > 2) {
+        return { changed: false, reason: 'The edge loop touches a non-manifold or detached edge.' };
+      }
+      edgeFaces.set(edgeId, edge.halfEdges.map(halfEdge => halfEdge.face?.id));
+      if (edge.halfEdges.length === 2) {
+        const [a, b] = edge.halfEdges;
+        if (a.origin !== b.next?.origin || a.next?.origin !== b.origin) {
+          return { changed: false, reason: 'The loop touches faces with inconsistent winding.' };
+        }
+      }
+    }
+
+    const edgeByKey = new Map(this.edges.map(edge => [keyFor(...edge.vertices), edge]));
+    const splitPlans = [];
+    const participatingFaces = new Set();
+    for (let faceId = 0; faceId < this.faces.length; faceId++) {
+      const face = this.faces[faceId];
+      if (!Array.isArray(face) || face.length !== 4) continue;
+      const selectedSides = [];
+      for (let i = 0; i < 4; i++) {
+        const edgeId = edgeByKey.get(keyFor(face[i], face[(i + 1) % 4]))?.id;
+        if (edgeId !== undefined && loopEdgeSet.has(edgeId)) selectedSides.push(i);
+      }
+      if (!selectedSides.length) continue;
+      if (selectedSides.length !== 2 || (selectedSides[0] + 2) % 4 !== selectedSides[1]) {
+        return { changed: false, reason: 'The loop reaches a quad without exactly two opposite loop edges.' };
+      }
+
+      const projection = projectedPolygon(this.positions, face);
+      if (!projection || projection.deviation > projection.scale * 1e-5 ||
+          polygonSelfIntersects(projection.points, projection.scale * projection.scale * 1e-10) ||
+          !triangulatePolygon(this.positions, face)) {
+        return { changed: false, reason: 'Loop Cut requires simple, planar quad faces.' };
+      }
+      const points = projection.points;
+      const turns = points.map((point, index) => cross2(point, points[(index + 1) % 4], points[(index + 2) % 4]));
+      const epsilon = projection.scale * projection.scale * 1e-10;
+      if (!(turns.every(value => value > epsilon) || turns.every(value => value < -epsilon))) {
+        return { changed: false, reason: 'Loop Cut requires convex quad faces; concave quads are left unchanged.' };
+      }
+
+      const side = selectedSides[0];
+      const a = face[side], b = face[(side + 1) % 4];
+      const c = face[(side + 2) % 4], d = face[(side + 3) % 4];
+      const edgeAB = edgeByKey.get(keyFor(a, b));
+      const edgeCD = edgeByKey.get(keyFor(c, d));
+      if (!edgeAB || !edgeCD) return { changed: false, reason: 'The selected loop edge could not be resolved in the quad topology.' };
+      const signAB = a === edgeAB.vertices[0] ? 1 : -1;
+      const signCD = c === edgeCD.vertices[0] ? 1 : -1;
+      splitPlans.push({ faceId, face: [...face], side, edgeABId: edgeAB.id, edgeCDId: edgeCD.id, sameEdgeOrientation: signAB === signCD });
+      participatingFaces.add(faceId);
+    }
+
+    for (const [edgeId, incidentFaceIds] of edgeFaces) {
+      if (incidentFaceIds.some(faceId => !Number.isInteger(faceId) || !participatingFaces.has(faceId))) {
+        return { changed: false, reason: 'The edge loop reaches a non-quad face or an unsupported boundary.' };
+      }
+    }
+    if (!splitPlans.length) return { changed: false, reason: 'No complete quad strip was found from the selected edge.' };
+
+    // Propagate the cut fraction through opposite edges. Depending on vertex
+    // indexing, an opposite edge may run in the same or reverse canonical ID
+    // direction; blindly applying the same numeric fraction can twist the cut.
+    const parameterAdjacency = new Map([...loopEdgeIds].map(edgeId => [edgeId, []]));
+    for (const plan of splitPlans) {
+      parameterAdjacency.get(plan.edgeABId)?.push([plan.edgeCDId, plan.sameEdgeOrientation]);
+      parameterAdjacency.get(plan.edgeCDId)?.push([plan.edgeABId, plan.sameEdgeOrientation]);
+    }
+    const edgeParameters = new Map([[this.edgeSelection.values().next().value, offset]]);
+    const parameterQueue = [...edgeParameters.keys()];
+    for (let cursor = 0; cursor < parameterQueue.length; cursor++) {
+      const edgeId = parameterQueue[cursor];
+      const parameter = edgeParameters.get(edgeId);
+      for (const [nextEdgeId, sameEdgeOrientation] of parameterAdjacency.get(edgeId) || []) {
+        const nextParameter = sameEdgeOrientation ? 1 - parameter : parameter;
+        if (!edgeParameters.has(nextEdgeId)) {
+          edgeParameters.set(nextEdgeId, nextParameter);
+          parameterQueue.push(nextEdgeId);
+        } else if (Math.abs(edgeParameters.get(nextEdgeId) - nextParameter) > 1e-8) {
+          return { changed: false, reason: 'The loop returns with an inconsistent cut offset; no topology was changed.' };
+        }
+      }
+    }
+    if (edgeParameters.size !== loopEdgeSet.size) {
+      return { changed: false, reason: 'The cut offset could not be propagated across the complete loop.' };
+    }
+
+    const nextPositions = this.positions.map(position => [...position]);
+    const splitVertexByEdge = new Map();
+    for (const edgeId of loopEdgeIds) {
+      const [a, b] = this.edges[edgeId].vertices;
+      const edgeOffset = edgeParameters.get(edgeId);
+      const point = nextPositions[a].map((value, axis) => value + (nextPositions[b][axis] - value) * edgeOffset);
+      splitVertexByEdge.set(edgeId, nextPositions.push(point) - 1);
+    }
+
+    const nextFaces = [], cutPairs = [];
+    const planByFace = new Map(splitPlans.map(plan => [plan.faceId, plan]));
+    for (let faceId = 0; faceId < this.faces.length; faceId++) {
+      const plan = planByFace.get(faceId);
+      if (!plan) { nextFaces.push([...this.faces[faceId]]); continue; }
+      const { face, side } = plan;
+      const a = face[side], b = face[(side + 1) % 4];
+      const c = face[(side + 2) % 4], d = face[(side + 3) % 4];
+      const edgeAB = edgeByKey.get(keyFor(a, b));
+      const edgeCD = edgeByKey.get(keyFor(c, d));
+      const pAB = splitVertexByEdge.get(edgeAB.id), pCD = splitVertexByEdge.get(edgeCD.id);
+      if (!Number.isInteger(pAB) || !Number.isInteger(pCD)) {
+        return { changed: false, reason: 'The cut path could not be mapped consistently across the quad strip.' };
+      }
+      nextFaces.push([pAB, b, c, pCD], [pCD, d, a, pAB]);
+      cutPairs.push([pAB, pCD]);
+    }
+
+    this.positions = nextPositions;
+    this.faces = nextFaces;
+    this.clearSelection();
+    this.rebuild();
+    const rebuiltEdgeIds = new Map(this.edges.map(edge => [keyFor(...edge.vertices), edge.id]));
+    for (const [a, b] of cutPairs) {
+      const edgeId = rebuiltEdgeIds.get(keyFor(a, b));
+      if (edgeId !== undefined) this.edgeSelection.add(edgeId);
+    }
+    return {
+      changed: true,
+      insertedVertices: splitVertexByEdge.size,
+      splitFaces: splitPlans.length,
+      createdCutEdges: cutPairs.length,
+      selectedCutEdges: this.edgeSelection.size
+    };
   }
 
   orderedVertexFan(vertexId) {

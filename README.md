@@ -28,11 +28,12 @@ The application does not require a build command. Open the GitHub Pages URL afte
 - Edge Select: select one or more seed edges, then `Alt+L` expands through opposite edges of connected quads; `Ctrl+Alt+L` follows opposite edges through closed valence-four vertex fans. The Select menu exposes both operations.
 - Edit Mode `X` / `Delete`: delete selected topology; `Shift+X`: dissolve selected topology; the viewport Select menu offers the same actions.
 - Edit Mode `E` / `I`: Extrude / Inset
+- Edge Select: select exactly one seed edge, then `Ctrl+R` or **Loop Cut** in the Edit Mesh panel to insert a centered cut through the connected quad strip. The first pass requires convex, planar quads with consistent winding; unsupported/non-quad paths are rejected without modifying topology.
 - `Shift + A`: add menu; `Z`: shading menu
 - Numpad `1/3/7`: front/right/top views; scroll: zoom
 - Desktop: left-drag or middle-drag to orbit; right-drag or Shift+left-drag to pan; scroll to zoom; a stationary click selects
 - Mobile: one-finger orbit, two-finger pan/zoom, long-press to place cursor and bottom quick actions; choose Box / Circle / Lasso from the viewport Select menu for drag selection, then return to Click Select to orbit with one finger.
-- Edit Mesh panel: Delete and Dissolve use the active vertex/edge/face selection; Validate Mesh reports invalid positions/faces, non-manifold edges, inconsistent winding, non-planar or self-intersecting polygons and triangulation failures without automatically repairing geometry.
+- Edit Mesh panel: Delete and Dissolve use the active vertex/edge/face selection; Validate Mesh reports topology problems, and Repair Safe Issues handles only conservative repairs. Loop Cut is available from the panel or Ctrl+R while one seed edge is selected.
 - Concave planar polygons are ear-clipped for rendering and selection. Dissolve can merge a simple concave planar patch; non-planar, self-intersecting and non-manifold patches remain unchanged.
 
 Run the topology regression tests with Node: `node --experimental-default-type=module --test tests/HalfEdgeMesh.test.js`.
@@ -43,3 +44,7 @@ See [`HANDOFF.md`](./HANDOFF.md) for architecture, exact implementation status, 
 ### Safe topology repair
 
 In Edit Mode, **Repair Safe Issues** removes malformed faces and duplicate faces, reorients consistently orientable manifold face components, and compacts unused vertices. It deliberately does not guess how to repair non-manifold edges, non-planar faces, self-intersections, or contradictory/non-orientable components; those remain in the validation report for manual correction. Use **Validate Mesh** before and after repair to inspect what changed.
+
+### Loop Cut
+
+Select exactly one edge in Edge Select mode, then press **Ctrl+R** or use **Loop Cut** in the Edit Mesh panel. The operation follows the quad-opposite edge loop and inserts a centered cut by sharing one interpolated vertex per crossed edge. Each participating quad is split into two quads, and the new cut edges remain selected. It currently accepts only consistently wound, convex, planar quad strips. Non-manifold, non-quad, concave, non-planar, or inconsistently wound paths are skipped with a reason and no topology mutation. This is a first safe topology pass, not full Blender loop-cut behavior; interactive hover placement, multiple cuts, sliding, poles and ngons are not supported yet.

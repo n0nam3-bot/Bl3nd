@@ -255,7 +255,18 @@ function registerCommands() {
   }, { recordUndo: false });
   commandBus.register('mesh.subdivide', async () => { if (sceneDocument.mode !== 'edit') return false; MeshOperators.subdivide(sceneDocument); await reapplyActiveModifiers(); refresh(); return true; });
   commandBus.register('mesh.bevel', () => notify('Bevel (Ctrl+B) is on the Phase 1/2 roadmap; edge-offset topology is not implemented yet.'), { recordUndo: false });
-  commandBus.register('mesh.loop_cut', () => notify('Loop Cut (Ctrl+R) is not implemented in this foundation release.'), { recordUndo: false });
+  commandBus.register('mesh.loop_cut', async () => {
+    if (sceneDocument.mode !== 'edit') { notify('Loop Cut is available in Edit Mode.'); return false; }
+    const hem = sceneDocument.activeObject?.userData?.hem;
+    if (!hem) { notify('Select a mesh before using Loop Cut.'); return false; }
+    const result = MeshOperators.loopCut(sceneDocument, { offset: 0.5 });
+    if (!result) { notify('Select a mesh before using Loop Cut.'); return false; }
+    if (!result.changed) { notify(`Loop Cut skipped · ${result.reason}`, 'error'); return false; }
+    await reapplyActiveModifiers();
+    notify(`Loop Cut complete · ${result.insertedVertices} new vertices · ${result.splitFaces} split quads · ${result.selectedCutEdges} cut edges selected.`, 'success');
+    refresh();
+    return result;
+  });
   commandBus.register('transform.modal_start', async ({ type, pointer }) => {
     const started = await modalTransform.begin(type, pointer || ui.pointerOrigin());
     if (!started) notify('Select an object before transforming.');
@@ -349,7 +360,7 @@ function refresh() {
   $('#selection-face').classList.toggle('active',sceneDocument.selectionMode==='face');
   const editing = sceneDocument.mode === 'edit';
   if (!editing && viewport.selectionTool !== 'tap') viewport.selectionTool = 'tap';
-  ['selection-vertex','selection-edge','selection-face','select-all-btn','deselect-btn','selection-menu-btn','dissolve-panel-btn','validate-topology-btn','repair-topology-btn'].forEach(id => { const control = document.getElementById(id); if (control) control.disabled = !editing; });
+  ['selection-vertex','selection-edge','selection-face','select-all-btn','deselect-btn','selection-menu-btn','dissolve-panel-btn','validate-topology-btn','repair-topology-btn','loop-cut-btn'].forEach(id => { const control = document.getElementById(id); if (control) control.disabled = !editing; });
   $('#selection-vertex').setAttribute('aria-pressed', String(sceneDocument.selectionMode==='vertex'));
   $('#selection-edge').setAttribute('aria-pressed', String(sceneDocument.selectionMode==='edge'));
   $('#selection-face').setAttribute('aria-pressed', String(sceneDocument.selectionMode==='face'));
@@ -437,7 +448,7 @@ $('#deselect-btn').addEventListener('click',()=>run('mesh.clear_selection'));
 $('#selection-menu-btn').addEventListener('click',()=>ui.togglePie('selection'));
 $('#dissolve-panel-btn').addEventListener('click',()=>run('mesh.dissolve'));
 $('#validate-topology-btn').addEventListener('click',()=>run('mesh.validate_topology'));
-$('#repair-topology-btn').addEventListener('click',()=>run('mesh.repair_topology'));
+$('#repair-topology-btn').addEventListener('click',()=>run('mesh.repair_topology')); $('#loop-cut-btn').addEventListener('click',()=>run('mesh.loop_cut'));
 $('#frame-btn').addEventListener('click',()=>run('view.frame'));
 $('#pivot-select').addEventListener('change',event=>run('pivot.set',{pivot:event.target.value}));
 $$('[data-view]').forEach(button=>button.addEventListener('click',()=>run('view.set',{view:button.dataset.view})));

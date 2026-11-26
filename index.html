@@ -138,11 +138,13 @@
             <button id="extrude-panel-btn">Extrude <kbd>E</kbd></button>
             <button id="inset-panel-btn">Inset <kbd>I</kbd></button>
             <button id="subdivide-btn">Subdivide</button>
+            <button id="loop-cut-btn" disabled>Loop Cut <kbd>Ctrl+R</kbd></button>
             <button id="delete-panel-btn">Delete <kbd>X</kbd></button>
             <button id="dissolve-panel-btn" disabled>Dissolve <kbd>Shift+X</kbd></button>
             <button id="validate-topology-btn" disabled>Validate Mesh</button>
             <button id="repair-topology-btn" disabled>Repair Safe Issues</button>
           </div>
+          <p class="panel-note">Loop Cut: switch to Edge Select, select one edge, then press Ctrl+R. The first pass supports convex, planar quad strips and centers the cut automatically.</p>
           <div class="panel-heading section-gap">PIVOT POINT</div>
           <select id="pivot-select"><option value="median">Median Point</option><option value="individual">Individual Origins</option><option value="cursor">3D Cursor</option></select>
           <div class="panel-heading section-gap">3D CURSOR</div>
@@ -231,7 +233,7 @@
         const hadController = Boolean(navigator.serviceWorker.controller);
         if (hadController) {
           try {
-            const refreshKey = 'bl3nd-cache-refresh-v9';
+            const refreshKey = 'bl3nd-cache-refresh-v10';
             if (!sessionStorage.getItem(refreshKey)) {
               navigator.serviceWorker.addEventListener('controllerchange', () => {
                 sessionStorage.setItem(refreshKey, '1');

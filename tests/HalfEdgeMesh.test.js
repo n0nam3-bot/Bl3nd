@@ -166,3 +166,114 @@ test('safe topology repair leaves non-manifold faces untouched', () => {
   assert.equal(JSON.stringify({ positions: hem.positions, faces: hem.faces }), before);
   assert.equal(result.remaining.counts.nonManifoldEdges, 1);
 });
+
+
+test('Loop Cut inserts a centered cut through a regular quad strip', () => {
+  const { hem, id } = makeGrid(1, 2);
+  hem.setSelectionMode('edge');
+  const seed = hem.edges.find(edge => keyFor(...edge.vertices) === keyFor(id(0,0), id(1,0)));
+  hem.selectEdge(seed.id);
+  const result = hem.cutEdgeLoop();
+  assert.equal(result.changed, true);
+  assert.equal(result.insertedVertices, 3);
+  assert.equal(result.splitFaces, 2);
+  assert.equal(result.createdCutEdges, 2);
+  assert.equal(result.selectedCutEdges, 2);
+  assert.equal(hem.faces.length, 4);
+  assert.equal(hem.positions.length, 9);
+  assert.equal(hem.faces.every(face => face.length === 4), true);
+  assert.equal(hem.validateTopology().valid, true);
+  assert.equal([...hem.edgeSelection].length, 2);
+});
+
+test('Loop Cut interpolates the requested offset along the edge loop', () => {
+  const { hem, id } = makeGrid(1, 1);
+  hem.setSelectionMode('edge');
+  const seed = hem.edges.find(edge => keyFor(...edge.vertices) === keyFor(id(0,0), id(1,0)));
+  hem.selectEdge(seed.id);
+  const result = hem.cutEdgeLoop({ offset: 0.25 });
+  assert.equal(result.changed, true);
+  const inserted = hem.positions.slice(4);
+  assert.deepEqual(inserted.map(point => point[0]), [0.25, 0.25]);
+  assert.deepEqual(inserted.map(point => point[1]).sort((a,b)=>a-b), [0,1]);
+  assert.equal(hem.validateTopology().valid, true);
+});
+
+test('Loop Cut rejects a loop that reaches a non-quad face without mutating topology', () => {
+  const positions = [[0,0,0],[1,0,0],[1,1,0],[0,1,0],[0,2,0],[1,2,0]];
+  const hem = new HalfEdgeMesh(positions, [[0,1,2,3],[3,2,5,4,0]]);
+  hem.setSelectionMode('edge');
+  const seed = hem.edges.find(edge => keyFor(...edge.vertices) === keyFor(0,1));
+  hem.selectEdge(seed.id);
+  const before = JSON.stringify({ positions: hem.positions, faces: hem.faces });
+  const result = hem.cutEdgeLoop();
+  assert.equal(result.changed, false);
+  assert.match(result.reason, /quad|boundary/i);
+  assert.equal(JSON.stringify({ positions: hem.positions, faces: hem.faces }), before);
+});
+
+test('Loop Cut rejects zero or out-of-range interpolation without changing mesh', () => {
+  const { hem, id } = makeGrid(1, 1);
+  hem.setSelectionMode('edge');
+  const seed = hem.edges.find(edge => keyFor(...edge.vertices) === keyFor(id(0,0), id(1,0)));
+  hem.selectEdge(seed.id);
+  const before = JSON.stringify({ positions: hem.positions, faces: hem.faces });
+  const result = hem.cutEdgeLoop({ offset: 1 });
+  assert.equal(result.changed, false);
+  assert.equal(JSON.stringify({ positions: hem.positions, faces: hem.faces }), before);
+});
+
+
+test('Loop Cut wraps a closed quad loop without creating boundary or non-manifold edges', () => {
+  const positions = [[-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],[-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1]];
+  const faces = [[0,3,2,1],[4,5,6,7],[0,1,5,4],[1,2,6,5],[2,3,7,6],[3,0,4,7]];
+  const hem = new HalfEdgeMesh(positions, faces);
+  hem.setSelectionMode('edge');
+  const seed = hem.edges.find(edge => keyFor(...edge.vertices) === keyFor(0,1));
+  hem.selectEdge(seed.id);
+  const result = hem.cutEdgeLoop();
+  assert.equal(result.changed, true);
+  assert.equal(result.insertedVertices, 4);
+  assert.equal(result.splitFaces, 4);
+  assert.equal(hem.validateTopology().valid, true);
+  assert.equal(hem.validateTopology().counts.boundaryEdges, 0);
+  assert.equal(hem.faces.length, 10);
+});
+
+test('Loop Cut rejects inconsistent winding before changing the mesh', () => {
+  const positions = [[0,0,0],[1,0,0],[1,1,0],[0,1,0],[0,2,0],[1,2,0]];
+  const hem = new HalfEdgeMesh(positions, [[0,1,2,3],[2,3,4,5]]);
+  hem.setSelectionMode('edge');
+  const seed = hem.edges.find(edge => keyFor(...edge.vertices) === keyFor(0,1));
+  hem.selectEdge(seed.id);
+  const before = JSON.stringify({ positions: hem.positions, faces: hem.faces });
+  const result = hem.cutEdgeLoop();
+  assert.equal(result.changed, false);
+  assert.match(result.reason, /winding/i);
+  assert.equal(JSON.stringify({ positions: hem.positions, faces: hem.faces }), before);
+});
+
+test('Loop Cut rejects non-planar quads before changing the mesh', () => {
+  const hem = new HalfEdgeMesh([[0,0,0],[1,0,0],[1,1,0.2],[0,1,0]], [[0,1,2,3]]);
+  hem.setSelectionMode('edge');
+  const seed = hem.edges.find(edge => keyFor(...edge.vertices) === keyFor(0,1));
+  hem.selectEdge(seed.id);
+  const before = JSON.stringify({ positions: hem.positions, faces: hem.faces });
+  const result = hem.cutEdgeLoop();
+  assert.equal(result.changed, false);
+  assert.match(result.reason, /planar/i);
+  assert.equal(JSON.stringify({ positions: hem.positions, faces: hem.faces }), before);
+});
+
+
+test('Loop Cut carries offset orientation across edges with reordered vertex IDs', () => {
+  const hem = new HalfEdgeMesh([[1,0,0],[0,0,0],[0,1,0],[1,1,0]], [[0,1,2,3]]);
+  hem.setSelectionMode('edge');
+  const seed = hem.edges.find(edge => keyFor(...edge.vertices) === keyFor(0,1));
+  hem.selectEdge(seed.id);
+  const result = hem.cutEdgeLoop({ offset: 0.25 });
+  assert.equal(result.changed, true);
+  const inserted = hem.positions.slice(4);
+  assert.deepEqual(inserted.map(point => point[0]), [0.75, 0.75]);
+  assert.equal(hem.validateTopology().valid, true);
+});

@@ -27,6 +27,13 @@ export const MeshOperators = {
     if (result.changed) document.updateMesh();
     return result;
   },
+  loopCut(document, options = {}) {
+    const hem = document.activeObject?.userData?.hem;
+    if (!hem) return null;
+    const result = hem.cutEdgeLoop(options);
+    if (result.changed) document.updateMesh();
+    return result;
+  },
   validateTopology(document) {
     return document.activeObject?.userData?.hem?.validateTopology() || null;
   },
