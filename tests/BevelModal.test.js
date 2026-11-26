@@ -119,6 +119,20 @@ test('Bevel modal rejects invalid numeric width and keeps the last valid preview
 });
 
 
+test('Bevel modal refuses contiguous edges before changing the live mesh or undo history', async () => {
+  const session = makeSession();
+  const adjacent = session.hem.edges.find(edge => keyFor(...edge.vertices) === keyFor(5, 6));
+  assert.ok(adjacent);
+  session.hem.selectEdge(adjacent.id, true);
+  const before = await session.document.serialize();
+  const modal = new BevelModal(session);
+  assert.equal(await modal.begin(), false);
+  assert.match(modal.lastError, /Contiguous-edge Bevel is not supported yet/i);
+  assert.deepEqual(await session.document.serialize(), before);
+  assert.equal(session.commits.length, 0);
+});
+
+
 test('Bevel modal previews and commits multiple separated edges as one undo step', async () => {
   const basePositions = [
     [-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],[-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1],

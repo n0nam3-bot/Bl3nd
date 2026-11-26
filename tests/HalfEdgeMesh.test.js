@@ -536,7 +536,7 @@ test('Multi-edge Bevel rejects touching selected edges without mutating the mesh
   const before = JSON.stringify({ positions: hem.positions, faces: hem.faces });
   const result = hem.bevelSelectedEdges({ amount: 0.25 });
   assert.equal(result.changed, false);
-  assert.match(result.reason, /touch at a vertex|contiguous-edge/i);
+  assert.match(result.reason, /Contiguous-edge Bevel is not supported yet/i);
   assert.equal(JSON.stringify({ positions: hem.positions, faces: hem.faces }), before);
 });
 

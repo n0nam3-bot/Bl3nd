@@ -735,11 +735,11 @@ export class HalfEdgeMesh {
         for (const item of incidentEdges) {
           if (item.id !== edgeId) localCutEdges.add(item.id);
         }
-        if (occupiedVertices.has(vertexId)) return fail('Selected bevels touch at a vertex; contiguous-edge mitering is not supported yet.');
+        if (occupiedVertices.has(vertexId)) return fail('Contiguous-edge Bevel is not supported yet; select pairwise-disjoint edges or bevel one edge at a time.');
       }
       if (localFaces.size !== 4) return fail('A selected edge does not have four distinct affected faces.');
       if ([...localFaces].some(id => occupiedFaces.has(id))) {
-        return fail('Selected bevel neighborhoods share a face; contiguous-edge mitering is not supported yet.');
+        return fail('Contiguous-edge Bevel is not supported yet; select pairwise-disjoint edges or bevel one edge at a time.');
       }
       if ([...localCutEdges].some(id => occupiedCutEdges.has(id))) {
         return fail('Selected bevel neighborhoods share an offset edge and cannot be separated safely.');
