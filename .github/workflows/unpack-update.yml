@@ -1,3 +1,4 @@
+
 name: Unpack uploaded update packages
 
 on:
@@ -9,7 +10,6 @@ on:
 
 permissions:
   contents: write
-  actions: write
 
 concurrency:
   group: unpack-updates-${{ github.ref }}
@@ -30,11 +30,10 @@ jobs:
         run: |
           set -euo pipefail
           shopt -s nullglob
-
           archives=(uploads/*.zip)
 
           if (( ${#archives[@]} == 0 )); then
-            echo "No ZIP packages found."
+            echo "No ZIP packages found. Nothing to extract."
             exit 0
           fi
 
@@ -51,12 +50,7 @@ jobs:
             done < <(unzip -Z1 "$archive")
 
             package_dir="$(mktemp -d)"
-
-            echo "Extracting ${archive} into temporary directory"
-
             unzip -o "$archive" -d "$package_dir"
-
-            echo "Installing application files"
 
             rsync -a \
               --exclude='/.github/workflows/***' \
@@ -71,7 +65,6 @@ jobs:
           touch uploads/.gitkeep
 
       - name: Commit extracted changes
-        id: commit
         shell: bash
         run: |
           set -euo pipefail
@@ -82,19 +75,8 @@ jobs:
           git add -A
 
           if git diff --cached --quiet; then
-            echo "created=false" >> "$GITHUB_OUTPUT"
-            echo "No repository changes."
+            echo "No repository changes to commit."
           else
             git commit -m "Apply uploaded project update package"
-
             git push origin "HEAD:${GITHUB_REF_NAME}"
-
-            echo "created=true" >> "$GITHUB_OUTPUT"
           fi
-
-      - name: Start GitHub Pages deployment
-        if: steps.commit.outputs.created == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh workflow run pages.yml --ref "${GITHUB_REF_NAME}"
