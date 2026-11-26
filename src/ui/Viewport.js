@@ -6,6 +6,8 @@ export class Viewport {
   constructor(container, { pixelRatio = 1.5, onSelect, onCursor, onStatus } = {}) {
     this.container = container; this.onSelect = onSelect; this.onCursor = onCursor; this.onStatus = onStatus;
     this.editOverlay = null;
+    this.selectionTool = 'tap';
+    this.onSelectionGestureStart = null;
     this.scene = new THREE.Scene(); this.scene.background = new THREE.Color(0x252a33);
     this.camera = new THREE.PerspectiveCamera(48, 1, 0.05, 2000); this.camera.up.set(0,0,1); this.camera.position.set(7, -9, 7);
     this.renderer = new THREE.WebGLRenderer({ antialias: pixelRatio > 1.1, alpha: false, powerPreference: 'high-performance' });
@@ -94,6 +96,12 @@ export class Viewport {
 
   onPointerDown(event) {
     this.lastPointer = { x: event.clientX, y: event.clientY };
+    if (event.button === 0 && this.selectionTool !== 'tap') {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      this.onSelectionGestureStart?.(event, this.selectionTool);
+      return;
+    }
     if (event.pointerType === 'touch') {
       this.activeTouchPointers.add(event.pointerId);
       // A second finger starts a gesture, never a tap-selection or cursor long-press.

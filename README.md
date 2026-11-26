@@ -24,10 +24,13 @@ The application does not require a build command. Open the GitHub Pages URL afte
 - Press `G/R/S` with the pointer over the viewport to begin there; otherwise the viewport center is used
 - Edit Mode `1/2/3`: vertex/edge/face selection; selected topology is drawn directly over the mesh
 - Edit Mode `Shift-click`: add/remove elements; `A`: select all; `Alt+A`: deselect; `Ctrl+I`: invert selection
+- Edit Mode `B` / `C` / `L`: Box / Circle / Lasso selection; `Esc` returns to click selection. Hold `Shift` while dragging to add.
+- Edit Mode `X` / `Delete`: delete selected topology; `Shift+X`: dissolve selected topology; the viewport Select menu offers the same actions.
 - Edit Mode `E` / `I`: Extrude / Inset
 - `Shift + A`: add menu; `Z`: shading menu
 - Numpad `1/3/7`: front/right/top views; scroll: zoom
 - Desktop: left-drag or middle-drag to orbit; right-drag or Shift+left-drag to pan; scroll to zoom; a stationary click selects
-- Mobile: one-finger orbit, two-finger pan/zoom, long-press to place cursor, bottom quick actions; open the viewport toolbar’s Select menu for Select All / None / Invert
+- Mobile: one-finger orbit, two-finger pan/zoom, long-press to place cursor and bottom quick actions; choose Box / Circle / Lasso from the viewport Select menu for drag selection, then return to Click Select to orbit with one finger.
+- Edit Mesh panel: Delete and Dissolve use the active vertex/edge/face selection; Validate Mesh reports topology issues without automatically repairing geometry.
 
 See [`HANDOFF.md`](./HANDOFF.md) for architecture, exact implementation status, limitations and roadmap. This is an initial engineering foundation, not yet a feature-for-feature Blender clone.

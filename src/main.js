@@ -4,12 +4,14 @@ import { CommandBus } from './core/CommandBus.js';
 import { SceneDocument } from './core/SceneDocument.js';
 import { UndoManager } from './core/UndoManager.js';
 import { MeshOperators } from './operators/MeshOperators.js';
+import { SelectionOperators } from './operators/SelectionOperators.js';
 import { ModalTransform } from './operators/ModalTransform.js';
 import { ModifierStack } from './modifiers/ModifierStack.js';
 import { Viewport } from './ui/Viewport.js';
 import { ModelIO } from './io/ModelIO.js';
 import { KeyboardController } from './input/KeyboardController.js';
 import { TouchController } from './input/TouchController.js';
+import { SelectionGestureController } from './input/SelectionGestureController.js';
 
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
@@ -181,10 +183,44 @@ function registerCommands() {
   });
   commandBus.register('mesh.delete', async () => {
     if (sceneDocument.mode !== 'edit') return false;
-    const result = MeshOperators.deleteFaces(sceneDocument);
-    if (!result) notify('Select faces before deleting.'); else await reapplyActiveModifiers();
+    const result = MeshOperators.deleteSelected(sceneDocument);
+    if (!result) notify(`Select ${sceneDocument.selectionMode} elements before deleting.`);
+    else await reapplyActiveModifiers();
     refresh(); return result;
   });
+  commandBus.register('mesh.dissolve', async () => {
+    if (sceneDocument.mode !== 'edit') return false;
+    const result = MeshOperators.dissolveSelected(sceneDocument);
+    if (!result) notify('This selection cannot be safely dissolved as one convex planar surface. Nothing was changed.');
+    else await reapplyActiveModifiers();
+    refresh(); return result;
+  });
+  commandBus.register('mesh.select_region', ({ tool, points, radius, additive }) => {
+    if (sceneDocument.mode !== 'edit' || !sceneDocument.activeObject) return false;
+    const result = SelectionOperators.selectRegion(sceneDocument.activeObject, viewport.camera,
+      viewport.renderer.domElement, { tool, points, radius, additive });
+    refresh(); return result;
+  }, { recordUndo: false });
+  commandBus.register('selection.tool.set', ({ tool = 'tap' }) => {
+    if (!['tap', 'box', 'circle', 'lasso'].includes(tool)) return false;
+    if (tool !== 'tap' && sceneDocument.mode !== 'edit') {
+      notify('Region selection tools require Edit Mode.'); return false;
+    }
+    viewport.selectionTool = tool;
+    ui?.refreshSelectionTool();
+    status(tool === 'tap' ? 'Click selection active' : `${tool[0].toUpperCase() + tool.slice(1)} selection active · Esc returns to click selection`);
+    return true;
+  }, { recordUndo: false });
+  commandBus.register('mesh.validate_topology', () => {
+    const report = MeshOperators.validateTopology(sceneDocument);
+    if (!report) { notify('Select a mesh before validating topology.'); return false; }
+    console.info('[Bl3nd topology validation]', report);
+    const c = report.counts;
+    if (report.issueCount === 0) notify(`Topology check passed · ${c.boundaryEdges} boundary edges`, 'success');
+    else notify(`Topology warnings · ${c.nonManifoldEdges} non-manifold · ${c.inconsistentWinding} winding · ${c.invalidFaces} invalid faces · ${c.duplicateFaces} duplicates · ${c.isolatedVertices} loose vertices`, 'error');
+    status(report.issueCount === 0 ? 'Topology validation passed' : `Topology validation found ${report.issueCount} issue(s)`);
+    return report;
+  }, { recordUndo: false });
   commandBus.register('mesh.subdivide', async () => { if (sceneDocument.mode !== 'edit') return false; MeshOperators.subdivide(sceneDocument); await reapplyActiveModifiers(); refresh(); return true; });
   commandBus.register('mesh.bevel', () => notify('Bevel (Ctrl+B) is on the Phase 1/2 roadmap; edge-offset topology is not implemented yet.'), { recordUndo: false });
   commandBus.register('mesh.loop_cut', () => notify('Loop Cut (Ctrl+R) is not implemented in this foundation release.'), { recordUndo: false });
@@ -286,15 +322,16 @@ function refresh() {
   $('#selection-edge').classList.toggle('active',sceneDocument.selectionMode==='edge');
   $('#selection-face').classList.toggle('active',sceneDocument.selectionMode==='face');
   const editing = sceneDocument.mode === 'edit';
-  ['selection-vertex','selection-edge','selection-face','select-all-btn','deselect-btn','selection-menu-btn'].forEach(id => { const control = document.getElementById(id); if (control) control.disabled = !editing; });
+  if (!editing && viewport.selectionTool !== 'tap') viewport.selectionTool = 'tap';
+  ['selection-vertex','selection-edge','selection-face','select-all-btn','deselect-btn','selection-menu-btn','dissolve-panel-btn','validate-topology-btn'].forEach(id => { const control = document.getElementById(id); if (control) control.disabled = !editing; });
   $('#selection-vertex').setAttribute('aria-pressed', String(sceneDocument.selectionMode==='vertex'));
   $('#selection-edge').setAttribute('aria-pressed', String(sceneDocument.selectionMode==='edge'));
   $('#selection-face').setAttribute('aria-pressed', String(sceneDocument.selectionMode==='face'));
   viewport.updateEditOverlay(editing ? sceneDocument.activeObject : null, sceneDocument.selectionMode);
   const hintDesktop = $('.hint-desktop'), hintMobile = $('.hint-mobile');
   if (editing) {
-    hintDesktop.textContent = 'Edit: Click vertex / edge / face · Shift-click add or toggle · A select all · Alt+A deselect · G/R/S transform';
-    hintMobile.textContent = 'Edit: Tap element · Shift-click not available on touch · A select all · G/R/S transform';
+    hintDesktop.textContent = 'Edit: Click vertex / edge / face · Shift-click add/toggle · B/C/L region select · Shift-drag add · Esc exit · X delete · Shift+X dissolve';
+    hintMobile.textContent = 'Edit: Tap topology · Select ▾ for Box/Circle/Lasso · X delete · Shift+X dissolve · G/R/S transform';
   } else {
     hintDesktop.textContent = 'Drag to orbit · Right-drag to pan · Scroll to zoom · Click to select · G/R/S then drag to transform';
     hintMobile.textContent = 'One finger: orbit · Two fingers: pan/zoom · Long press: 3D Cursor · G/R/S: transform';
@@ -306,7 +343,7 @@ function refresh() {
     input.value=mesh ? (kind==='rotation'?THREE.MathUtils.radToDeg(mesh.rotation[axis]):mesh[kind][axis]).toFixed(2) : '';
     input.disabled=!mesh;
   });
-  refreshCursor(); refreshModifiers(); ui?.refreshModal();
+  refreshCursor(); refreshModifiers(); ui?.refreshModal(); ui?.refreshSelectionTool();
 }
 
 ui = {
@@ -318,7 +355,7 @@ ui = {
     const entries=kind==='shading'?
       [['Solid','shade_solid'],['Wireframe','shade_wire'],['Material','shade_material'],['Rendered','shade_render']]:
       kind==='selection'?
-      [['Select All','select_all'],['Deselect All','clear_selection'],['Invert','invert_selection']]:
+      [['Click Select','tool_tap'],['Box Select (B)','tool_box'],['Circle Select (C)','tool_circle'],['Lasso Select (L)','tool_lasso'],['Select All','select_all'],['Deselect All','clear_selection'],['Invert','invert_selection'],['Delete Selected (X)','delete_selected'],['Dissolve Selected (Shift+X)','dissolve_selected']]:
       [['Cube','add_cube'],['UV Sphere','add_sphere'],['Cylinder','add_cylinder'],['Plane','add_plane'],['Edit Mode','toggle_mode'],['3D Cursor','cursor_center']];
     menu.replaceChildren();
     for(const [label,command] of entries){const button=document.createElement('button');button.textContent=label;button.dataset.command=command;menu.append(button);}
@@ -326,6 +363,13 @@ ui = {
   },
   pointerCenter(){const rect=$('#viewport').getBoundingClientRect();return{x:rect.left+rect.width/2,y:rect.top+rect.height/2};},
   pointerOrigin(){return this.pointerCenter();},
+  refreshSelectionTool(){
+    const button=$('#selection-menu-btn'),tool=viewport.selectionTool||'tap';
+    button.textContent=tool==='tap'?'Select ▾':`${tool[0].toUpperCase()+tool.slice(1)} ▾`;
+    button.dataset.tool=tool;
+    button.setAttribute('aria-label',`Selection tools · active: ${tool}`);
+    button.setAttribute('aria-pressed',String(tool!=='tap'));
+  },
   refreshModal(){
     const readout=$('#modal-readout'),pad=$('#numeric-pad');
     if(!modalTransform.active){readout.hidden=true;pad.hidden=true;return;}
@@ -342,7 +386,7 @@ $('#object-mode-btn').addEventListener('click',()=>run('mode.set',{mode:'object'
 $('#edit-mode-btn').addEventListener('click',()=>run('mode.set',{mode:'edit'}));
 $('#save-btn').addEventListener('click',async()=>{try{await modelIO.exportFile('glb');}catch(e){notify(e.message,'error');}});
 $('#open-btn').addEventListener('click',()=>$('#file-input').click());
-$('#file-input').addEventListener('change',async event=>{const file=event.target.files?.[0];if(!file)return;try{const meshes=await modelIO.importFile(file);refresh();viewport.frame(meshes[0]);}catch(e){notify(e.message,'error');}finally{event.target.value='';}});
+$('#file-input').addEventListener('change',async event=>{const file=event.target.files?.[0];if(!file)return;try{const meshes=await modelIO.importFile(file);const issues=meshes.reduce((sum,mesh)=>sum+(mesh.userData.hem?.validateTopology().issueCount||0),0);if(issues)notify(`Imported mesh validation found ${issues} topology issue(s). Use Validate Mesh for details.`,'error');refresh();viewport.frame(meshes[0]);}catch(e){notify(e.message,'error');}finally{event.target.value='';}});
 $('#add-menu-btn').addEventListener('click',()=>ui.togglePie('add'));
 $('#mobile-add').addEventListener('click',()=>ui.togglePie('add'));
 $('#mobile-move').addEventListener('click',()=>run('transform.modal_start',{type:'move',pointer:ui.pointerOrigin()}));
@@ -365,6 +409,8 @@ $('#selection-face').addEventListener('click',()=>run('mesh.selection_mode',{mod
 $('#select-all-btn').addEventListener('click',()=>run('mesh.select_all'));
 $('#deselect-btn').addEventListener('click',()=>run('mesh.clear_selection'));
 $('#selection-menu-btn').addEventListener('click',()=>ui.togglePie('selection'));
+$('#dissolve-panel-btn').addEventListener('click',()=>run('mesh.dissolve'));
+$('#validate-topology-btn').addEventListener('click',()=>run('mesh.validate_topology'));
 $('#frame-btn').addEventListener('click',()=>run('view.frame'));
 $('#pivot-select').addEventListener('change',event=>run('pivot.set',{pivot:event.target.value}));
 $$('[data-view]').forEach(button=>button.addEventListener('click',()=>run('view.set',{view:button.dataset.view})));
@@ -383,6 +429,9 @@ $('#pie-menu').addEventListener('click',async event=>{
   else if(command==='select_all') await run('mesh.select_all');
   else if(command==='clear_selection') await run('mesh.clear_selection');
   else if(command==='invert_selection') await run('mesh.invert_selection');
+  else if(command.startsWith('tool_')) await run('selection.tool.set',{tool:command.slice(5)});
+  else if(command==='delete_selected') await run('mesh.delete');
+  else if(command==='dissolve_selected') await run('mesh.dissolve');
   else if(command.startsWith('shade_')){
     await run('shading.set',{mode:command.slice(6)});
   }
@@ -404,6 +453,7 @@ const viewportCanvas=viewport.renderer.domElement;
 window.addEventListener('pointermove',event=>{if(modalTransform.active){commandBus.dispatch('transform.modal_update',{point:{x:event.clientX,y:event.clientY}});ui.refreshModal();}});
 viewportCanvas.addEventListener('contextmenu',event=>{if(modalTransform.active){event.preventDefault();run('transform.modal_cancel');}});
 new TouchController(viewport,notify);
+new SelectionGestureController({viewport,dispatch:(name,payload)=>run(name,payload),getDocument:()=>sceneDocument,notify});
 new KeyboardController({viewport,commandBus,modalTransform,getDocument:()=>sceneDocument,ui,notify});
 loadingProgress(88, 'Keyboard, pointer and touch controls are ready…');
 $('#sw-profile').textContent='Registering…';

@@ -60,7 +60,7 @@
             <button id="selection-face" class="seg-button active" title="Face Select (3)">▰</button>
             <button id="select-all-btn" class="seg-button wide" title="Select all (A)" disabled>All</button>
             <button id="deselect-btn" class="seg-button wide" title="Deselect all (Alt+A)" disabled>None</button>
-            <button id="selection-menu-btn" class="subtle-button mobile-select-menu" title="Selection actions" disabled>Select ▾</button>
+            <button id="selection-menu-btn" class="subtle-button selection-menu-button" title="Selection tools and actions" disabled>Select ▾</button>
             <span class="toolbar-spacer"></span>
             <button id="shading-btn" class="subtle-button" title="Shading Pie (Z)">Solid ▾</button>
             <button id="frame-btn" class="subtle-button" title="Frame selected (Home)">Frame</button>
@@ -139,6 +139,8 @@
             <button id="inset-panel-btn">Inset <kbd>I</kbd></button>
             <button id="subdivide-btn">Subdivide</button>
             <button id="delete-panel-btn">Delete <kbd>X</kbd></button>
+            <button id="dissolve-panel-btn" disabled>Dissolve <kbd>Shift+X</kbd></button>
+            <button id="validate-topology-btn" disabled>Validate Mesh</button>
           </div>
           <div class="panel-heading section-gap">PIVOT POINT</div>
           <select id="pivot-select"><option value="median">Median Point</option><option value="individual">Individual Origins</option><option value="cursor">3D Cursor</option></select>
@@ -228,7 +230,7 @@
         const hadController = Boolean(navigator.serviceWorker.controller);
         if (hadController) {
           try {
-            const refreshKey = 'bl3nd-cache-refresh-v6';
+            const refreshKey = 'bl3nd-cache-refresh-v7';
             if (!sessionStorage.getItem(refreshKey)) {
               navigator.serviceWorker.addEventListener('controllerchange', () => {
                 sessionStorage.setItem(refreshKey, '1');

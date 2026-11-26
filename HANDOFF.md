@@ -24,6 +24,7 @@
 - **Local-only:** scenes are stored in the browser; import/export uses local file pickers. No cloud sync or remote project database exists.
 - **Transform frame:** modal transforms capture the camera basis, viewport bounds, pointer origin and camera-to-pivot scale at start. Free movement uses the current camera-facing view plane; axis movement projects screen motion into world-axis distance; free rotation uses a camera-oriented virtual trackball.
 - **Edit overlays:** `src/ui/EditModeOverlay.js` draws live polygon edges, vertices and selected-face fills as children of the active mesh; overlays do not replace editable topology or intercept picking.
+- **Region selection:** `src/input/SelectionGestureController.js` captures box/circle/lasso drags before OrbitControls; `src/operators/SelectionOperators.js` selects projected vertices, edges and face triangles only when ray checks identify the visible mesh surface.
 - **Deployment:** `.github/workflows/pages.yml` uses two jobs: `build` creates and uploads the `github-pages` artifact; `deploy` waits for `build` and publishes it. The Pages workflow runs on normal `main` changes (excluding `uploads/**`) and after successful completion of `Unpack uploaded update packages`.
 
 ## Repository File Tree
@@ -47,11 +48,13 @@
 │   │   └── UndoManager.js      # OPFS-backed snapshots and memory fallback
 │   ├── input/
 │   │   ├── KeyboardController.js # Blender-inspired keyboard mappings
-│   │   └── TouchController.js # Touch and long-press input
+│   │   ├── TouchController.js # Touch and long-press input
+│   │   └── SelectionGestureController.js # Box/circle/lasso pointer gesture capture
 │   ├── io/ModelIO.js           # GLB/GLTF/OBJ/STL import/export
 │   ├── modifiers/ModifierStack.js # Non-destructive modifier bridge
 │   ├── operators/
 │   │   ├── MeshOperators.js    # Basic extrude/inset/delete/subdivide
+│   │   ├── SelectionOperators.js # Visibility-checked screen-space region selection
 │   │   └── ModalTransform.js   # Camera-aware G/R/S state machine
 │   ├── ui/
 │   │   ├── Viewport.js         # Three.js viewport, navigation, pointer origin and overlay lifecycle
@@ -81,15 +84,15 @@ Status meanings: **Working** = implemented end-to-end in the current foundation;
 | Device capabilities | Partial | Detects tier, memory, CPU threads, WebGPU, WebGL2 and OPFS. Tier affects render pixel ratio/history budget; WebGPU is not activated. |
 | 3D viewport | Partial | Three.js WebGL renderer, grid, axes, orbit/pan/zoom, standard views and framing. |
 | Command bus | Working | Named command registration and snapshot-based undo boundaries. |
-| Half-edge topology | Partial | Vertex/Edge/HalfEdge/Face records and adjacency. Import merges adjacent coplanar triangles into a convex polygon when a single boundary can be reconstructed; hard edges remain separate. This is not a production manifold kernel. |
+| Half-edge topology | Partial | Vertex/Edge/HalfEdge/Face records and adjacency. Import merges adjacent coplanar triangles into a convex polygon when a single boundary can be reconstructed. A diagnostic validator reports invalid/duplicate faces, non-manifold edges, inconsistent winding and isolated vertices; it does not auto-repair. This is not a production manifold kernel. |
 | Object mode | Working | Primitive creation, object selection/deletion and object transforms. |
-| Edit mode | Partial | Visible edge/vertex overlays, selected-face tint, screen-space vertex/edge picking on the hit face, Shift-click add/toggle, Select All / Deselect / Invert, and face extrude/inset/delete/subdivision. Full selection tools and vertex/edge-specific delete semantics remain missing. |
+| Edit mode | Partial | Visible edge/vertex overlays and selected-face tint; click/Shift-click, Select All / Deselect / Invert, box/circle/lasso region selection with ray-checked visibility, selection-aware vertex/edge/face deletion and constrained planar dissolve, plus face extrude/inset/subdivision. Loop/ring selection and general concave/non-manifold dissolve remain missing. |
 | Modal transforms | Partial | Free G follows the current camera-facing view plane; axis movement converts projected pointer travel into global world units; Shift+axis uses a camera-derived perpendicular plane; free R uses a camera-oriented virtual trackball; numeric commit/cancel remain. Local orientation, snapping and full Blender pivot parity remain incomplete. |
 | 3D cursor/pivot | Partial | Cursor placement and UI pivot selection exist; pivot math is incomplete. |
 | Modifiers | Partial | Worker-based midpoint subdivision, mirror, array and solidify; not Blender-equivalent. |
 | Undo/redo | Partial | OPFS snapshots with memory fallback; current snapshots also preserve per-object vertex/edge/face selections. Large snapshots can temporarily increase RAM. |
 | Model I/O | Partial | GLB, GLTF, OBJ and STL browser import/export paths; complex scenes/materials/animation need validation. |
-| Desktop/mobile input | Partial | Desktop left-drag orbit, right-drag/Shift+left-drag pan and wheel zoom; modal transforms sample pointer movement at window level; desktop Shift-click adds/toggles selections; mobile one-finger orbit, two-finger dolly-pan, quick Move/Rotate/Scale and a viewport Select menu with All / None / Invert. Device testing remains. |
+| Desktop/mobile input | Partial | Desktop left-drag orbit, right-drag/Shift+left-drag pan and wheel zoom; B/C/L or the viewport menu activate box/circle/lasso drags, with Esc returning to click selection; Shift adds. Mobile supports the same drag tools from the Select menu, two-finger dolly-pan and existing quick actions. Device testing remains. |
 | Pie menus | Partial | Compact command menus; not true radial Blender pie menus. |
 | Bevel/Loop Cut/sculpt | Not Started | No production implementation yet. |
 | Exact Blender clone | Not Started | No claim of full Blender operator, BMesh, UI, or file-format parity. |
@@ -98,22 +101,22 @@ Status meanings: **Working** = implemented end-to-end in the current foundation;
 
 1. WebGPU is detected but the renderer is still Three.js WebGL.
 2. Imported geometry is initially triangulated, then adjacent coplanar triangles are merged only when exactly two triangles share each joined edge and a single convex boundary can be reconstructed. Concave faces, holes, duplicated seam vertices, inconsistent winding and non-manifold regions may remain triangulated or lose source polygon semantics.
-3. Edit Mode now draws vertex/edge overlays and selected faces and supports screen-space picking near vertices/edges on the face under the cursor. Selection remains hit-face based; there is no complete box/circle/lasso/loop/ring selection or general occlusion-aware sub-element picking across the whole mesh.
-4. Bevel and Loop Cut are placeholders. Extrude/inset and midpoint subdivision have topology and normal limitations. Delete still follows the face-deletion path; selected vertices and edges do not yet have dedicated dissolve/delete menu semantics.
-5. Modifier algorithms are first-pass approximations: midpoint triangle subdivision, non-welded mirror, simple array offset and basic solidify.
-6. Transform orientation is currently global-axis oriented. Full local/global orientation toggle, snapping, proportional editing, multi-object pivot aggregation and exact Blender operator feedback remain incomplete. Axis-constrained scaling of rotated objects is approximate because the scene representation stores TRS rather than an arbitrary affine/shear matrix.
-7. Camera-relative G/R/S math captures the camera when an operation begins; changing the view during a modal transform is intentionally disabled until confirm/cancel. Free rotation is a practical virtual trackball, not exact Blender trackball/turntable parity.
-8. First visit requires network access to jsDelivr. Strict content blockers, CDN outages, or offline first visit may prevent startup.
-9. iOS Safari/Android Chrome OPFS, memory ceilings, WebGL context loss, background suspension and multi-touch behavior require device testing.
-10. Undo snapshots are serialized in memory before OPFS write; no chunked serialization or inactive-scene disk paging exists.
-11. Modifier evaluation uses one worker and a full mesh payload; no worker pool, chunk scheduling, cancellation or progress protocol exists.
-12. Large model import/export may temporarily duplicate large geometry buffers; advanced GLTF materials, skinning and animation are not fully validated.
-13. The application uses a system UI font stack and contains no bundled Inter font files or `@font-face` declarations. Requests to `/assets/fonts/Inter-*.woff2` do not originate in the current repository source; if they persist after a clean reload, check injected browser-extension styles or stale browser caches.
-14. GitHub Actions workflow files must be edited manually because the unpacker deliberately excludes `.github/workflows/**`.
-15. The Pages upload artifact must be created in the `build` job and deployed in the dependent `deploy` job. Do not reintroduce a `gh workflow run pages.yml` step in the unpack workflow; the `workflow_run` event handles deployment after unpack succeeds.
-16. The current Node.js 20 deprecation annotation from older action major versions is a warning, not the cause of the prior artifact lookup failure.
-17. The initial starter object is document bootstrap state, not a user operation. Do not route its creation through the CommandBus or undo snapshots; later user-created objects must continue to use the CommandBus.
-
+3. Edit Mode box/circle/lasso selection projects sub-elements into screen space and ray-checks candidates against the visible surface. It samples vertices, edge points and fan-triangle centers; loop/ring selection and exact Blender occlusion/selection parity remain missing.
+4. Delete is selection-mode aware: deleting a vertex or edge removes incident faces and dependent unused vertices; face deletion removes selected faces. Dissolve currently merges only a consistently wound, single-boundary, convex planar region. Concave, non-planar, boundary-only and non-manifold cases are deliberately skipped without mutation. Bevel and Loop Cut remain placeholders; extrude/inset and midpoint subdivision retain topology/normal limitations.
+5. The topology validator is diagnostic only. It reports invalid/degenerate or duplicate faces, non-manifold edges, same-direction shared-edge winding and isolated vertices; boundary edges are reported but are valid for open surfaces. It does not repair geometry.
+6. Modifier algorithms are first-pass approximations: midpoint triangle subdivision, non-welded mirror, simple array offset and basic solidify.
+7. Transform orientation is currently global-axis oriented. Full local/global orientation toggle, snapping, proportional editing, multi-object pivot aggregation and exact Blender operator feedback remain incomplete. Axis-constrained scaling of rotated objects is approximate because the scene representation stores TRS rather than an arbitrary affine/shear matrix.
+8. Camera-relative G/R/S math captures the camera when an operation begins; changing the view during a modal transform is intentionally disabled until confirm/cancel. Free rotation is a practical virtual trackball, not exact Blender trackball/turntable parity.
+9. First visit requires network access to jsDelivr. Strict content blockers, CDN outages, or offline first visit may prevent startup.
+10. iOS Safari/Android Chrome OPFS, memory ceilings, WebGL context loss, background suspension and multi-touch behavior require device testing.
+11. Undo snapshots are serialized in memory before OPFS write; no chunked serialization or inactive-scene disk paging exists.
+12. Modifier evaluation uses one worker and a full mesh payload; no worker pool, chunk scheduling, cancellation or progress protocol exists.
+13. Large model import/export may temporarily duplicate large geometry buffers; advanced GLTF materials, skinning and animation are not fully validated.
+14. The application uses a system UI font stack and contains no bundled Inter font files or `@font-face` declarations. Requests to `/assets/fonts/Inter-*.woff2` do not originate in the current repository source; if they persist after a clean reload, check injected browser-extension styles or stale browser caches.
+15. GitHub Actions workflow files must be edited manually because the unpacker deliberately excludes `.github/workflows/**`.
+16. The Pages upload artifact must be created in the `build` job and deployed in the dependent `deploy` job. Do not reintroduce a `gh workflow run pages.yml` step in the unpack workflow; the `workflow_run` event handles deployment after unpack succeeds.
+17. The current Node.js 20 deprecation annotation from older action major versions is a warning, not the cause of the prior artifact lookup failure.
+18. The initial starter object is document bootstrap state, not a user operation. Do not route its creation through the CommandBus or undo snapshots; later user-created objects must continue to use the CommandBus.
 ## Roadmap
 
 ### Phase 1 — Behavioral Core
@@ -126,9 +129,11 @@ Status meanings: **Working** = implemented end-to-end in the current foundation;
 - [x] OPFS undo/redo with memory fallback.
 - [ ] Preserve polygon boundaries and robustly validate manifold/non-manifold topology.
 - [x] Add visible vertex/edge/face overlays, hit-face screen-space element picking, Shift-click selection toggle, Select All / Deselect / Invert and snapshot persistence.
-- [ ] Add box/circle/lasso/loop/ring selection and robust visibility-aware element picking.
+- [x] Add box/circle/lasso selection with screen-space sampling and visibility checks; loop/ring selection remains open.
+- [x] Add selection-aware vertex/edge/face deletion and safe convex-planar dissolve, plus diagnostic topology validation.
+- [ ] Extend dissolve/repair to concave, non-planar and non-manifold topology; add loop/ring selection.
 - [ ] Complete local/global transform orientation, snapping, proportional editing, exact pivot aggregation and Blender-like transform gizmo/feedback.
-- [ ] Implement bevel, loop cut and delete menu semantics.
+- [ ] Implement bevel and loop cut.
 - [ ] Implement true radial pie menus and complete keymap parity.
 
 ### Phase 2 — Modifiers, Sculpt, Render
@@ -194,6 +199,16 @@ Status meanings: **Working** = implemented end-to-end in the current foundation;
 - Reconstructed simple convex coplanar polygon faces from imported triangle pairs/clusters, removing artificial triangulation diagonals on primitives and planar hard-surface faces when their boundary can be safely recovered.
 - Added the overlay module to the service-worker shell and advanced cache migration to v6.
 
+
+### 2026-11-26 — `bl3nd-selection-ops-region-tools.zip` — v0.1.7
+- Added selection-mode-aware Delete: vertex and edge deletion removes incident faces and compacts unused vertices; face deletion removes selected faces.
+- Added constrained Dissolve for selected face regions, shared edges and interior vertices. It merges only consistently wound, single-boundary, convex planar regions and skips unsupported regions without changing the mesh.
+- Added a diagnostic topology validator for invalid/degenerate and duplicate faces, non-manifold edges, inconsistent shared-edge winding and isolated vertices. Boundary edges are reported but are not treated as errors; validation never auto-repairs.
+- Added Box, Circle and Lasso selection through B/C/L shortcuts and the viewport Select menu. Drag gestures are isolated from OrbitControls; Shift-drag adds to the selection, and Esc returns to click selection.
+- Added screen-space vertex/edge/face region sampling with ray checks against the visible mesh surface, desktop/mobile gestures, Edit Mesh validation and dissolve controls.
+- Added the two new modules to the service-worker app shell and advanced the cache migration to v7.
+
 ## Next Roadmap Step
 
-Implement selection-aware vertex/edge/face deletion and dissolve semantics, then add box/circle/lasso selection and improve topology validation for non-manifold or inconsistent imported meshes. Keep transforms and selection overlays under desktop/mobile regression testing; all application updates remain zero-build and delta-ZIP only.
+Extend topology operations beyond safe convex planar regions: implement robust concave polygon boundaries/triangulation, non-planar and non-manifold diagnostics/repair policies, then add loop/ring selection and expand the desktop/mobile regression matrix. Keep all application updates zero-build and delta-ZIP only.
+

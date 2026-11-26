@@ -9,10 +9,19 @@ export const MeshOperators = {
     if (!hem || !hem.insetSelected(amount)) return false;
     document.updateMesh(); return true;
   },
-  deleteFaces(document) {
+  deleteSelected(document) {
     const hem = document.activeObject?.userData?.hem;
-    if (!hem || !hem.deleteSelectedFaces()) return false;
+    if (!hem || !hem.deleteSelectedElements()) return false;
     document.updateMesh(); return true;
+  },
+  deleteFaces(document) { return this.deleteSelected(document); },
+  dissolveSelected(document) {
+    const hem = document.activeObject?.userData?.hem;
+    if (!hem || !hem.dissolveSelected()) return false;
+    document.updateMesh(); return true;
+  },
+  validateTopology(document) {
+    return document.activeObject?.userData?.hem?.validateTopology() || null;
   },
   subdivide(document) {
     const hem = document.activeObject?.userData?.hem;

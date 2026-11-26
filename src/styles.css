@@ -30,3 +30,13 @@
 .seg-button.wide{width:auto;min-width:34px;padding:0 6px;font-size:9px}.seg-button:disabled{opacity:.35;cursor:not-allowed}.mobile-select-menu{display:none}
 
 @media(max-width:650px){.seg-button.wide{display:none}.mobile-select-menu{display:inline-flex;align-items:center;height:27px;padding:0 6px;font-size:9px}.viewport-tools{gap:2px;flex:none}.view-label{flex:1;min-width:0;overflow:hidden;font-size:9px;white-space:nowrap}.view-label span:last-child{overflow:hidden;text-overflow:ellipsis}.viewport-toolbar{padding-left:7px;padding-right:7px}}
+
+
+/* Region selection gestures */
+.selection-menu-button{display:inline-flex;align-items:center;height:27px;padding:0 7px;font-size:10px}
+.selection-menu-button[aria-pressed="true"]{color:#ffd0a7;background:#40352d;border-color:#76543a}
+.selection-gesture-layer{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:7;overflow:visible}
+.selection-box{fill:#ed9b5222;stroke:#ffbd82;stroke-width:1.5;stroke-dasharray:5 3}
+.selection-lasso{fill:#ed9b5222;stroke:#ffbd82;stroke-width:1.5;stroke-dasharray:5 3;stroke-linejoin:round}
+.selection-brush{fill:#ed9b521c;stroke:#ffbd82;stroke-width:1.25}
+@media(max-width:650px){.selection-menu-button{height:27px;padding:0 6px;font-size:9px}.viewport-tools{gap:2px}.viewport-tools .seg-button.wide{display:none}}
