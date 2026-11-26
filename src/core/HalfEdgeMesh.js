@@ -706,14 +706,37 @@ export class HalfEdgeMesh {
       if (sharedVertices.length) return this.bevelSelectedAdjacentPair({ amount, edgeIds: sharedSelections, sharedVertexId: sharedVertices[0] });
     }
     if (sharedSelections.length > 2) {
-      const seenVertices = new Set();
-      for (const edgeId of sharedSelections) {
-        const edge = this.edges[edgeId];
-        if (!edge) return fail('A selected bevel edge could not be resolved.');
-        for (const vertexId of edge.vertices) {
-          if (seenVertices.has(vertexId)) return fail('Connected Bevel currently supports exactly two adjacent edges at one corner; longer chains and branches are rejected.');
-          seenVertices.add(vertexId);
+      // If the selection contains connected edges, accept only a collection of
+      // disjoint two-edge miter pairs. Longer paths, shared junction vertices,
+      // and branch components stay rejected until their cap construction has
+      // its own independently validated topology template.
+      const remaining = new Set(sharedSelections);
+      const components = [];
+      while (remaining.size) {
+        const seed = remaining.values().next().value;
+        const component = new Set([seed]);
+        const queue = [seed];
+        remaining.delete(seed);
+        for (let cursor = 0; cursor < queue.length; cursor++) {
+          const current = this.edges[queue[cursor]];
+          if (!current) return fail('A selected bevel edge could not be resolved.');
+          for (const candidateId of [...remaining]) {
+            const candidate = this.edges[candidateId];
+            if (!candidate) return fail('A selected bevel edge could not be resolved.');
+            if (current.vertices.some(vertexId => candidate.vertices.includes(vertexId))) {
+              remaining.delete(candidateId);
+              component.add(candidateId);
+              queue.push(candidateId);
+            }
+          }
         }
+        components.push([...component]);
+      }
+      if (components.some(component => component.length > 1)) {
+        if (components.every(component => component.length === 2)) {
+          return this.bevelSelectedAdjacentPairs({ amount, edgePairs: components });
+        }
+        return fail('Connected multi-edge Bevel currently accepts only separate two-edge miter pairs; longer chains and branches are rejected.');
       }
     }
     const sourceReport = this.validateTopology();
@@ -853,6 +876,157 @@ export class HalfEdgeMesh {
       widths,
       insertedVertices,
       createdFaces,
+      selectedEdges: this.edgeSelection.size
+    };
+  }
+
+  /**
+   * Applies multiple independent two-edge miter junctions in one transaction.
+   * Every pair is preflighted against the immutable source; their affected
+   * face neighborhoods must be disjoint. Each pair is then rebuilt on one
+   * temporary candidate and the combined result is validated before commit.
+   */
+  bevelSelectedAdjacentPairs({ amount = 0.25, edgePairs = [] } = {}) {
+    const fail = reason => ({ changed: false, reason });
+    if (this.selectionMode !== 'edge' || !Number.isFinite(amount) || amount <= 0 || amount > 0.95 ||
+        !Array.isArray(edgePairs) || edgePairs.length < 2 || edgePairs.length > 4 ||
+        edgePairs.some(pair => !Array.isArray(pair) || pair.length !== 2)) {
+      return fail('Multi-junction Bevel requires two to four separate two-edge miter pairs and a width factor from 0–0.95.');
+    }
+    const sourceReport = this.validateTopology();
+    if (!sourceReport.valid) return fail('The mesh has existing topology warnings. Validate and repair safe issues before beveling.');
+
+    const allEndpointIds = new Set();
+    const occupiedFaces = new Set();
+    const pairRefs = [];
+    const pointCounts = new Map();
+    this.positions.forEach(point => {
+      const key = JSON.stringify(point);
+      pointCounts.set(key, (pointCounts.get(key) || 0) + 1);
+    });
+
+    for (const pair of edgePairs) {
+      const [first, second] = pair.map(id => this.edges[id]);
+      if (!first || !second || first.id === second.id) return fail('A miter pair contains an unresolved or duplicated edge.');
+      const shared = first.vertices.filter(id => second.vertices.includes(id));
+      if (shared.length !== 1) return fail('Each miter pair must contain exactly two edges sharing one endpoint.');
+      const center = shared[0];
+      const outer = [...first.vertices, ...second.vertices].filter(id => id !== center);
+      if (outer.length !== 2 || outer[0] === outer[1]) return fail('A miter pair has ambiguous outer endpoints.');
+      const endpointIds = [center, ...outer];
+      if (endpointIds.some(id => allEndpointIds.has(id))) {
+        return fail('Separate miter pairs cannot share vertices. Connected chains and branching junctions remain unsupported.');
+      }
+
+      const localFaces = new Set();
+      for (const vertexId of endpointIds) {
+        const incidentFaces = this.faces.reduce((ids, face, faceId) => {
+          if (face.includes(vertexId)) ids.push(faceId);
+          return ids;
+        }, []);
+        const incidentEdges = this.edges.filter(edge => edge.vertices.includes(vertexId));
+        if (incidentFaces.length !== 3 || incidentEdges.length !== 3 ||
+            incidentEdges.some(edge => edge.halfEdges.length !== 2 || !edge.halfEdges.every(halfEdge => halfEdge.twin))) {
+          return fail('Every miter junction and outer endpoint must have a closed valence-three fan.');
+        }
+        incidentFaces.forEach(id => localFaces.add(id));
+      }
+      if ([...localFaces].some(id => occupiedFaces.has(id))) {
+        return fail('Separate miter pairs share affected faces; their offset neighborhoods cannot be combined safely.');
+      }
+      for (const vertexId of endpointIds) {
+        const key = JSON.stringify(this.positions[vertexId]);
+        if (pointCounts.get(key) !== 1) {
+          return fail('Miter endpoint positions must be unique so later pairs can be resolved without guessing.');
+        }
+        allEndpointIds.add(vertexId);
+      }
+      localFaces.forEach(id => occupiedFaces.add(id));
+      pairRefs.push({
+        edgePoints: pair.map(id => this.edges[id].vertices.map(vertexId => JSON.stringify(this.positions[vertexId]))),
+        centerPoint: JSON.stringify(this.positions[center])
+      });
+    }
+
+    const candidate = new HalfEdgeMesh(this.positions, this.faces);
+    const findVertex = pointKey => {
+      const matches = [];
+      candidate.positions.forEach((point, id) => {
+        if (JSON.stringify(point) === pointKey) matches.push(id);
+      });
+      return matches.length === 1 ? matches[0] : null;
+    };
+    const findEdge = pointRefs => {
+      const a = findVertex(pointRefs[0]), b = findVertex(pointRefs[1]);
+      if (!Number.isInteger(a) || !Number.isInteger(b)) return null;
+      const matches = candidate.edges.filter(edge => keyFor(...edge.vertices) === keyFor(a, b));
+      return matches.length === 1 ? matches[0].id : null;
+    };
+    const selectedPerimeterKeys = [];
+    const widths = [];
+    let insertedVertices = 0;
+    let createdFaces = 0;
+    let miterEdges = 0;
+
+    for (const refs of pairRefs) {
+      const edgeIds = refs.edgePoints.map(findEdge);
+      const center = findVertex(refs.centerPoint);
+      if (edgeIds.some(id => !Number.isInteger(id)) || !Number.isInteger(center)) {
+        return fail('A later miter pair could not be resolved after rebuilding an earlier independent junction.');
+      }
+      candidate.selectionMode = 'edge';
+      const result = candidate.bevelSelectedAdjacentPair({ amount, edgeIds, sharedVertexId: center });
+      if (!result.changed) return fail(`Combined miter preview was cancelled: ${result.reason}`);
+      widths.push(result.width);
+      insertedVertices += result.insertedVertices;
+      createdFaces += result.createdFaces;
+      miterEdges += result.miterEdges;
+      for (const edgeId of candidate.edgeSelection) {
+        const edge = candidate.edges[edgeId];
+        if (!edge) return fail('A connected bevel perimeter edge could not be recovered.');
+        const points = edge.vertices.map(id => JSON.stringify(candidate.positions[id])).sort();
+        selectedPerimeterKeys.push(points.join('|'));
+      }
+    }
+
+    const report = candidate.validateTopology();
+    if (!report.valid) return fail(`Combined miter junctions failed topology validation (${report.issueCount} issue(s)); the original mesh was not changed.`);
+    const edgesByPointKey = new Map();
+    candidate.edges.forEach(edge => {
+      const points = edge.vertices.map(id => JSON.stringify(candidate.positions[id])).sort();
+      const key = points.join('|');
+      if (!edgesByPointKey.has(key)) edgesByPointKey.set(key, []);
+      edgesByPointKey.get(key).push(edge.id);
+    });
+    candidate.selectionMode = 'edge';
+    candidate.clearSelection();
+    for (const key of selectedPerimeterKeys) {
+      const ids = edgesByPointKey.get(key) || [];
+      if (ids.length === 1) candidate.edgeSelection.add(ids[0]);
+    }
+    const expectedPerimeterEdges = pairRefs.length * 6;
+    if (candidate.edgeSelection.size !== expectedPerimeterEdges || selectedPerimeterKeys.length !== expectedPerimeterEdges) {
+      return fail('The combined miter perimeter was ambiguous; the original mesh was not changed.');
+    }
+
+    this.positions = candidate.positions.map(point => [...point]);
+    this.faces = candidate.faces.map(face => [...face]);
+    this.selectionMode = 'edge';
+    this.clearSelection();
+    this.rebuild();
+    // Topology rebuild order is deterministic for identical positions/faces.
+    // The candidate's perimeter edge IDs therefore map directly to this mesh.
+    this.edgeSelection = new Set(candidate.edgeSelection);
+    return {
+      changed: true,
+      amount,
+      bevelCount: pairRefs.length * 2,
+      miterCount: pairRefs.length,
+      width: widths.reduce((sum, width) => sum + width, 0) / widths.length,
+      widths,
+      insertedVertices,
+      createdFaces,
+      miterEdges,
       selectedEdges: this.edgeSelection.size
     };
   }

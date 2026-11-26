@@ -629,3 +629,54 @@ test('Multi-edge Bevel rejects separated edges whose corner neighborhoods share 
   assert.match(result.reason, /share a face|contiguous-edge/i);
   assert.equal(JSON.stringify({ positions: hem.positions, faces: hem.faces }), before);
 });
+
+
+test('Connected Bevel applies up to four independent miter junctions in one topology transaction', () => {
+  const basePositions = [
+    [-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],[-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1]
+  ];
+  const baseFaces = [[0,3,2,1],[4,5,6,7],[0,1,5,4],[1,2,6,5],[2,3,7,6],[3,0,4,7]];
+  const positions = [], faces = [];
+  for (let component = 0; component < 4; component++) {
+    const offset = positions.length;
+    positions.push(...basePositions.map(([x,y,z]) => [x + component * 4,y,z]));
+    faces.push(...baseFaces.map(face => face.map(id => id + offset)));
+  }
+  const hem = new HalfEdgeMesh(positions, faces);
+  hem.setSelectionMode('edge');
+  for (let component = 0; component < 4; component++) {
+    const offset = component * 8;
+    for (const pair of [[4,5],[5,6]]) {
+      const edge = hem.edges.find(item => keyFor(...item.vertices) === keyFor(pair[0] + offset,pair[1] + offset));
+      assert.ok(edge);
+      hem.selectEdge(edge.id, true);
+    }
+  }
+  const result = hem.bevelSelectedEdges({ amount: 0.3 });
+  const report = hem.validateTopology();
+  assert.equal(result.changed, true, result.reason);
+  assert.equal(result.bevelCount, 8);
+  assert.equal(result.miterCount, 4);
+  assert.equal(result.miterEdges, 4);
+  assert.equal(result.createdFaces, 8);
+  assert.equal(result.selectedEdges, 24);
+  assert.equal(hem.faces.length, 32);
+  assert.equal(hem.edgeSelection.size, 24);
+  assert.equal(report.valid, true);
+  assert.equal(report.counts.boundaryEdges, 0);
+});
+
+test('Connected Bevel rejects separate miter pairs whose affected face neighborhoods overlap', () => {
+  const hem = makeCube();
+  hem.setSelectionMode('edge');
+  for (const pair of [[4,5],[5,6],[0,1],[1,2]]) {
+    const edge = hem.edges.find(item => keyFor(...item.vertices) === keyFor(...pair));
+    assert.ok(edge);
+    hem.selectEdge(edge.id, true);
+  }
+  const before = JSON.stringify({ positions: hem.positions, faces: hem.faces, selection: [...hem.edgeSelection] });
+  const result = hem.bevelSelectedEdges({ amount: 0.25 });
+  assert.equal(result.changed, false);
+  assert.match(result.reason, /share affected faces/i);
+  assert.equal(JSON.stringify({ positions: hem.positions, faces: hem.faces, selection: [...hem.edgeSelection] }), before);
+});
