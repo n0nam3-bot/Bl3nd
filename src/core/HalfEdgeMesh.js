@@ -685,8 +685,8 @@ export class HalfEdgeMesh {
   }
 
   /**
-   * Transactionally bevels one edge, a supported two-/three-edge connected
-   * path, or up to eight disjoint edge selections. Multi-segment/profile work
+   * Transactionally bevels one edge, a supported connected path of two to
+   * eight edges, or up to eight disjoint edge selections. Multi-segment/profile work
    * is built on a private candidate and committed only after full validation.
    */
   bevelSelectedEdges({ amount = 0.25, segments = 1, profile = 0.5 } = {}) {
@@ -753,10 +753,9 @@ export class HalfEdgeMesh {
       if (sharedVertices.length) return this.bevelSelectedAdjacentPair({ amount, edgeIds: sharedSelections, sharedVertexId: sharedVertices[0] });
     }
     if (sharedSelections.length > 2) {
-      // If the selection contains connected edges, accept only a collection of
-      // disjoint two-edge miter pairs. Longer paths, shared junction vertices,
-      // and branch components stay rejected until their cap construction has
-      // its own independently validated topology template.
+      // Connected selections are either one simple three-to-eight-edge
+      // path or a collection of disjoint two-edge miter pairs. Branches,
+      // cycles, mixed components and shared endpoints between pairs reject.
       const remaining = new Set(sharedSelections);
       const components = [];
       while (remaining.size) {
@@ -780,13 +779,13 @@ export class HalfEdgeMesh {
         components.push([...component]);
       }
       if (components.some(component => component.length > 1)) {
-        if (components.length === 1 && components[0].length === 3) {
+        if (components.length === 1 && components[0].length >= 3 && components[0].length <= 8) {
           return this.bevelSelectedConnectedChain({ amount, edgeIds: components[0] });
         }
         if (components.every(component => component.length === 2)) {
           return this.bevelSelectedAdjacentPairs({ amount, edgePairs: components });
         }
-        return fail('Connected Bevel accepts one three-edge chain or separate two-edge miter pairs; branches and longer chains are rejected.');
+        return fail('Connected Bevel accepts one simple three-to-eight-edge chain or separate two-edge miter pairs; branches, cycles and mixed connected/disconnected selections are rejected.');
       }
     }
     const sourceReport = this.validateTopology();
@@ -1088,16 +1087,16 @@ export class HalfEdgeMesh {
   }
 
   /**
-   * Bevels exactly three consecutive edges as one transactional chain.
-   * The two internal degree-two vertices receive shared-face miters; the two
+   * Bevels one simple three-to-eight-edge path as one transaction.
+   * Every internal degree-two vertex receives a shared-face miter; the two
    * terminal vertices retain trimmed corner faces as closed end caps.
    * Branches, cycles, overlapping path vertices and unsupported fans reject.
    */
   bevelSelectedConnectedChain({ amount = 0.25, edgeIds = [...this.edgeSelection] } = {}) {
     const fail = reason => ({ changed: false, reason });
-    if (this.selectionMode !== 'edge' || !Array.isArray(edgeIds) || edgeIds.length !== 3 ||
-        new Set(edgeIds).size !== 3 || !Number.isFinite(amount) || amount <= 0 || amount > 0.95) {
-      return fail('Connected chain Bevel requires exactly three selected edges and a width factor from 0–0.95.');
+    if (this.selectionMode !== 'edge' || !Array.isArray(edgeIds) || edgeIds.length < 3 || edgeIds.length > 8 ||
+        new Set(edgeIds).size !== edgeIds.length || !Number.isFinite(amount) || amount <= 0 || amount > 0.95) {
+      return fail('Connected chain Bevel requires three to eight selected edges and a width factor from 0–0.95.');
     }
     const selectedEdges = edgeIds.map(id => this.edges[id]);
     if (selectedEdges.some(edge => !edge)) return fail('A selected chain edge could not be resolved.');
@@ -1109,20 +1108,21 @@ export class HalfEdgeMesh {
         adjacency.get(vertexId).push(edge.id);
       }
     }
-    if (adjacency.size !== 4 || [...adjacency.values()].filter(list => list.length === 1).length !== 2 ||
-        [...adjacency.values()].filter(list => list.length === 2).length !== 2 ||
+    const edgeCount = edgeIds.length;
+    if (adjacency.size !== edgeCount + 1 || [...adjacency.values()].filter(list => list.length === 1).length !== 2 ||
+        [...adjacency.values()].filter(list => list.length === 2).length !== edgeCount - 1 ||
         [...adjacency.values()].some(list => list.length < 1 || list.length > 2)) {
-      return fail('Connected chain Bevel requires one simple path of exactly three edges; cycles and branches are rejected.');
+      return fail('Connected chain Bevel requires one simple path; cycles and branches are rejected.');
     }
 
     // Recover a deterministic end-to-end path before using any geometry.
     const pathVertices = [adjacency.keys().find(id => adjacency.get(id).length === 1)];
     const pathEdges = [];
     const usedEdges = new Set();
-    while (pathEdges.length < 3) {
+    while (pathEdges.length < edgeCount) {
       const currentVertex = pathVertices[pathVertices.length - 1];
       const nextEdgeId = adjacency.get(currentVertex).find(id => !usedEdges.has(id));
-      if (!Number.isInteger(nextEdgeId)) return fail('The selected edges do not form one unambiguous three-edge chain.');
+      if (!Number.isInteger(nextEdgeId)) return fail('The selected edges do not form one unambiguous connected chain.');
       const edge = this.edges[nextEdgeId];
       const nextVertex = edge.vertices.find(id => id !== currentVertex);
       if (!Number.isInteger(nextVertex) || pathVertices.includes(nextVertex)) {
@@ -1132,8 +1132,8 @@ export class HalfEdgeMesh {
       usedEdges.add(nextEdgeId);
       pathVertices.push(nextVertex);
     }
-    if (usedEdges.size !== 3 || pathVertices.length !== 4 || pathVertices.at(-1) === pathVertices[0]) {
-      return fail('The selected edges do not form one simple three-edge chain.');
+    if (usedEdges.size !== edgeCount || pathVertices.length !== edgeCount + 1 || pathVertices.at(-1) === pathVertices[0]) {
+      return fail('The selected edges do not form one simple connected chain.');
     }
 
     const sourceReport = this.validateTopology();
@@ -1162,14 +1162,14 @@ export class HalfEdgeMesh {
       const incidentEdges = this.edges.filter(edge => edge.vertices.includes(vertexId));
       if (incidentFaces.length !== 3 || incidentEdges.length !== 3 ||
           incidentEdges.some(edge => edge.halfEdges.length !== 2 || !edge.halfEdges.every(halfEdge => halfEdge.twin))) {
-        return fail('Three-edge chain Bevel requires closed valence-three fans at all four path vertices.');
+        return fail('Connected chain Bevel currently requires closed valence-three fans at every path vertex.');
       }
       incidentEdgesByVertex.set(vertexId, incidentEdges);
       incidentFaces.forEach(id => affectedFaceIds.add(id));
     }
     for (const faceId of affectedFaceIds) {
       if (!isPlanarConvex(this.faces[faceId])) {
-        return fail('All faces around the three-edge chain and its end caps must be simple, planar and convex.');
+        return fail('All faces around the connected chain and its end caps must be simple, planar and convex.');
       }
     }
 
@@ -1238,7 +1238,7 @@ export class HalfEdgeMesh {
     const dot3 = (a, b) => a.reduce((sum, value, axis) => sum + value * b[axis], 0);
     const miterByVertexFace = new Map();
     const miterInfos = [];
-    for (let index = 1; index <= 2; index++) {
+    for (let index = 1; index < pathVertices.length - 1; index++) {
       const center = pathVertices[index];
       const leftPlan = plans[index - 1], rightPlan = plans[index];
       const commonFaces = [leftPlan.faceAId, leftPlan.faceBId]
@@ -1302,6 +1302,10 @@ export class HalfEdgeMesh {
       miterInfos.push({ vertexId: center, faceId: sharedFaceId, miterId, thirdCut });
     }
 
+    if (miterInfos.length !== edgeCount - 1) {
+      return fail('Every internal chain junction must resolve to exactly one shared-face miter.');
+    }
+
     const nextFaces = [];
     for (let faceId = 0; faceId < this.faces.length; faceId++) {
       const face = this.faces[faceId];
@@ -1348,7 +1352,7 @@ export class HalfEdgeMesh {
     const candidate = new HalfEdgeMesh(nextPositions, nextFaces);
     const compactMap = candidate.compact();
     const report = candidate.validateTopology();
-    if (!report.valid) return fail(`The proposed three-edge bevel failed topology validation (${report.issueCount} issue(s)); the original mesh was not changed.`);
+    if (!report.valid) return fail(`The proposed connected-chain bevel failed topology validation (${report.issueCount} issue(s)); the original mesh was not changed.`);
     for (let faceId = 0; faceId < candidate.faces.length; faceId++) {
       if (!candidate.triangulateFace(faceId).length) return fail('The proposed chain produced a face that could not be triangulated.');
     }
@@ -1406,6 +1410,7 @@ export class HalfEdgeMesh {
       createdFaces: plans.length,
       selectedEdges: this.edgeSelection.size,
       endCaps: 2,
+      chainLength: plans.length,
       bevelFaceRefs: plans.map((plan, index) => ({
         faceId: candidate.faces.length - plans.length + index,
         endpointPoints: endpointRefs[index]

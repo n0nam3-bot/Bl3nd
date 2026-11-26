@@ -273,6 +273,32 @@ test('Bevel modal previews, commits and records a three-edge chain as one undo t
   assert.equal(session.commits[0].after.faces.length, 9);
 });
 
+test('Bevel modal previews and commits a four-edge chain as one undo transaction', async () => {
+  const session = makeSession();
+  session.hem.clearSelection();
+  const path = [0, 1, 2, 6, 7];
+  for (let index = 0; index < path.length - 1; index++) {
+    const edge = session.hem.edges.find(item => keyFor(...item.vertices) === keyFor(path[index], path[index + 1]));
+    assert.ok(edge);
+    session.hem.selectEdge(edge.id, true);
+  }
+  const modal = new BevelModal(session);
+  assert.equal(await modal.begin(), true, modal.lastError);
+  assert.equal(modal.seedEdgeIds.length, 4);
+  assert.equal(modal.lastResult.chainLength, 4);
+  assert.equal(modal.lastResult.miterCount, 3);
+  assert.equal(modal.lastResult.endCaps, 2);
+  assert.equal(session.mesh.userData.hem.validateTopology().valid, true);
+  assert.equal(modal.setSegments(3), true, modal.lastError);
+  const result = await modal.confirm();
+  assert.equal(result.changed, true);
+  assert.equal(result.chainLength, 4);
+  assert.equal(result.miterCount, 3);
+  assert.equal(result.endCaps, 2);
+  assert.equal(session.commits.length, 1);
+  assert.equal(session.commits[0].label, 'Bevel');
+});
+
 test('Bevel modal cancellation restores the original three-edge chain without an undo record', async () => {
   const session = makeSession();
   session.hem.clearSelection();
