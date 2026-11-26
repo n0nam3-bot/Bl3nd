@@ -28,7 +28,7 @@ The application does not require a build command. Open the GitHub Pages URL afte
 - Edge Select: select one or more seed edges, then `Alt+L` expands through opposite edges of connected quads; `Ctrl+Alt+L` follows opposite edges through closed valence-four vertex fans. The Select menu exposes both operations.
 - Edit Mode `X` / `Delete`: delete selected topology; `Shift+X`: dissolve selected topology; the viewport Select menu offers the same actions.
 - Edit Mode `E` / `I`: Extrude / Inset
-- Edge Select: select exactly one seed edge, then `Ctrl+R` or **Loop Cut** in the Edit Mesh panel to insert a centered cut through the connected quad strip. The first pass requires convex, planar quads with consistent winding; unsupported/non-quad paths are rejected without modifying topology.
+- Edge Select: select exactly one seed edge, then `Ctrl+R` or **Loop Cut** in the Edit Mesh panel. Drag horizontally to slide the live cut preview; hold `Shift` for precision, use `←/→` for 1% steps (Shift for 0.1%), or type an offset from `0` to `1`. `Enter` applies and `Esc` cancels. On mobile, drag in the viewport or use the numeric pad.
 - `Shift + A`: add menu; `Z`: shading menu
 - Numpad `1/3/7`: front/right/top views; scroll: zoom
 - Desktop: left-drag or middle-drag to orbit; right-drag or Shift+left-drag to pan; scroll to zoom; a stationary click selects
@@ -36,7 +36,7 @@ The application does not require a build command. Open the GitHub Pages URL afte
 - Edit Mesh panel: Delete and Dissolve use the active vertex/edge/face selection; Validate Mesh reports topology problems, and Repair Safe Issues handles only conservative repairs. Loop Cut is available from the panel or Ctrl+R while one seed edge is selected.
 - Concave planar polygons are ear-clipped for rendering and selection. Dissolve can merge a simple concave planar patch; non-planar, self-intersecting and non-manifold patches remain unchanged.
 
-Run the topology regression tests with Node: `node --experimental-default-type=module --test tests/HalfEdgeMesh.test.js`.
+Run all topology/operator regression tests with Node: `node --experimental-default-type=module --test tests/*.test.js`.
 
 See [`HANDOFF.md`](./HANDOFF.md) for architecture, exact implementation status, limitations and roadmap. This is an initial engineering foundation, not yet a feature-for-feature Blender clone.
 
@@ -47,4 +47,4 @@ In Edit Mode, **Repair Safe Issues** removes malformed faces and duplicate faces
 
 ### Loop Cut
 
-Select exactly one edge in Edge Select mode, then press **Ctrl+R** or use **Loop Cut** in the Edit Mesh panel. The operation follows the quad-opposite edge loop and inserts a centered cut by sharing one interpolated vertex per crossed edge. Each participating quad is split into two quads, and the new cut edges remain selected. It currently accepts only consistently wound, convex, planar quad strips. Non-manifold, non-quad, concave, non-planar, or inconsistently wound paths are skipped with a reason and no topology mutation. This is a first safe topology pass, not full Blender loop-cut behavior; interactive hover placement, multiple cuts, sliding, poles and ngons are not supported yet.
+Select exactly one edge in Edge Select mode, then press **Ctrl+R** or use **Loop Cut** in the Edit Mesh panel. The operation follows the quad-opposite edge loop and previews a centered cut by sharing one interpolated vertex per crossed edge. Drag horizontally to slide the preview; hold `Shift` for fine movement, use arrow keys for small nudges, or type an offset between `0` and `1`. `Enter` commits one undoable operation; `Esc` or right-click restores the original mesh. Mobile users can drag or enter an offset with the numeric pad. Each crossed quad is split into two quads and the new cut edges remain selected. It currently accepts only consistently wound, convex, planar quad strips. Non-manifold, non-quad, concave, non-planar, or inconsistently wound paths are rejected before mutation. Multiple cuts, extraordinary-pole traversal, n-gons and Blender-equivalent edge sliding remain unsupported.

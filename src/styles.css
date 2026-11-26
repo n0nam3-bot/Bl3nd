@@ -43,3 +43,5 @@
 
 /* Keep the expanded selection command list usable on short/mobile viewports. */
 .pie-menu{max-height:min(76vh,540px);overflow-y:auto;overscroll-behavior:contain}
+
+body.loop-cut-modal-active .topbar,body.loop-cut-modal-active .tool-rail,body.loop-cut-modal-active .properties-panel,body.loop-cut-modal-active .viewport-toolbar,body.loop-cut-modal-active .viewport-footer,body.loop-cut-modal-active .mobile-actionbar{pointer-events:none;opacity:.55}body.loop-cut-modal-active #numeric-pad{pointer-events:auto;opacity:1}body.loop-cut-modal-active .modal-readout,body.loop-cut-modal-active .axis-gizmo,body.loop-cut-modal-active .pie-menu{pointer-events:none;opacity:.55}

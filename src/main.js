@@ -6,6 +6,7 @@ import { UndoManager } from './core/UndoManager.js';
 import { MeshOperators } from './operators/MeshOperators.js';
 import { SelectionOperators } from './operators/SelectionOperators.js';
 import { ModalTransform } from './operators/ModalTransform.js';
+import { LoopCutModal } from './operators/LoopCutModal.js';
 import { ModifierStack } from './modifiers/ModifierStack.js';
 import { Viewport } from './ui/Viewport.js';
 import { ModelIO } from './io/ModelIO.js';
@@ -54,6 +55,8 @@ const undoManager = new UndoManager({
   onRestore: async snapshot => { await sceneDocument.restore(snapshot); await reapplyModifiers(); refresh(); }
 });
 const modalTransform = new ModalTransform({ document: sceneDocument, undoManager, viewport, status, onChange: () => ui?.refreshModal() });
+const loopCutModal = new LoopCutModal({ document: sceneDocument, undoManager, viewport, status, onChange: () => { refresh(); ui?.refreshModal(); } });
+let loopCutPreviousSelectionTool = 'tap';
 const commandBus = new CommandBus({ undoManager, status });
 const modifierStack = new ModifierStack({ onStatus: status });
 const modelIO = new ModelIO(sceneDocument, notify);
@@ -256,18 +259,62 @@ function registerCommands() {
   commandBus.register('mesh.subdivide', async () => { if (sceneDocument.mode !== 'edit') return false; MeshOperators.subdivide(sceneDocument); await reapplyActiveModifiers(); refresh(); return true; });
   commandBus.register('mesh.bevel', () => notify('Bevel (Ctrl+B) is on the Phase 1/2 roadmap; edge-offset topology is not implemented yet.'), { recordUndo: false });
   commandBus.register('mesh.loop_cut', async () => {
-    if (sceneDocument.mode !== 'edit') { notify('Loop Cut is available in Edit Mode.'); return false; }
-    const hem = sceneDocument.activeObject?.userData?.hem;
-    if (!hem) { notify('Select a mesh before using Loop Cut.'); return false; }
-    const result = MeshOperators.loopCut(sceneDocument, { offset: 0.5 });
-    if (!result) { notify('Select a mesh before using Loop Cut.'); return false; }
-    if (!result.changed) { notify(`Loop Cut skipped · ${result.reason}`, 'error'); return false; }
-    await reapplyActiveModifiers();
-    notify(`Loop Cut complete · ${result.insertedVertices} new vertices · ${result.splitFaces} split quads · ${result.selectedCutEdges} cut edges selected.`, 'success');
+    if (modalTransform.active) { notify('Confirm or cancel the current transform before starting Loop Cut.'); return false; }
+    const started = await loopCutModal.begin();
+    if (!started) { notify(`Loop Cut skipped · ${loopCutModal.lastError || 'Unable to start the cut.'}`, 'error'); return false; }
+    viewport.controls.enabled = false;
+    loopCutPreviousSelectionTool = viewport.selectionTool || 'tap';
+    viewport.selectionTool = 'tap';
+    viewport.modalOperationActive = true;
+    ui.refreshSelectionTool();
+    $('#pie-menu').hidden = true;
+    document.body.classList.add('loop-cut-modal-active');
     refresh();
+    ui.refreshModal();
+    return true;
+  }, { recordUndo: false });
+  commandBus.register('mesh.loop_cut_pointer', ({ point, fine = false }) => {
+    loopCutModal.pointerMove(point, fine);
+    ui.refreshModal();
+    return true;
+  }, { recordUndo: false });
+  commandBus.register('mesh.loop_cut_input', ({ value }) => {
+    loopCutModal.appendNumeric(value);
+    ui.refreshModal();
+    return true;
+  }, { recordUndo: false });
+  commandBus.register('mesh.loop_cut_nudge', ({ direction, fine = false }) => {
+    loopCutModal.nudge(direction, fine);
+    ui.refreshModal();
+    return true;
+  }, { recordUndo: false });
+  commandBus.register('mesh.loop_cut_confirm', async () => {
+    const result = await loopCutModal.confirm();
+    viewport.controls.enabled = true;
+    viewport.modalOperationActive = false;
+    viewport.selectionTool = loopCutPreviousSelectionTool;
+    ui.refreshSelectionTool();
+    document.body.classList.remove('loop-cut-modal-active');
+    if (result) {
+      await reapplyActiveModifiers();
+      notify(`Loop Cut applied · ${result.insertedVertices} vertices · ${result.splitFaces} quads · offset ${result.offset.toFixed(2)}.`, 'success');
+    }
+    refresh(); ui.refreshModal();
+    return Boolean(result);
+  }, { recordUndo: false });
+  commandBus.register('mesh.loop_cut_cancel', async () => {
+    const result = await loopCutModal.cancel();
+    viewport.controls.enabled = true;
+    viewport.modalOperationActive = false;
+    viewport.selectionTool = loopCutPreviousSelectionTool;
+    ui.refreshSelectionTool();
+    document.body.classList.remove('loop-cut-modal-active');
+    if (result) await reapplyModifiers();
+    refresh(); ui.refreshModal();
     return result;
-  });
+  }, { recordUndo: false });
   commandBus.register('transform.modal_start', async ({ type, pointer }) => {
+    if (loopCutModal.active) { notify('Apply or cancel Loop Cut before starting a transform.'); return false; }
     const started = await modalTransform.begin(type, pointer || ui.pointerOrigin());
     if (!started) notify('Select an object before transforming.');
     viewport.controls.enabled = !started; ui.refreshModal(); return started;
@@ -306,7 +353,7 @@ function faceIdForTriangle(hem, triangleIndex) {
   return hem.triangleFaceMap()[triangleIndex] ?? -1;
 }
 function handleViewportSelection(hit, pointer, event) {
-  if (modalTransform.active) return;
+  if (modalTransform.active || loopCutModal.active) return;
   if (!hit) {
     if (sceneDocument.mode === 'object') run('object.select',{mesh:null});
     else run('mesh.clear_selection');
@@ -384,8 +431,8 @@ function refresh() {
 }
 
 ui = {
-  async undo(){if(!undoManager.canUndo){notify('Nothing to undo.');return;} await undoManager.undo();refresh();},
-  async redo(){if(!undoManager.canRedo){notify('Nothing to redo.');return;} await undoManager.redo();refresh();},
+  async undo(){if(loopCutModal.active){notify('Apply or cancel Loop Cut before undoing.');return;}if(!undoManager.canUndo){notify('Nothing to undo.');return;} await undoManager.undo();refresh();},
+  async redo(){if(loopCutModal.active){notify('Apply or cancel Loop Cut before redoing.');return;}if(!undoManager.canRedo){notify('Nothing to redo.');return;} await undoManager.redo();refresh();},
   togglePie(kind){
     const menu=$('#pie-menu');
     if(!menu.hidden && menu.dataset.kind===kind){menu.hidden=true;return;}
@@ -408,7 +455,21 @@ ui = {
     button.setAttribute('aria-pressed',String(tool!=='tap'));
   },
   refreshModal(){
-    const readout=$('#modal-readout'),pad=$('#numeric-pad');
+    const readout=$('#modal-readout'),pad=$('#numeric-pad'),padTitle=pad.querySelector('.pad-title');
+    const axisButtons=pad.querySelectorAll('[data-axis]');
+    if(loopCutModal.active){
+      readout.hidden=false;
+      readout.textContent=`LOOP CUT · Offset ${loopCutModal.offset.toFixed(2)} · Drag to slide · Enter apply / Esc cancel`;
+      pad.hidden=!capabilities.tier.includes('Mobile');
+      pad.classList.add('loop-cut-mode');
+      padTitle.textContent='CUT OFFSET · TYPE 0–1';
+      axisButtons.forEach(button=>button.hidden=true);
+      $('#pad-value').textContent=loopCutModal.numeric || loopCutModal.offset.toFixed(2);
+      return;
+    }
+    pad.classList.remove('loop-cut-mode');
+    padTitle.textContent='TRANSFORM VALUE';
+    axisButtons.forEach(button=>button.hidden=false);
     if(!modalTransform.active){readout.hidden=true;pad.hidden=true;return;}
     const axis=modalTransform.axis?` · ${modalTransform.axis.toUpperCase()} axis`:modalTransform.planeNormal?` · ${modalTransform.planeNormal.toUpperCase()} plane`:'';
     readout.hidden=false; readout.textContent=`${modalTransform.type.toUpperCase()}${axis} · ${modalTransform.numeric || 'mouse'} · Enter apply / Esc cancel`;
@@ -478,6 +539,13 @@ $('#pie-menu').addEventListener('click',async event=>{
 });
 $('#shading-btn').addEventListener('click',()=>ui.togglePie('shading'));
 $('#numeric-pad').addEventListener('click',async event=>{
+  if(loopCutModal.active){
+    const cutButton=event.target.closest('button[data-key]');if(!cutButton)return;const cutKey=cutButton.dataset.key;
+    if(cutKey==='enter'){await run('mesh.loop_cut_confirm');return;}
+    if(cutKey==='escape'){await run('mesh.loop_cut_cancel');return;}
+    if(cutKey==='-'){await run('mesh.loop_cut_nudge',{direction:-1});return;}
+    await run('mesh.loop_cut_input',{value:cutKey});return;
+  }
   const axisButton=event.target.closest('button[data-axis]');
   if(axisButton){
     await run('transform.modal_axis',{axis:axisButton.dataset.axis,plane:axisButton.dataset.plane==='true'});
@@ -490,11 +558,17 @@ $('#numeric-pad').addEventListener('click',async event=>{
 });
 
 const viewportCanvas=viewport.renderer.domElement;
-window.addEventListener('pointermove',event=>{if(modalTransform.active){commandBus.dispatch('transform.modal_update',{point:{x:event.clientX,y:event.clientY}});ui.refreshModal();}});
-viewportCanvas.addEventListener('contextmenu',event=>{if(modalTransform.active){event.preventDefault();run('transform.modal_cancel');}});
+window.addEventListener('pointermove',event=>{
+  if(loopCutModal.active && (event.target===viewportCanvas || viewportCanvas.contains(event.target))){commandBus.dispatch('mesh.loop_cut_pointer',{point:{x:event.clientX,y:event.clientY},fine:event.shiftKey});ui.refreshModal();return;}
+  if(modalTransform.active){commandBus.dispatch('transform.modal_update',{point:{x:event.clientX,y:event.clientY}});ui.refreshModal();}
+});
+viewportCanvas.addEventListener('contextmenu',event=>{
+  if(loopCutModal.active){event.preventDefault();run('mesh.loop_cut_cancel');return;}
+  if(modalTransform.active){event.preventDefault();run('transform.modal_cancel');}
+});
 new TouchController(viewport,notify);
 new SelectionGestureController({viewport,dispatch:(name,payload)=>run(name,payload),getDocument:()=>sceneDocument,notify});
-new KeyboardController({viewport,commandBus,modalTransform,getDocument:()=>sceneDocument,ui,notify});
+new KeyboardController({viewport,commandBus,modalTransform,loopCutModal,getDocument:()=>sceneDocument,ui,notify});
 loadingProgress(88, 'Keyboard, pointer and touch controls are ready…');
 $('#sw-profile').textContent='Registering…';
 if ('serviceWorker' in navigator) {

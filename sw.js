@@ -1,10 +1,10 @@
-const SHELL_CACHE = 'bl3nd-shell-v10';
-const RUNTIME_CACHE = 'bl3nd-runtime-v10';
+const SHELL_CACHE = 'bl3nd-shell-v11';
+const RUNTIME_CACHE = 'bl3nd-runtime-v11';
 const APP_SHELL = [
   './', './index.html', './manifest.json', './src/styles.css',
   './src/main.js', './src/core/DeviceCapabilities.js', './src/core/CommandBus.js',
   './src/core/HalfEdgeMesh.js', './src/core/SceneDocument.js', './src/core/UndoManager.js',
-  './src/operators/ModalTransform.js', './src/operators/MeshOperators.js',
+  './src/operators/ModalTransform.js', './src/operators/LoopCutModal.js', './src/operators/MeshOperators.js',
   './src/input/KeyboardController.js', './src/input/TouchController.js', './src/input/SelectionGestureController.js',
   './src/io/ModelIO.js', './src/operators/SelectionOperators.js', './src/modifiers/ModifierStack.js',
   './src/ui/Viewport.js', './src/ui/EditModeOverlay.js', './src/workers/modifier.worker.js', './assets/icon.svg', './assets/icon-192.png', './assets/icon-512.png'

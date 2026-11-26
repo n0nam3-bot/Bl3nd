@@ -17,7 +17,7 @@ export class TouchController {
   }
 
   onDown(event) {
-    if (event.pointerType !== 'touch') return;
+    if (event.pointerType !== 'touch' || this.viewport.modalOperationActive) return;
     this.activePointers.add(event.pointerId);
     if (this.activePointers.size > 1) {
       this.clear();

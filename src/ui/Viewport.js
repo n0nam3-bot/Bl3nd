@@ -96,6 +96,12 @@ export class Viewport {
 
   onPointerDown(event) {
     this.lastPointer = { x: event.clientX, y: event.clientY };
+    if (this.modalOperationActive) {
+      event.preventDefault();
+      try { this.renderer.domElement.setPointerCapture(event.pointerId); } catch { /* capture is unavailable for some synthetic pointers */ }
+      event.stopImmediatePropagation();
+      return;
+    }
     if (event.button === 0 && this.selectionTool !== 'tap') {
       event.preventDefault();
       event.stopImmediatePropagation();

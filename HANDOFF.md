@@ -57,7 +57,8 @@
 │   ├── operators/
 │   │   ├── MeshOperators.js    # Basic extrude/inset/delete/subdivide
 │   │   ├── SelectionOperators.js # Visibility-checked screen-space region selection
-│   │   └── ModalTransform.js   # Camera-aware G/R/S state machine
+│   │   ├── ModalTransform.js   # Camera-aware G/R/S state machine
+│   │   └── LoopCutModal.js     # Transactional interactive loop-cut preview and slide
 │   ├── ui/
 │   │   ├── Viewport.js         # Three.js viewport, navigation, pointer origin and overlay lifecycle
 │   │   └── EditModeOverlay.js  # Non-destructive vertex/edge/face selection display
@@ -66,7 +67,8 @@
 │   └── styles.css              # Responsive desktop/mobile styling
 ├── .gitignore
 ├── tests/
-│   └── HalfEdgeMesh.test.js    # Node topology/triangulation regression tests
+│   ├── HalfEdgeMesh.test.js    # Node topology/triangulation regression tests
+│   └── LoopCutModal.test.js    # Loop-cut preview/confirm/cancel regression tests
 ├── HANDOFF.md                  # This document
 ├── README.md                   # Deployment and quick controls
 ├── index.html                  # Static app entry and Bl3nd identity
@@ -82,7 +84,7 @@ Status meanings: **Working** = implemented end-to-end in the current foundation;
 |---|---|---|
 | Zero-build static app | Working | Native ES modules, static HTML/CSS, pinned Three.js CDN imports. |
 | Mobile ZIP workflow | Working | ZIP path validation, extraction, cleanup, bot commit; workflow files are excluded. |
-| GitHub Pages deployment | Working after workflow correction | Two-job artifact/deploy pipeline; triggers after successful unpack completion and normal main pushes excluding uploads. Latest repository deployment before this update: run #16 succeeded. |
+| GitHub Pages deployment | Working after workflow correction | Two-job artifact/deploy pipeline; triggers after successful unpack completion and normal main pushes excluding uploads. Latest deployed baseline for v0.1.11: `main` commit `0fde68c` (Pages run #18 succeeded). |
 | Bl3nd branding/PWA | Working | Bl3nd header/title, manifest identity, app icons, service worker cache-version migration. |
 | Startup progress/error UI | Partial | Staged progress and visible exceptions. Starter cube now initializes directly through `SceneDocument`, outside command dispatch and undo snapshot I/O; viewport framing and initial panel refresh are isolated as non-fatal steps. Real-browser verification remains. |
 | Device capabilities | Partial | Detects tier, memory, CPU threads, WebGPU, WebGL2 and OPFS. Tier affects render pixel ratio/history budget; WebGPU is not activated. |
@@ -90,7 +92,7 @@ Status meanings: **Working** = implemented end-to-end in the current foundation;
 | Command bus | Working | Named command registration and snapshot-based undo boundaries. |
 | Half-edge topology | Partial | Vertex/Edge/HalfEdge/Face records and adjacency. Import reconstructs safe coplanar regions; polygon rendering uses ear clipping for simple concave faces. Diagnostics cover invalid positions/faces, duplicates, non-manifold edges, inconsistent winding, isolated vertices, non-planar/self-intersecting faces and triangulation failures. A conservative repair action handles only malformed/duplicate faces, orientable manifold winding and orphan vertices; this is not a production manifold kernel. |
 | Object mode | Working | Primitive creation, object selection/deletion and object transforms. |
-| Edit mode | Partial | Visible edge/vertex overlays and selected-face tint; click/Shift-click, Select All / Deselect / Invert, box/circle/lasso region selection with ray-checked visibility, selection-aware vertex/edge/face deletion and constrained planar dissolve, plus face extrude/inset/subdivision. Loop/ring selection now has topology-based quad/fan traversal; non-manifold and extraordinary poles terminate traversal. Safe topology repair handles malformed/duplicate faces, orientable winding and orphan vertices. A first Loop Cut implementation splits validated convex planar quad strips and selects the new cut edges; hover placement, multi-cut, slide and extraordinary-pole behavior remain incomplete. |
+| Edit mode | Partial | Visible edge/vertex overlays and selected-face tint; click/Shift-click, Select All / Deselect / Invert, box/circle/lasso region selection with ray-checked visibility, selection-aware vertex/edge/face deletion and constrained planar dissolve, plus face extrude/inset/subdivision. Loop/ring selection now has topology-based quad/fan traversal; non-manifold and extraordinary poles terminate traversal. Safe topology repair handles malformed/duplicate faces, orientable winding and orphan vertices. Loop Cut now previews a validated convex planar quad strip and supports modal horizontal sliding, precision movement, numeric offsets, keyboard nudges, confirmation and cancellation; multiple cuts and extraordinary-pole traversal remain incomplete. |
 | Modal transforms | Partial | Free G follows the current camera-facing view plane; axis movement converts projected pointer travel into global world units; Shift+axis uses a camera-derived perpendicular plane; free R uses a camera-oriented virtual trackball; numeric commit/cancel remain. Local orientation, snapping and full Blender pivot parity remain incomplete. |
 | 3D cursor/pivot | Partial | Cursor placement and UI pivot selection exist; pivot math is incomplete. |
 | Modifiers | Partial | Worker-based midpoint subdivision, mirror, array and solidify; not Blender-equivalent. |
@@ -106,7 +108,7 @@ Status meanings: **Working** = implemented end-to-end in the current foundation;
 1. WebGPU is detected but the renderer is still Three.js WebGL.
 2. Imported geometry is initially triangulated, then adjacent coplanar triangles are merged only when exactly two triangles share each joined edge and a single convex boundary can be reconstructed. Concave faces, holes, duplicated seam vertices, inconsistent winding and non-manifold regions may remain triangulated or lose source polygon semantics.
 3. Edit Mode box/circle/lasso selection projects sub-elements into screen space and ray-checks candidates against the visible surface. It samples vertices, edge points and ear-clipped triangle centers. Edge loops cross opposite edges in quads; edge rings traverse opposite edges in closed valence-four vertex fans. These deterministic passes stop at boundaries/poles and are not identical to all Blender select modes.
-4. Delete is selection-mode aware: deleting a vertex or edge removes incident faces and dependent unused vertices; face deletion removes selected faces. Dissolve supports consistently wound, single-boundary, simple planar patches, including concave boundaries. Non-planar, self-intersecting, boundary-only and non-manifold cases are deliberately skipped without mutation. Bevel remains a placeholder; Loop Cut is implemented only for validated planar convex quad strips. Extrude/inset and midpoint subdivision retain topology/normal limitations.
+4. Delete is selection-mode aware: deleting a vertex or edge removes incident faces and dependent unused vertices; face deletion removes selected faces. Dissolve supports consistently wound, single-boundary, simple planar patches, including concave boundaries. Non-planar, self-intersecting, boundary-only and non-manifold cases are deliberately skipped without mutation. Bevel remains a placeholder; Loop Cut is implemented only for validated planar convex quad strips and has no multi-cut or extraordinary-pole support. Extrude/inset and midpoint subdivision retain topology/normal limitations.
 5. The topology validator is diagnostic only. It reports invalid positions/faces, duplicates, non-manifold edges, same-direction shared-edge winding, isolated vertices, non-planar faces, self-intersections and triangulation failures; boundary edges are reported but valid for open surfaces. It does not repair geometry. Ear clipping supports simple concave polygons, but non-planar polygons remain intrinsically ambiguous and are flagged.
 6. Modifier algorithms are first-pass approximations: midpoint triangle subdivision, non-welded mirror, simple array offset and basic solidify.
 7. Transform orientation is currently global-axis oriented. Full local/global orientation toggle, snapping, proportional editing, multi-object pivot aggregation and exact Blender operator feedback remain incomplete. Axis-constrained scaling of rotated objects is approximate because the scene representation stores TRS rather than an arbitrary affine/shear matrix.
@@ -248,4 +250,16 @@ Extend Loop Cut with interactive placement, sliding and multiple cuts; then impr
 
 ## Next Roadmap Step
 
-Add interactive loop-cut placement/sliding and multiple cuts, then improve traversal around extraordinary poles. Bevel remains the next major topology operator.
+Add multiple loop cuts and improve traversal around extraordinary poles, then implement a conservative bevel operator with explicit rejection of unsupported vertex/edge neighborhoods.
+
+
+### 2026-11-26 — `bl3nd-interactive-loop-cut.zip` — v0.1.11
+- Replaced the one-shot centered Loop Cut command with a modal preview session. Every preview is regenerated from the immutable source topology so repeated pointer movement does not accumulate interpolation error.
+- Drag horizontally to slide the cut; hold Shift for finer movement; use arrow keys for 1% nudges (Shift+arrow for 0.1%); type an offset between 0 and 1; Enter commits one undo transaction; Escape or right-click restores the original mesh.
+- Added mobile numeric-pad input and a modal offset readout. Unsupported loop topology is checked before the preview can replace the source mesh.
+- Added tests for live preview, precision drag, numeric positioning, cancel restoration, confirm/undo recording and invalid selection. The regression suite now runs with `node --experimental-default-type=module --test tests/*.test.js`.
+- Advanced service-worker cache migration to v11 and precached the new modal operator module.
+
+## Next Roadmap Step
+
+Add multiple evenly spaced loop cuts with stable interpolation across closed loops, then investigate supported pole traversal. After that, begin a conservative bevel implementation with topology fixtures for boundaries, corners and non-manifold rejection.
