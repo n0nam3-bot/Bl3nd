@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { segmentRegionSamples } from '../core/ScreenRegion.js';
 
 function pointInPolygon(point, polygon) {
   let inside = false;
@@ -58,10 +59,12 @@ export const SelectionOperators = {
       const vb = new THREE.Vector3(...hem.positions[b]);
       const pa = project(va), pb = project(vb);
       if (!pa || !pb) return false;
-      for (const t of [0, 0.25, 0.5, 0.75, 1]) {
-        const world = va.clone().lerp(vb, t).applyMatrix4(mesh.matrixWorld);
+      const samples = segmentRegionSamples(pa, pb, tool, points, radius);
+      for (const t of samples) {
         const screen = { x: pa.x + (pb.x - pa.x) * t, y: pa.y + (pb.y - pa.y) * t };
-        if (inRegion(screen, tool, points, radius) && visible(screen, world)) return true;
+        if (!inRegion(screen, tool, points, radius)) continue;
+        const world = va.clone().lerp(vb, t).applyMatrix4(mesh.matrixWorld);
+        if (visible(screen, world)) return true;
       }
       return false;
     };
