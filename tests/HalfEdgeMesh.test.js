@@ -141,3 +141,28 @@ test('triangle-to-face mapping omits invalid polygons consistently with rendered
   assert.deepEqual(hem.triangleFaceMap(), [0,2]);
   assert.equal(hem.toBufferGeometry().indices.length, 6);
 });
+
+test('safe topology repair removes duplicate faces and isolated vertices and fixes winding', () => {
+  const positions = [[0,0,0],[1,0,0],[1,1,0],[0,1,0],[3,0,0],[3,1,0],[9,9,9]];
+  // The second quad shares the edge 1-2 in the same direction as the first.
+  const hem = new HalfEdgeMesh(positions, [[0,1,2,3],[1,2,5,4],[0,1,2,3]]);
+  const result = hem.repairTopology();
+  assert.equal(result.removedDuplicateFaces, 1);
+  assert.equal(result.flippedFaces, 1);
+  assert.equal(result.removedIsolatedVertices, 1);
+  assert.equal(hem.validateTopology().counts.inconsistentWinding, 0);
+  assert.equal(hem.validateTopology().counts.duplicateFaces, 0);
+  assert.equal(hem.positions.length, 6);
+});
+
+test('safe topology repair leaves non-manifold faces untouched', () => {
+  const hem = new HalfEdgeMesh(
+    [[0,0,0],[1,0,0],[0,1,0],[0,-1,0],[0,0,1]],
+    [[0,1,2],[1,0,3],[0,1,4]]
+  );
+  const before = JSON.stringify({ positions: hem.positions, faces: hem.faces });
+  const result = hem.repairTopology();
+  assert.equal(result.skippedNonManifoldComponents, 3);
+  assert.equal(JSON.stringify({ positions: hem.positions, faces: hem.faces }), before);
+  assert.equal(result.remaining.counts.nonManifoldEdges, 1);
+});

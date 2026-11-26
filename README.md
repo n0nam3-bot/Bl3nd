@@ -38,3 +38,8 @@ The application does not require a build command. Open the GitHub Pages URL afte
 Run the topology regression tests with Node: `node --experimental-default-type=module --test tests/HalfEdgeMesh.test.js`.
 
 See [`HANDOFF.md`](./HANDOFF.md) for architecture, exact implementation status, limitations and roadmap. This is an initial engineering foundation, not yet a feature-for-feature Blender clone.
+
+
+### Safe topology repair
+
+In Edit Mode, **Repair Safe Issues** removes malformed faces and duplicate faces, reorients consistently orientable manifold face components, and compacts unused vertices. It deliberately does not guess how to repair non-manifold edges, non-planar faces, self-intersections, or contradictory/non-orientable components; those remain in the validation report for manual correction. Use **Validate Mesh** before and after repair to inspect what changed.

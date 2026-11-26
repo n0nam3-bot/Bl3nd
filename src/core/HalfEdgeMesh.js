@@ -769,6 +769,66 @@ export class HalfEdgeMesh {
     };
   }
 
+  repairTopology() {
+    const before = this.validateTopology();
+    const invalidPositionSet = new Set(before.details.invalidPositions);
+    const kept = [], seen = new Set();
+    let removedInvalidFaces = 0, removedDuplicateFaces = 0;
+    for (const face of this.faces) {
+      const valid = Array.isArray(face) && face.length >= 3 && new Set(face).size === face.length &&
+        face.every(id => Number.isInteger(id) && id >= 0 && id < this.positions.length && !invalidPositionSet.has(id));
+      if (!valid) { removedInvalidFaces++; continue; }
+      const key = [...face].sort((a,b)=>a-b).join(':');
+      if (seen.has(key)) { removedDuplicateFaces++; continue; }
+      seen.add(key); kept.push([...face]);
+    }
+
+    // Reorient only closed, manifold-connected face components. Components touching
+    // an edge with >2 incident faces are deliberately left untouched.
+    const uses = new Map();
+    kept.forEach((face, faceId) => face.forEach((a, i) => {
+      const b = face[(i+1)%face.length], key = keyFor(a,b);
+      if (!uses.has(key)) uses.set(key, []);
+      uses.get(key).push({ faceId, a, b });
+    }));
+    const adjacency = kept.map(() => []), blocked = new Set();
+    for (const incidents of uses.values()) {
+      if (incidents.length > 2) { incidents.forEach(item => blocked.add(item.faceId)); continue; }
+      if (incidents.length !== 2) continue;
+      const [a,b] = incidents;
+      const sameDirection = a.a === b.a && a.b === b.b;
+      adjacency[a.faceId].push([b.faceId, sameDirection]);
+      adjacency[b.faceId].push([a.faceId, sameDirection]);
+    }
+    const flip = new Map(), unsafe = new Set();
+    for (let seed=0; seed<kept.length; seed++) {
+      if (flip.has(seed) || blocked.has(seed)) continue;
+      const queue=[seed], component=[]; flip.set(seed,false); let conflict=false;
+      while(queue.length) {
+        const current=queue.shift(); component.push(current);
+        for (const [next, mustDiffer] of adjacency[current]) {
+          if (blocked.has(next)) { conflict=true; continue; }
+          const expected=flip.get(current) !== mustDiffer;
+          if (!flip.has(next)) { flip.set(next,expected); queue.push(next); }
+          else if (flip.get(next)!==expected) conflict=true;
+        }
+      }
+      if (conflict) component.forEach(id=>unsafe.add(id));
+    }
+    const safeFlips = [...flip].filter(([id,value])=>value && !unsafe.has(id)).map(([id])=>id);
+    for (const id of safeFlips) kept[id].reverse();
+    this.faces = kept;
+    this.compact();
+    const after = this.validateTopology();
+    return {
+      changed: removedInvalidFaces + removedDuplicateFaces + safeFlips.length > 0 || before.details.isolatedVertices.length > 0,
+      removedInvalidFaces, removedDuplicateFaces, flippedFaces: safeFlips.length,
+      removedIsolatedVertices: before.details.isolatedVertices.length,
+      skippedNonManifoldComponents: blocked.size,
+      remaining: after
+    };
+  }
+
   subdivide() {
     const midpointCache = new Map(), out = [];
     const mid = (a, b) => {

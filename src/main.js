@@ -221,6 +221,16 @@ function registerCommands() {
     status(report.issueCount === 0 ? 'Topology validation passed' : `Topology validation found ${report.issueCount} issue(s)`);
     return report;
   }, { recordUndo: false });
+  commandBus.register('mesh.repair_topology', async () => {
+    if (sceneDocument.mode !== 'edit') return false;
+    const result = MeshOperators.repairTopology(sceneDocument);
+    if (!result) { notify('Select a mesh before repairing topology.'); return false; }
+    if (result.changed) await reapplyActiveModifiers();
+    const remaining = result.remaining;
+    notify(`Safe repair · removed ${result.removedInvalidFaces} invalid face(s), ${result.removedDuplicateFaces} duplicate(s), flipped ${result.flippedFaces} face(s), removed ${result.removedIsolatedVertices} isolated vertex/vertices. ${remaining.issueCount} issue(s) remain.`, remaining.issueCount ? 'error' : 'success');
+    console.info('[Bl3nd topology repair]', result);
+    refresh(); return result;
+  });
   commandBus.register('mesh.select_edge_loop', () => {
     const hem = sceneDocument.activeObject?.userData?.hem;
     if (sceneDocument.mode !== 'edit' || sceneDocument.selectionMode !== 'edge' || !hem) {
@@ -339,7 +349,7 @@ function refresh() {
   $('#selection-face').classList.toggle('active',sceneDocument.selectionMode==='face');
   const editing = sceneDocument.mode === 'edit';
   if (!editing && viewport.selectionTool !== 'tap') viewport.selectionTool = 'tap';
-  ['selection-vertex','selection-edge','selection-face','select-all-btn','deselect-btn','selection-menu-btn','dissolve-panel-btn','validate-topology-btn'].forEach(id => { const control = document.getElementById(id); if (control) control.disabled = !editing; });
+  ['selection-vertex','selection-edge','selection-face','select-all-btn','deselect-btn','selection-menu-btn','dissolve-panel-btn','validate-topology-btn','repair-topology-btn'].forEach(id => { const control = document.getElementById(id); if (control) control.disabled = !editing; });
   $('#selection-vertex').setAttribute('aria-pressed', String(sceneDocument.selectionMode==='vertex'));
   $('#selection-edge').setAttribute('aria-pressed', String(sceneDocument.selectionMode==='edge'));
   $('#selection-face').setAttribute('aria-pressed', String(sceneDocument.selectionMode==='face'));
@@ -427,6 +437,7 @@ $('#deselect-btn').addEventListener('click',()=>run('mesh.clear_selection'));
 $('#selection-menu-btn').addEventListener('click',()=>ui.togglePie('selection'));
 $('#dissolve-panel-btn').addEventListener('click',()=>run('mesh.dissolve'));
 $('#validate-topology-btn').addEventListener('click',()=>run('mesh.validate_topology'));
+$('#repair-topology-btn').addEventListener('click',()=>run('mesh.repair_topology'));
 $('#frame-btn').addEventListener('click',()=>run('view.frame'));
 $('#pivot-select').addEventListener('change',event=>run('pivot.set',{pivot:event.target.value}));
 $$('[data-view]').forEach(button=>button.addEventListener('click',()=>run('view.set',{view:button.dataset.view})));

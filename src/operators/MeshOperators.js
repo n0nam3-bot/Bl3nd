@@ -20,6 +20,13 @@ export const MeshOperators = {
     if (!hem || !hem.dissolveSelected()) return false;
     document.updateMesh(); return true;
   },
+  repairTopology(document) {
+    const hem = document.activeObject?.userData?.hem;
+    if (!hem) return null;
+    const result = hem.repairTopology();
+    if (result.changed) document.updateMesh();
+    return result;
+  },
   validateTopology(document) {
     return document.activeObject?.userData?.hem?.validateTopology() || null;
   },

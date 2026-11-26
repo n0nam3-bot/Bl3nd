@@ -137,7 +137,8 @@ Status meanings: **Working** = implemented end-to-end in the current foundation;
 - [x] Add selection-aware vertex/edge/face deletion and safe simple-planar dissolve, plus diagnostic topology validation.
 - [x] Add ear-clipping triangulation and simple concave planar dissolve; synchronize render, face-picking and overlay triangle mappings.
 - [x] Add edge-loop selection across opposite quad edges and edge-ring selection through closed valence-four vertex fans.
-- [ ] Add explicit non-manifold repair policies, extraordinary-pole traversal and loop-cut topology.
+- [x] Add conservative topology repair for malformed/duplicate faces, orientable manifold winding and orphan vertices; non-manifold and ambiguous components are explicitly skipped.
+- [ ] Add extraordinary-pole traversal and loop-cut topology.
 - [ ] Complete local/global transform orientation, snapping, proportional editing, exact pivot aggregation and Blender-like transform gizmo/feedback.
 - [ ] Implement bevel and loop cut.
 - [ ] Implement true radial pie menus and complete keymap parity.
@@ -225,3 +226,14 @@ Status meanings: **Working** = implemented end-to-end in the current foundation;
 ## Next Roadmap Step
 
 Add explicit repair policies for non-manifold and inconsistent-winding meshes, then implement loop-cut topology, robust extraordinary-pole traversal and desktop/mobile regression testing. Keep updates zero-build and delta-ZIP only.
+
+
+### 2026-11-26 — `bl3nd-safe-topology-repair.zip` — v0.1.9
+- Added an explicit **Repair Safe Issues** action in Edit Mesh. It removes malformed faces and duplicate faces, repairs winding only across orientable manifold-connected components, and removes orphaned vertices by compacting the mesh.
+- Repair skips components touching non-manifold edges or containing contradictory orientation constraints. It does not attempt speculative fixes for non-planar or self-intersecting polygons. Validation is run again after repair and the remaining report is shown in the console/toast.
+- Added regression tests for duplicate cleanup, winding correction, orphan compaction and non-manifold preservation.
+- Advanced the service-worker shell/runtime cache to v9.
+
+## Next Roadmap Step
+
+Implement a topology-safe loop cut for regular quad strips, beginning with explicit eligibility checks and interpolation tests; then extend traversal around extraordinary poles. Keep non-manifold and ambiguous cases non-destructive.
