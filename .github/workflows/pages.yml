@@ -1,37 +1,48 @@
+
 name: Deploy zero-build GitHub Pages site
 
 on:
   push:
     branches: [main]
-  workflow_dispatch:
+    paths-ignore:
+      - 'uploads/**'
+  workflow_run:
+    workflows:
+      - Unpack uploaded update packages
+    types:
+      - completed
+    branches: [main]
 
 permissions:
-  actions: read
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: github-pages
   cancel-in-progress: true
 
 jobs:
-  deploy:
+  build:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      contents: read
 
     steps:
-      - name: Check out repository
+      - name: Check out latest main branch
         uses: actions/checkout@v4
+        with:
+          ref: main
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
 
-      - name: Assemble static artifact
+      - name: Assemble static artifact without a build step
+        shell: bash
         run: |
+          set -euo pipefail
+          rm -rf .pages-artifact
           mkdir -p .pages-artifact
+
           tar -cf - \
             --exclude='./.git' \
             --exclude='./.github' \
@@ -39,11 +50,29 @@ jobs:
             --exclude='./.pages-artifact' \
             . | tar -xf - -C .pages-artifact
 
-      - name: Upload static site
+          test -s .pages-artifact/index.html
+
+      - name: Upload GitHub Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: ./.pages-artifact
+          name: github-pages
 
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+
+    permissions:
+      actions: read
+      contents: read
+      pages: write
+      id-token: write
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
