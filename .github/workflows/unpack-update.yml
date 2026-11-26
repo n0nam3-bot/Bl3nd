@@ -18,6 +18,7 @@ concurrency:
 jobs:
   unpack:
     runs-on: ubuntu-latest
+
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -29,7 +30,9 @@ jobs:
         run: |
           set -euo pipefail
           shopt -s nullglob
+
           archives=(uploads/*.zip)
+
           if (( ${#archives[@]} == 0 )); then
             echo "No ZIP packages found."
             exit 0
@@ -37,16 +40,30 @@ jobs:
 
           for archive in "${archives[@]}"; do
             echo "Validating ${archive}"
+
             while IFS= read -r entry; do
               [[ -z "$entry" ]] && continue
+
               if [[ "$entry" == /* || "/$entry/" == *"/../"* ]]; then
                 echo "Unsafe archive path: $entry" >&2
                 exit 1
               fi
             done < <(unzip -Z1 "$archive")
 
-            echo "Extracting ${archive} into repository root"
-            unzip -o "$archive" -d .
+            package_dir="$(mktemp -d)"
+
+            echo "Extracting ${archive} into temporary directory"
+
+            unzip -o "$archive" -d "$package_dir"
+
+            echo "Installing application files"
+
+            rsync -a \
+              --exclude='/.github/workflows/***' \
+              --exclude='/.git/***' \
+              "$package_dir/" ./
+
+            rm -rf "$package_dir"
             rm -f "$archive"
           done
 
@@ -58,20 +75,26 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
           git add -A
+
           if git diff --cached --quiet; then
             echo "created=false" >> "$GITHUB_OUTPUT"
-            echo "No repository changes to commit."
+            echo "No repository changes."
           else
             git commit -m "Apply uploaded project update package"
+
             git push origin "HEAD:${GITHUB_REF_NAME}"
+
             echo "created=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Start the static GitHub Pages deployment
-        if: steps.commit.outputs.created == 'true' && hashFiles('.github/workflows/pages.yml') != ''
+      - name: Start GitHub Pages deployment
+        if: steps.commit.outputs.created == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh workflow run pages.yml --ref "${GITHUB_REF_NAME}"
+        run: |
+          gh workflow run pages.yml --ref "${GITHUB_REF_NAME}"
