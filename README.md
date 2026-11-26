@@ -22,11 +22,12 @@ The application does not require a build command. Open the GitHub Pages URL afte
 - Free `R` uses a camera-oriented virtual trackball; `R` + `X/Y/Z` rotates around a global axis
 - Numeric keys, `Enter`, `Esc`: enter a value, apply, cancel
 - Press `G/R/S` with the pointer over the viewport to begin there; otherwise the viewport center is used
-- Edit Mode `1/2/3`: vertex/edge/face selection
+- Edit Mode `1/2/3`: vertex/edge/face selection; selected topology is drawn directly over the mesh
+- Edit Mode `Shift-click`: add/remove elements; `A`: select all; `Alt+A`: deselect; `Ctrl+I`: invert selection
 - Edit Mode `E` / `I`: Extrude / Inset
 - `Shift + A`: add menu; `Z`: shading menu
 - Numpad `1/3/7`: front/right/top views; scroll: zoom
 - Desktop: left-drag or middle-drag to orbit; right-drag or Shift+left-drag to pan; scroll to zoom; a stationary click selects
-- Mobile: one-finger orbit, two-finger pan/zoom, long-press to place cursor, bottom quick actions
+- Mobile: one-finger orbit, two-finger pan/zoom, long-press to place cursor, bottom quick actions; open the viewport toolbar’s Select menu for Select All / None / Invert
 
 See [`HANDOFF.md`](./HANDOFF.md) for architecture, exact implementation status, limitations and roadmap. This is an initial engineering foundation, not yet a feature-for-feature Blender clone.

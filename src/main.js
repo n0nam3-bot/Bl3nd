@@ -72,25 +72,71 @@ async function reapplyActiveModifiers() {
   if(mesh?.userData.modifiers?.length) { try { await modifierStack.evaluate(mesh); } catch(error) { notify(error.message,'error'); } }
 }
 
+function initializeEditSelection(hem) {
+  if (!hem || hem.vertexSelection.size || hem.edgeSelection.size || hem.faceSelection.size) return;
+  if (sceneDocument.selectionMode === 'vertex') hem.vertexSelection = new Set(hem.vertices.map((_, id) => id));
+  else if (sceneDocument.selectionMode === 'edge') hem.edgeSelection = new Set(hem.edges.map((_, id) => id));
+  else hem.faceSelection = new Set(hem.faces.map((_, id) => id));
+}
+
 function registerCommands() {
   commandBus.register('object.add_primitive', ({ primitive = 'cube' }) => { const mesh = sceneDocument.addPrimitive(primitive); refresh(); viewport.frame(mesh); return mesh; });
   commandBus.register('object.delete', () => { const ok = sceneDocument.deleteActiveObject(); refresh(); return ok; });
   commandBus.register('object.select', ({ mesh = null }) => { sceneDocument.setActive(mesh); refresh(); }, { recordUndo: false });
-  commandBus.register('mesh.select_from_hit', ({ mesh, faceId, point }) => {
+  commandBus.register('mesh.select_from_hit', ({ mesh, faceId, event = null }) => {
+    if (!mesh?.userData?.hem || faceId < 0) return false;
     if (sceneDocument.activeObject !== mesh) sceneDocument.setActive(mesh);
-    const hem = mesh.userData.hem, face = hem.faces[faceId] || [];
+    const hem = mesh.userData.hem, face = hem.faces[faceId] || [], additive = Boolean(event?.shiftKey);
+    mesh.updateMatrixWorld(true); viewport.camera.updateMatrixWorld(true);
+    const rect = viewport.renderer.domElement.getBoundingClientRect();
+    const screenPoint = id => {
+      const projected = new THREE.Vector3(...hem.positions[id]).applyMatrix4(mesh.matrixWorld).project(viewport.camera);
+      if (projected.z < -1 || projected.z > 1) return null;
+      return { x: rect.left + (projected.x + 1) * rect.width / 2, y: rect.top + (1 - projected.y) * rect.height / 2 };
+    };
+    const pxDistance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+    const pointer = { x: event?.clientX ?? rect.left + rect.width / 2, y: event?.clientY ?? rect.top + rect.height / 2 };
     if (sceneDocument.selectionMode === 'vertex') {
-      hem.clearSelection(); const localPoint = mesh.worldToLocal(new THREE.Vector3(...point)); let closest=-1,distance=Infinity;
-      face.forEach(id=>{const d=new THREE.Vector3(...hem.positions[id]).distanceTo(localPoint);if(d<distance){distance=d;closest=id;}});
-      if(closest>=0)hem.vertexSelection.add(closest);
+      let closest = -1, distance = Infinity;
+      for (const id of face) { const point = screenPoint(id); if (!point) continue; const d = pxDistance(point, pointer); if (d < distance) { distance = d; closest = id; } }
+      if (closest >= 0 && distance <= (matchMedia('(pointer: coarse)').matches ? 24 : 17)) hem.selectVertex(closest, additive);
     } else if (sceneDocument.selectionMode === 'edge') {
-      hem.clearSelection(); const localPoint=mesh.worldToLocal(new THREE.Vector3(...point));let closest=-1,distance=Infinity;
-      for(let i=0;i<face.length;i++){const a=face[i],b=face[(i+1)%face.length],mid=new THREE.Vector3(...hem.positions[a]).add(new THREE.Vector3(...hem.positions[b])).multiplyScalar(.5),d=mid.distanceTo(localPoint);if(d<distance){distance=d;closest=hem.edges.find(edge=>edge.vertices.includes(a)&&edge.vertices.includes(b))?.id??-1;}}
-      if(closest>=0)hem.edgeSelection.add(closest);
-    } else if(faceId>=0)hem.selectFace(faceId,false);
+      const edgeIds = new Map(hem.edges.map(edge => [`${Math.min(...edge.vertices)}:${Math.max(...edge.vertices)}`, edge.id]));
+      let closest = -1, distance = Infinity;
+      for (let i = 0; i < face.length; i++) {
+        const a = face[i], b = face[(i + 1) % face.length], pa = screenPoint(a), pb = screenPoint(b);
+        if (!pa || !pb) continue;
+        const dx = pb.x - pa.x, dy = pb.y - pa.y, length2 = dx*dx + dy*dy || 1;
+        const t = Math.max(0, Math.min(1, ((pointer.x - pa.x)*dx + (pointer.y - pa.y)*dy) / length2));
+        const d = Math.hypot(pointer.x - (pa.x + t*dx), pointer.y - (pa.y + t*dy));
+        const edgeId = edgeIds.get(`${Math.min(a,b)}:${Math.max(a,b)}`);
+        if (edgeId !== undefined && d < distance) { distance = d; closest = edgeId; }
+      }
+      if (closest >= 0 && distance <= (matchMedia('(pointer: coarse)').matches ? 20 : 13)) hem.selectEdge(closest, additive);
+    } else hem.selectFace(faceId, additive);
     refresh();
+    return true;
   }, { recordUndo: false });
   commandBus.register('mesh.clear_selection', () => { sceneDocument.activeObject?.userData.hem.clearSelection(); refresh(); }, { recordUndo: false });
+  commandBus.register('mesh.select_all', () => {
+    const hem = sceneDocument.activeObject?.userData?.hem; if (!hem) return false;
+    hem.clearSelection();
+    const target = sceneDocument.selectionMode === 'vertex' ? hem.vertexSelection : sceneDocument.selectionMode === 'edge' ? hem.edgeSelection : hem.faceSelection;
+    const count = sceneDocument.selectionMode === 'vertex' ? hem.vertices.length : sceneDocument.selectionMode === 'edge' ? hem.edges.length : hem.faces.length;
+    for (let id = 0; id < count; id++) target.add(id);
+    refresh(); return true;
+  }, { recordUndo: false });
+  commandBus.register('mesh.invert_selection', () => {
+    const hem = sceneDocument.activeObject?.userData?.hem; if (!hem) return false;
+    const target = sceneDocument.selectionMode === 'vertex' ? hem.vertexSelection : sceneDocument.selectionMode === 'edge' ? hem.edgeSelection : hem.faceSelection;
+    const count = sceneDocument.selectionMode === 'vertex' ? hem.vertices.length : sceneDocument.selectionMode === 'edge' ? hem.edges.length : hem.faces.length;
+    const inverted = new Set(); for (let id = 0; id < count; id++) if (!target.has(id)) inverted.add(id);
+    hem.clearSelection();
+    if (sceneDocument.selectionMode === 'vertex') hem.vertexSelection = inverted;
+    else if (sceneDocument.selectionMode === 'edge') hem.edgeSelection = inverted;
+    else hem.faceSelection = inverted;
+    refresh(); return true;
+  }, { recordUndo: false });
   commandBus.register('view.set', ({ view }) => viewport.setView(view), { recordUndo: false });
   commandBus.register('view.frame', () => viewport.frame(sceneDocument.activeObject), { recordUndo: false });
   commandBus.register('shading.set', ({ mode }) => {
@@ -105,12 +151,17 @@ function registerCommands() {
   commandBus.register('mode.toggle_edit', () => {
     sceneDocument.setMode(sceneDocument.mode === 'object' ? 'edit' : 'object');
     const hem = sceneDocument.activeObject?.userData.hem;
-    if (sceneDocument.mode === 'edit' && hem && !hem.faceSelection.size && !hem.vertexSelection.size && !hem.edgeSelection.size) {
-      hem.faceSelection = new Set(hem.faces.map((_, index) => index));
-    }
+    if (hem) hem.setSelectionMode(sceneDocument.selectionMode);
+    if (sceneDocument.mode === 'edit') initializeEditSelection(hem);
     refresh(); return true;
   }, { recordUndo: false });
-  commandBus.register('mode.set', ({ mode }) => { sceneDocument.setMode(mode); refresh(); }, { recordUndo: false });
+  commandBus.register('mode.set', ({ mode }) => {
+    sceneDocument.setMode(mode);
+    const hem = sceneDocument.activeObject?.userData.hem;
+    if (hem) hem.setSelectionMode(sceneDocument.selectionMode);
+    if (sceneDocument.mode === 'edit') initializeEditSelection(hem);
+    refresh();
+  }, { recordUndo: false });
   commandBus.register('mesh.selection_mode', ({ mode }) => {
     sceneDocument.selectionMode = mode;
     sceneDocument.activeObject?.userData.hem.setSelectionMode(mode);
@@ -181,7 +232,7 @@ function faceIdForTriangle(hem, triangleIndex) {
   }
   return -1;
 }
-function handleViewportSelection(hit) {
+function handleViewportSelection(hit, pointer, event) {
   if (modalTransform.active) return;
   if (!hit) {
     if (sceneDocument.mode === 'object') run('object.select',{mesh:null});
@@ -189,8 +240,8 @@ function handleViewportSelection(hit) {
     return;
   }
   if (sceneDocument.mode === 'object') { run('object.select',{mesh:hit.object}); return; }
-  const faceId=faceIdForTriangle(hit.object.userData.hem,hit.faceIndex??0);
-  run('mesh.select_from_hit',{mesh:hit.object,faceId,point:hit.point.toArray()});
+  const faceId = faceIdForTriangle(hit.object.userData.hem, hit.faceIndex ?? 0);
+  run('mesh.select_from_hit', { mesh: hit.object, faceId, event: event ? { clientX: event.clientX, clientY: event.clientY, shiftKey: event.shiftKey } : null });
 }
 
 function refreshCursor() {
@@ -234,6 +285,20 @@ function refresh() {
   $('#selection-vertex').classList.toggle('active',sceneDocument.selectionMode==='vertex');
   $('#selection-edge').classList.toggle('active',sceneDocument.selectionMode==='edge');
   $('#selection-face').classList.toggle('active',sceneDocument.selectionMode==='face');
+  const editing = sceneDocument.mode === 'edit';
+  ['selection-vertex','selection-edge','selection-face','select-all-btn','deselect-btn','selection-menu-btn'].forEach(id => { const control = document.getElementById(id); if (control) control.disabled = !editing; });
+  $('#selection-vertex').setAttribute('aria-pressed', String(sceneDocument.selectionMode==='vertex'));
+  $('#selection-edge').setAttribute('aria-pressed', String(sceneDocument.selectionMode==='edge'));
+  $('#selection-face').setAttribute('aria-pressed', String(sceneDocument.selectionMode==='face'));
+  viewport.updateEditOverlay(editing ? sceneDocument.activeObject : null, sceneDocument.selectionMode);
+  const hintDesktop = $('.hint-desktop'), hintMobile = $('.hint-mobile');
+  if (editing) {
+    hintDesktop.textContent = 'Edit: Click vertex / edge / face · Shift-click add or toggle · A select all · Alt+A deselect · G/R/S transform';
+    hintMobile.textContent = 'Edit: Tap element · Shift-click not available on touch · A select all · G/R/S transform';
+  } else {
+    hintDesktop.textContent = 'Drag to orbit · Right-drag to pan · Scroll to zoom · Click to select · G/R/S then drag to transform';
+    hintMobile.textContent = 'One finger: orbit · Two fingers: pan/zoom · Long press: 3D Cursor · G/R/S: transform';
+  }
   const stats=sceneDocument.stats(); $('#object-count').textContent=`Objects: ${stats.objects}`;
   $('#mesh-stats').textContent=`Verts ${stats.vertices} · Edges ${stats.edges} · Faces ${stats.faces}`;
   $$('[data-transform]').forEach(input=>{
@@ -252,6 +317,8 @@ ui = {
     if(!menu.hidden && menu.dataset.kind===kind){menu.hidden=true;return;}
     const entries=kind==='shading'?
       [['Solid','shade_solid'],['Wireframe','shade_wire'],['Material','shade_material'],['Rendered','shade_render']]:
+      kind==='selection'?
+      [['Select All','select_all'],['Deselect All','clear_selection'],['Invert','invert_selection']]:
       [['Cube','add_cube'],['UV Sphere','add_sphere'],['Cylinder','add_cylinder'],['Plane','add_plane'],['Edit Mode','toggle_mode'],['3D Cursor','cursor_center']];
     menu.replaceChildren();
     for(const [label,command] of entries){const button=document.createElement('button');button.textContent=label;button.dataset.command=command;menu.append(button);}
@@ -295,6 +362,9 @@ $('#delete-panel-btn').addEventListener('click',()=>run('mesh.delete')); $('#sub
 $('#selection-vertex').addEventListener('click',()=>run('mesh.selection_mode',{mode:'vertex'}));
 $('#selection-edge').addEventListener('click',()=>run('mesh.selection_mode',{mode:'edge'}));
 $('#selection-face').addEventListener('click',()=>run('mesh.selection_mode',{mode:'face'}));
+$('#select-all-btn').addEventListener('click',()=>run('mesh.select_all'));
+$('#deselect-btn').addEventListener('click',()=>run('mesh.clear_selection'));
+$('#selection-menu-btn').addEventListener('click',()=>ui.togglePie('selection'));
 $('#frame-btn').addEventListener('click',()=>run('view.frame'));
 $('#pivot-select').addEventListener('change',event=>run('pivot.set',{pivot:event.target.value}));
 $$('[data-view]').forEach(button=>button.addEventListener('click',()=>run('view.set',{view:button.dataset.view})));
@@ -310,6 +380,9 @@ $('#pie-menu').addEventListener('click',async event=>{
   if(command.startsWith('add_')) await run('object.add_primitive',{primitive:command.slice(4)});
   else if(command==='toggle_mode') await run('mode.toggle_edit');
   else if(command==='cursor_center') await run('cursor.set',{point:viewport.controls.target.toArray()});
+  else if(command==='select_all') await run('mesh.select_all');
+  else if(command==='clear_selection') await run('mesh.clear_selection');
+  else if(command==='invert_selection') await run('mesh.invert_selection');
   else if(command.startsWith('shade_')){
     await run('shading.set',{mode:command.slice(6)});
   }

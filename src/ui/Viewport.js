@@ -1,9 +1,11 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EditModeOverlay } from './EditModeOverlay.js';
 
 export class Viewport {
   constructor(container, { pixelRatio = 1.5, onSelect, onCursor, onStatus } = {}) {
     this.container = container; this.onSelect = onSelect; this.onCursor = onCursor; this.onStatus = onStatus;
+    this.editOverlay = null;
     this.scene = new THREE.Scene(); this.scene.background = new THREE.Color(0x252a33);
     this.camera = new THREE.PerspectiveCamera(48, 1, 0.05, 2000); this.camera.up.set(0,0,1); this.camera.position.set(7, -9, 7);
     this.renderer = new THREE.WebGLRenderer({ antialias: pixelRatio > 1.1, alpha: false, powerPreference: 'high-performance' });
@@ -62,8 +64,23 @@ export class Viewport {
   }
 
   setContent(group) {
+    this.clearEditOverlay();
     if (this.contentGroup) this.scene.remove(this.contentGroup);
     this.contentGroup = group; this.scene.add(group);
+  }
+
+  clearEditOverlay() {
+    this.editOverlay?.dispose();
+    this.editOverlay = null;
+  }
+
+  updateEditOverlay(mesh, selectionMode = 'face') {
+    if (!mesh?.userData?.hem) { this.clearEditOverlay(); return; }
+    if (this.editOverlay?.mesh !== mesh) {
+      this.clearEditOverlay();
+      this.editOverlay = new EditModeOverlay(mesh);
+    }
+    this.editOverlay.update(mesh.userData.hem, selectionMode);
   }
 
   getPointerOrigin() {
@@ -110,7 +127,7 @@ export class Viewport {
     const isTap = distance < 6 && Date.now() - down.time < 650;
     this.downPoint = null;
     if (isTap && (event.pointerType !== 'touch' || this.activeTouchPointers.size === 0)) {
-      this.pick(event.clientX, event.clientY);
+      this.pick(event.clientX, event.clientY, event);
     }
   }
 
@@ -119,11 +136,11 @@ export class Viewport {
     return new THREE.Vector2(((x-rect.left)/rect.width)*2-1,-((y-rect.top)/rect.height)*2+1);
   }
 
-  pick(x,y) {
+  pick(x,y,event = null) {
     if (!this.contentGroup) return;
     this.pointer.copy(this.pointerToNdc(x,y)); this.raycaster.setFromCamera(this.pointer,this.camera);
     const hits = this.raycaster.intersectObjects(this.contentGroup.children,true).filter(hit => hit.object.isMesh && hit.object.userData.hem);
-    this.onSelect?.(hits[0] || null, this.pointer);
+    this.onSelect?.(hits[0] || null, this.pointer, event);
   }
 
   placeCursorFromPointer(x,y) {
@@ -160,5 +177,5 @@ export class Viewport {
     requestAnimationFrame(this.animate); this.controls.update(); this.renderer.render(this.scene,this.camera);
   };
 
-  dispose() { this.running=false; window.removeEventListener('pointermove', this.trackPointer); this.resizeObserver?.disconnect(); this.controls.dispose(); this.renderer.dispose(); this.renderer.domElement.remove(); }
+  dispose() { this.running=false; this.clearEditOverlay(); window.removeEventListener('pointermove', this.trackPointer); this.resizeObserver?.disconnect(); this.controls.dispose(); this.renderer.dispose(); this.renderer.domElement.remove(); }
 }

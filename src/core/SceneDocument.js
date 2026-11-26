@@ -25,6 +25,7 @@ export class SceneDocument {
 
   addMeshFromGeometry(geometry, name = 'Mesh', at = this.cursor, material = null) {
     const hem = HalfEdgeMesh.fromBufferGeometry(geometry);
+    hem.setSelectionMode(this.selectionMode);
     const renderGeometry = this.geometryFromHem(hem);
     const mesh = new THREE.Mesh(renderGeometry, material || DEFAULT_MATERIAL());
     mesh.name = name; mesh.position.copy(at); mesh.castShadow = true; mesh.receiveShadow = true;
@@ -75,6 +76,11 @@ export class SceneDocument {
         position: mesh.position.toArray(), rotation: mesh.rotation.toArray(), scale: mesh.scale.toArray(),
         color: mesh.material?.color?.getHex?.() ?? 0xc8cbd0,
         modifiers: mesh.userData.modifiers || [],
+        selection: {
+          vertices: [...mesh.userData.hem.vertexSelection],
+          edges: [...mesh.userData.hem.edgeSelection],
+          faces: [...mesh.userData.hem.faceSelection]
+        },
         visible: mesh.visible
       }))
     };
@@ -87,6 +93,10 @@ export class SceneDocument {
     this.selectionMode = data.selectionMode || 'face'; this.nameCounter = data.nameCounter || 1;
     for (const item of data.objects || []) {
       const hem = new HalfEdgeMesh(item.positions || [], item.faces || []);
+      hem.setSelectionMode(this.selectionMode);
+      hem.vertexSelection = new Set(item.selection?.vertices || []);
+      hem.edgeSelection = new Set(item.selection?.edges || []);
+      hem.faceSelection = new Set(item.selection?.faces || []);
       const mesh = new THREE.Mesh(this.geometryFromHem(hem), new THREE.MeshStandardMaterial({ color: item.color ?? 0xc8cbd0, roughness: 0.64, metalness: 0.08, flatShading: true }));
       mesh.name = item.name || 'Mesh'; mesh.position.fromArray(item.position || [0,0,0]); mesh.rotation.fromArray(item.rotation || [0,0,0]); mesh.scale.fromArray(item.scale || [1,1,1]);
       mesh.visible = item.visible !== false; mesh.castShadow = true; mesh.receiveShadow = true;

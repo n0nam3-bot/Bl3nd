@@ -16,13 +16,14 @@
 
 - **Static runtime:** `index.html` is the root entry. Native ES modules run directly in the browser with a pinned Three.js 0.180.0 import map.
 - **Command bus:** UI, keyboard, and touch inputs should dispatch named commands through `src/core/CommandBus.js`; keep mesh algorithms out of DOM handlers.
-- **Half-edge data:** `src/core/HalfEdgeMesh.js` owns editable Vertex, Edge, HalfEdge, and Face connectivity. Three.js geometry is a render cache, not the editable source of truth.
+- **Half-edge data:** `src/core/HalfEdgeMesh.js` owns editable Vertex, Edge, HalfEdge, and Face connectivity. Import merges adjacent coplanar triangles only when they form one convex boundary; Three.js geometry remains a render cache, not the editable source of truth. Complex and non-manifold inputs are not fully repaired.
 - **Undo:** `src/core/UndoManager.js` writes snapshots to OPFS when available and falls back to memory. Current serialization still creates JavaScript objects before disk writes.
 - **Renderer:** Three.js WebGL is currently used on all tiers. Device probing detects WebGPU but does not yet activate a WebGPU renderer.
 - **Workers:** modifier evaluation runs in a module Worker. There is no worker pool or chunk scheduler yet.
 - **PWA:** `manifest.json` and `sw.js` provide install metadata and app-shell/runtime caching. First visit requires network access to CDN modules.
 - **Local-only:** scenes are stored in the browser; import/export uses local file pickers. No cloud sync or remote project database exists.
 - **Transform frame:** modal transforms capture the camera basis, viewport bounds, pointer origin and camera-to-pivot scale at start. Free movement uses the current camera-facing view plane; axis movement projects screen motion into world-axis distance; free rotation uses a camera-oriented virtual trackball.
+- **Edit overlays:** `src/ui/EditModeOverlay.js` draws live polygon edges, vertices and selected-face fills as children of the active mesh; overlays do not replace editable topology or intercept picking.
 - **Deployment:** `.github/workflows/pages.yml` uses two jobs: `build` creates and uploads the `github-pages` artifact; `deploy` waits for `build` and publishes it. The Pages workflow runs on normal `main` changes (excluding `uploads/**`) and after successful completion of `Unpack uploaded update packages`.
 
 ## Repository File Tree
@@ -52,7 +53,9 @@
 │   ├── operators/
 │   │   ├── MeshOperators.js    # Basic extrude/inset/delete/subdivide
 │   │   └── ModalTransform.js   # Camera-aware G/R/S state machine
-│   ├── ui/Viewport.js          # Three.js viewport, navigation and pointer origin
+│   ├── ui/
+│   │   ├── Viewport.js         # Three.js viewport, navigation, pointer origin and overlay lifecycle
+│   │   └── EditModeOverlay.js  # Non-destructive vertex/edge/face selection display
 │   ├── workers/modifier.worker.js # Background modifier evaluation
 │   ├── main.js                 # App composition, commands and UI bindings
 │   └── styles.css              # Responsive desktop/mobile styling
@@ -72,21 +75,21 @@ Status meanings: **Working** = implemented end-to-end in the current foundation;
 |---|---|---|
 | Zero-build static app | Working | Native ES modules, static HTML/CSS, pinned Three.js CDN imports. |
 | Mobile ZIP workflow | Working | ZIP path validation, extraction, cleanup, bot commit; workflow files are excluded. |
-| GitHub Pages deployment | Working after workflow correction | Two-job artifact/deploy pipeline; triggers after successful unpack completion and normal main pushes excluding uploads. Verify with the next deployment run. |
+| GitHub Pages deployment | Working after workflow correction | Two-job artifact/deploy pipeline; triggers after successful unpack completion and normal main pushes excluding uploads. Latest repository deployment before this update: run #13 succeeded. |
 | Bl3nd branding/PWA | Working | Bl3nd header/title, manifest identity, app icons, service worker cache-version migration. |
 | Startup progress/error UI | Partial | Staged progress and visible exceptions. Starter cube now initializes directly through `SceneDocument`, outside command dispatch and undo snapshot I/O; viewport framing and initial panel refresh are isolated as non-fatal steps. Real-browser verification remains. |
 | Device capabilities | Partial | Detects tier, memory, CPU threads, WebGPU, WebGL2 and OPFS. Tier affects render pixel ratio/history budget; WebGPU is not activated. |
 | 3D viewport | Partial | Three.js WebGL renderer, grid, axes, orbit/pan/zoom, standard views and framing. |
 | Command bus | Working | Named command registration and snapshot-based undo boundaries. |
-| Half-edge topology | Partial | Vertex/Edge/HalfEdge/Face records and adjacency; import triangulates input and is not a production manifold kernel. |
+| Half-edge topology | Partial | Vertex/Edge/HalfEdge/Face records and adjacency. Import merges adjacent coplanar triangles into a convex polygon when a single boundary can be reconstructed; hard edges remain separate. This is not a production manifold kernel. |
 | Object mode | Working | Primitive creation, object selection/deletion and object transforms. |
-| Edit mode | Partial | Vertex/edge/face selection modes, face picking, extrude, inset, delete and triangle subdivision. |
+| Edit mode | Partial | Visible edge/vertex overlays, selected-face tint, screen-space vertex/edge picking on the hit face, Shift-click add/toggle, Select All / Deselect / Invert, and face extrude/inset/delete/subdivision. Full selection tools and vertex/edge-specific delete semantics remain missing. |
 | Modal transforms | Partial | Free G follows the current camera-facing view plane; axis movement converts projected pointer travel into global world units; Shift+axis uses a camera-derived perpendicular plane; free R uses a camera-oriented virtual trackball; numeric commit/cancel remain. Local orientation, snapping and full Blender pivot parity remain incomplete. |
 | 3D cursor/pivot | Partial | Cursor placement and UI pivot selection exist; pivot math is incomplete. |
 | Modifiers | Partial | Worker-based midpoint subdivision, mirror, array and solidify; not Blender-equivalent. |
-| Undo/redo | Partial | OPFS snapshots with memory fallback; large snapshots can temporarily increase RAM. |
+| Undo/redo | Partial | OPFS snapshots with memory fallback; current snapshots also preserve per-object vertex/edge/face selections. Large snapshots can temporarily increase RAM. |
 | Model I/O | Partial | GLB, GLTF, OBJ and STL browser import/export paths; complex scenes/materials/animation need validation. |
-| Desktop/mobile input | Partial | Desktop left-drag orbit, right-drag/Shift+left-drag pan and wheel zoom; modal transforms sample pointer movement at window level; mobile one-finger orbit, two-finger dolly-pan and quick Move/Rotate/Scale actions. Device testing remains. |
+| Desktop/mobile input | Partial | Desktop left-drag orbit, right-drag/Shift+left-drag pan and wheel zoom; modal transforms sample pointer movement at window level; desktop Shift-click adds/toggles selections; mobile one-finger orbit, two-finger dolly-pan, quick Move/Rotate/Scale and a viewport Select menu with All / None / Invert. Device testing remains. |
 | Pie menus | Partial | Compact command menus; not true radial Blender pie menus. |
 | Bevel/Loop Cut/sculpt | Not Started | No production implementation yet. |
 | Exact Blender clone | Not Started | No claim of full Blender operator, BMesh, UI, or file-format parity. |
@@ -94,9 +97,9 @@ Status meanings: **Working** = implemented end-to-end in the current foundation;
 ## Known Issues & Technical Debt
 
 1. WebGPU is detected but the renderer is still Three.js WebGL.
-2. Imported geometry is converted to triangle faces; polygon boundaries, seams and non-manifold input may not be preserved.
-3. Edit-mode overlays and selection tools are limited; no complete box/circle/lasso/loop/ring selection.
-4. Bevel and Loop Cut are placeholders. Extrude/inset and midpoint subdivision have topology and normal limitations.
+2. Imported geometry is initially triangulated, then adjacent coplanar triangles are merged only when exactly two triangles share each joined edge and a single convex boundary can be reconstructed. Concave faces, holes, duplicated seam vertices, inconsistent winding and non-manifold regions may remain triangulated or lose source polygon semantics.
+3. Edit Mode now draws vertex/edge overlays and selected faces and supports screen-space picking near vertices/edges on the face under the cursor. Selection remains hit-face based; there is no complete box/circle/lasso/loop/ring selection or general occlusion-aware sub-element picking across the whole mesh.
+4. Bevel and Loop Cut are placeholders. Extrude/inset and midpoint subdivision have topology and normal limitations. Delete still follows the face-deletion path; selected vertices and edges do not yet have dedicated dissolve/delete menu semantics.
 5. Modifier algorithms are first-pass approximations: midpoint triangle subdivision, non-welded mirror, simple array offset and basic solidify.
 6. Transform orientation is currently global-axis oriented. Full local/global orientation toggle, snapping, proportional editing, multi-object pivot aggregation and exact Blender operator feedback remain incomplete. Axis-constrained scaling of rotated objects is approximate because the scene representation stores TRS rather than an arbitrary affine/shear matrix.
 7. Camera-relative G/R/S math captures the camera when an operation begins; changing the view during a modal transform is intentionally disabled until confirm/cancel. Free rotation is a practical virtual trackball, not exact Blender trackball/turntable parity.
@@ -122,7 +125,8 @@ Status meanings: **Working** = implemented end-to-end in the current foundation;
 - [x] Camera-oriented virtual trackball rotation foundation and smoother exponential mouse scaling.
 - [x] OPFS undo/redo with memory fallback.
 - [ ] Preserve polygon boundaries and robustly validate manifold/non-manifold topology.
-- [ ] Add vertex/edge/face overlays and complete selection tools.
+- [x] Add visible vertex/edge/face overlays, hit-face screen-space element picking, Shift-click selection toggle, Select All / Deselect / Invert and snapshot persistence.
+- [ ] Add box/circle/lasso/loop/ring selection and robust visibility-aware element picking.
 - [ ] Complete local/global transform orientation, snapping, proportional editing, exact pivot aggregation and Blender-like transform gizmo/feedback.
 - [ ] Implement bevel, loop cut and delete menu semantics.
 - [ ] Implement true radial pie menus and complete keymap parity.
@@ -181,6 +185,15 @@ Status meanings: **Working** = implemented end-to-end in the current foundation;
 - Modal input starts from the current pointer within the viewport when available; pointer movement is observed at window level while transforms are active.
 - Added mobile quick actions for Move, Rotate and Scale plus on-screen global-axis/perpendicular-plane constraints; updated desktop/mobile hints and bumped service-worker caches to v4.
 
+### 2026-11-26 — `bl3nd-edit-selection-foundation.zip` — v0.1.6
+- Added a non-destructive Edit Mode overlay for polygon edges, vertex points, selected vertices and selected-face fill. Overlay geometry follows the active object and is excluded from viewport raycasting.
+- Replaced world-space nearest-element selection with screen-space nearest vertex and point-to-segment edge picking on the face hit by the cursor. Desktop Shift-click adds or toggles selections.
+- Added Select All, Deselect All and Invert Selection commands, desktop shortcuts, and toolbar actions usable on mobile.
+- Made selection-mode changes propagate selected faces to their constituent vertices/edges and propagate a fully selected vertex/edge set back to faces.
+- Preserved vertex, edge and face selections in scene snapshots so undo/redo restore the edit selection state.
+- Reconstructed simple convex coplanar polygon faces from imported triangle pairs/clusters, removing artificial triangulation diagonals on primitives and planar hard-surface faces when their boundary can be safely recovered.
+- Added the overlay module to the service-worker shell and advanced cache migration to v6.
+
 ## Next Roadmap Step
 
-Verify view-relative G/R/S movement and trackball rotation in desktop and mobile browsers, then complete transform orientation/pivot semantics and improve mesh-selection visualization and topology correctness. Keep all application updates zero-build and delta-ZIP only.
+Implement selection-aware vertex/edge/face deletion and dissolve semantics, then add box/circle/lasso selection and improve topology validation for non-manifold or inconsistent imported meshes. Keep transforms and selection overlays under desktop/mobile regression testing; all application updates remain zero-build and delta-ZIP only.

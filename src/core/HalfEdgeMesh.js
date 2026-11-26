@@ -1,5 +1,94 @@
 function keyFor(a, b) { return a < b ? `${a}:${b}` : `${b}:${a}`; }
 
+function mergeCoplanarTriangles(vertices, triangles) {
+  if (triangles.length < 2) return triangles.map(face => [...face]);
+  const planes = triangles.map(face => {
+    const a = vertices[face[0]], b = vertices[face[1]], c = vertices[face[2]];
+    const u = b.map((value, i) => value - a[i]), v = c.map((value, i) => value - a[i]);
+    const normal = [u[1]*v[2]-u[2]*v[1], u[2]*v[0]-u[0]*v[2], u[0]*v[1]-u[1]*v[0]];
+    const length = Math.hypot(...normal);
+    if (length < 1e-12) return null;
+    const n = normal.map(value => value / length);
+    return { normal: n, distance: n.reduce((sum, value, i) => sum + value * a[i], 0) };
+  });
+  const parent = triangles.map((_, index) => index);
+  const find = id => { while (parent[id] !== id) { parent[id] = parent[parent[id]]; id = parent[id]; } return id; };
+  const join = (a, b) => { const ra = find(a), rb = find(b); if (ra !== rb) parent[rb] = ra; };
+  const edgeFaces = new Map();
+  triangles.forEach((face, faceId) => {
+    for (let i = 0; i < 3; i++) {
+      const key = keyFor(face[i], face[(i + 1) % 3]);
+      if (!edgeFaces.has(key)) edgeFaces.set(key, []);
+      edgeFaces.get(key).push(faceId);
+    }
+  });
+  const nonManifoldFaces = new Set();
+  for (const incident of edgeFaces.values()) {
+    if (incident.length > 2) {
+      incident.forEach(id => nonManifoldFaces.add(id));
+      continue;
+    }
+    if (incident.length !== 2) continue;
+    const [a, b] = incident, pa = planes[a], pb = planes[b];
+    if (!pa || !pb) continue;
+    const alignment = pa.normal.reduce((sum, value, axis) => sum + value * pb.normal[axis], 0);
+    if (alignment > 0.999999 && Math.abs(pa.distance - pb.distance) < 1e-5) join(a, b);
+  }
+
+  const components = new Map();
+  triangles.forEach((face, id) => {
+    const root = find(id);
+    if (!components.has(root)) components.set(root, []);
+    components.get(root).push(id);
+  });
+  const merged = [];
+  for (const ids of components.values()) {
+    if (ids.length === 1 || ids.some(id => nonManifoldFaces.has(id))) {
+      for (const id of ids) merged.push([...triangles[id]]);
+      continue;
+    }
+    const counts = new Map(), directed = new Map();
+    for (const id of ids) {
+      const face = triangles[id];
+      for (let i = 0; i < 3; i++) {
+        const a = face[i], b = face[(i + 1) % 3], key = keyFor(a, b);
+        counts.set(key, (counts.get(key) || 0) + 1);
+        directed.set(key, [a, b]);
+      }
+    }
+    const boundary = [...counts].filter(([, count]) => count === 1).map(([key]) => directed.get(key));
+    const outgoing = new Map();
+    let valid = boundary.length >= 3;
+    for (const [a, b] of boundary) {
+      if (outgoing.has(a)) valid = false;
+      outgoing.set(a, b);
+    }
+    let polygon = [];
+    if (valid) {
+      const start = boundary[0][0]; let current = start;
+      for (let i = 0; i < boundary.length; i++) {
+        if (!outgoing.has(current)) { valid = false; break; }
+        polygon.push(current); current = outgoing.get(current);
+        if (current === start) break;
+      }
+      if (current !== start || polygon.length !== boundary.length || new Set(polygon).size !== polygon.length) valid = false;
+    }
+    // Only replace a triangle cluster with one convex, single-boundary polygon.
+    if (valid) {
+      const normal = planes[ids[0]]?.normal || [0, 0, 1];
+      for (let i = 0; i < polygon.length; i++) {
+        const a = vertices[polygon[i]], b = vertices[polygon[(i + 1) % polygon.length]], c = vertices[polygon[(i + 2) % polygon.length]];
+        const ab = b.map((value, axis) => value - a[axis]), bc = c.map((value, axis) => value - b[axis]);
+        const cross = [ab[1]*bc[2]-ab[2]*bc[1], ab[2]*bc[0]-ab[0]*bc[2], ab[0]*bc[1]-ab[1]*bc[0]];
+        if (cross.reduce((sum, value, axis) => sum + value * normal[axis], 0) < -1e-7) { valid = false; break; }
+      }
+    }
+    if (valid) merged.push(polygon);
+    else for (const id of ids) merged.push([...triangles[id]]);
+  }
+  return merged;
+}
+
 export class Vertex {
   constructor(id, position) { this.id = id; this.position = position; this.halfEdge = null; }
 }
@@ -43,7 +132,7 @@ export class HalfEdgeMesh {
       const tri = [remap(source[i]), remap(source[i + 1]), remap(source[i + 2])];
       if (new Set(tri).size === 3) faces.push(tri);
     }
-    return new HalfEdgeMesh(vertices, faces);
+    return new HalfEdgeMesh(vertices, mergeCoplanarTriangles(vertices, faces));
   }
 
   rebuild() {
@@ -81,19 +170,64 @@ export class HalfEdgeMesh {
   }
 
   clone() { return new HalfEdgeMesh(this.positions, this.faces); }
-  setSelectionMode(mode) { if (['vertex', 'edge', 'face'].includes(mode)) this.selectionMode = mode; }
+  setSelectionMode(mode) {
+    if (!['vertex', 'edge', 'face'].includes(mode) || mode === this.selectionMode) return;
+    const vertices = new Set(), edges = new Set(), faces = new Set();
+    const edgeIds = new Map(this.edges.map(edge => [keyFor(...edge.vertices), edge.id]));
+    if (mode === 'vertex') {
+      if (this.faceSelection.size) for (const faceId of this.faceSelection) for (const id of this.faces[faceId] || []) vertices.add(id);
+      else if (this.edgeSelection.size) for (const edgeId of this.edgeSelection) for (const id of this.edges[edgeId]?.vertices || []) vertices.add(id);
+      else for (const id of this.vertexSelection) vertices.add(id);
+    } else if (mode === 'edge') {
+      if (this.faceSelection.size) {
+        for (const faceId of this.faceSelection) {
+          const face = this.faces[faceId] || [];
+          for (let i = 0; i < face.length; i++) { const id = edgeIds.get(keyFor(face[i], face[(i + 1) % face.length])); if (id !== undefined) edges.add(id); }
+        }
+      } else if (this.vertexSelection.size) {
+        for (const edge of this.edges) if (this.vertexSelection.has(edge.vertices[0]) && this.vertexSelection.has(edge.vertices[1])) edges.add(edge.id);
+      } else for (const id of this.edgeSelection) edges.add(id);
+    } else {
+      if (this.vertexSelection.size) {
+        for (let faceId = 0; faceId < this.faces.length; faceId++) if (this.faces[faceId].every(id => this.vertexSelection.has(id))) faces.add(faceId);
+      } else if (this.edgeSelection.size) {
+        for (let faceId = 0; faceId < this.faces.length; faceId++) {
+          const face = this.faces[faceId] || [];
+          if (face.length && face.every((id, i) => { const edgeId = edgeIds.get(keyFor(id, face[(i + 1) % face.length])); return edgeId !== undefined && this.edgeSelection.has(edgeId); })) faces.add(faceId);
+        }
+      } else for (const id of this.faceSelection) faces.add(id);
+    }
+    this.clearSelection();
+    this.vertexSelection = vertices; this.edgeSelection = edges; this.faceSelection = faces;
+    this.selectionMode = mode;
+  }
+
   clearSelection() { this.vertexSelection.clear(); this.edgeSelection.clear(); this.faceSelection.clear(); }
+
+  selectVertex(id, additive = false) {
+    if (!this.vertices[id]) return;
+    if (!additive) this.clearSelection();
+    if (additive && this.vertexSelection.has(id)) this.vertexSelection.delete(id);
+    else this.vertexSelection.add(id);
+  }
+
+  selectEdge(id, additive = false) {
+    if (!this.edges[id]) return;
+    if (!additive) this.clearSelection();
+    if (additive && this.edgeSelection.has(id)) this.edgeSelection.delete(id);
+    else this.edgeSelection.add(id);
+  }
+
   selectFace(id, additive = false) {
     if (!this.faceRecords[id]) return;
     if (!additive) this.clearSelection();
-    this.faceSelection.add(id);
-    if (this.selectionMode === 'vertex') for (const v of this.faces[id]) this.vertexSelection.add(v);
-    if (this.selectionMode === 'edge') {
-      const f = this.faces[id];
-      for (let i = 0; i < f.length; i++) {
-        const edge = this.edges.find(e => keyFor(...e.vertices) === keyFor(f[i], f[(i + 1) % f.length]));
-        if (edge) this.edgeSelection.add(edge.id);
-      }
+    if (additive && this.faceSelection.has(id)) { this.faceSelection.delete(id); return; }
+    if (this.selectionMode === 'face') { this.faceSelection.add(id); return; }
+    const face = this.faces[id], edgeIds = new Map(this.edges.map(edge => [keyFor(...edge.vertices), edge.id]));
+    if (this.selectionMode === 'vertex') for (const vertexId of face) this.vertexSelection.add(vertexId);
+    if (this.selectionMode === 'edge') for (let i = 0; i < face.length; i++) {
+      const edgeId = edgeIds.get(keyFor(face[i], face[(i + 1) % face.length]));
+      if (edgeId !== undefined) this.edgeSelection.add(edgeId);
     }
   }
 

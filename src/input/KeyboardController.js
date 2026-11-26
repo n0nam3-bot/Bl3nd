@@ -22,6 +22,8 @@ export class KeyboardController {
     }
     if (event.key==='Tab') { event.preventDefault(); await this.dispatch('mode.toggle_edit'); return; }
     if (event.shiftKey && key==='a') { event.preventDefault(); this.ui.togglePie('add'); return; }
+    if (doc.mode==='edit' && key==='a' && !event.ctrlKey && !event.metaKey) { event.preventDefault(); await this.dispatch(event.altKey?'mesh.clear_selection':'mesh.select_all'); return; }
+    if (doc.mode==='edit' && (event.ctrlKey||event.metaKey) && key==='i') { event.preventDefault(); await this.dispatch('mesh.invert_selection'); return; }
     if (!event.ctrlKey && !event.metaKey && !event.altKey && key==='z') { this.ui.togglePie('shading'); return; }
     if (doc.mode==='edit' && ['1','2','3'].includes(key)) { event.preventDefault(); await this.dispatch('mesh.selection_mode',{mode:({'1':'vertex','2':'edge','3':'face'})[key]}); return; }
     if (key==='g' || key==='r' || key==='s') { event.preventDefault(); const type=({g:'move',r:'rotate',s:'scale'})[key]; await this.dispatch('transform.modal_start',{type,pointer:(this.viewport.getPointerOrigin?.() || this.ui.pointerCenter())}); return; }

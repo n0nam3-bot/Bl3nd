@@ -1,5 +1,5 @@
-const SHELL_CACHE = 'bl3nd-shell-v4';
-const RUNTIME_CACHE = 'bl3nd-runtime-v4';
+const SHELL_CACHE = 'bl3nd-shell-v6';
+const RUNTIME_CACHE = 'bl3nd-runtime-v6';
 const APP_SHELL = [
   './', './index.html', './manifest.json', './src/styles.css',
   './src/main.js', './src/core/DeviceCapabilities.js', './src/core/CommandBus.js',
@@ -7,7 +7,7 @@ const APP_SHELL = [
   './src/operators/ModalTransform.js', './src/operators/MeshOperators.js',
   './src/input/KeyboardController.js', './src/input/TouchController.js',
   './src/io/ModelIO.js', './src/modifiers/ModifierStack.js',
-  './src/ui/Viewport.js', './src/workers/modifier.worker.js', './assets/icon.svg', './assets/icon-192.png', './assets/icon-512.png'
+  './src/ui/Viewport.js', './src/ui/EditModeOverlay.js', './src/workers/modifier.worker.js', './assets/icon.svg', './assets/icon-192.png', './assets/icon-512.png'
 ];
 
 self.addEventListener('install', event => {

@@ -26,3 +26,7 @@
 @media(max-width:650px),(pointer:coarse){.hint-desktop{display:none}.hint-mobile{display:inline}}
 .viewport-hint{max-width:min(76%,720px);white-space:normal;line-height:1.4}
 @media(max-width:650px){.viewport-hint{max-width:calc(100% - 82px);font-size:9px}}
+
+.seg-button.wide{width:auto;min-width:34px;padding:0 6px;font-size:9px}.seg-button:disabled{opacity:.35;cursor:not-allowed}.mobile-select-menu{display:none}
+
+@media(max-width:650px){.seg-button.wide{display:none}.mobile-select-menu{display:inline-flex;align-items:center;height:27px;padding:0 6px;font-size:9px}.viewport-tools{gap:2px;flex:none}.view-label{flex:1;min-width:0;overflow:hidden;font-size:9px;white-space:nowrap}.view-label span:last-child{overflow:hidden;text-overflow:ellipsis}.viewport-toolbar{padding-left:7px;padding-right:7px}}

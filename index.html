@@ -58,6 +58,9 @@
             <button id="selection-vertex" class="seg-button" title="Vertex Select (1)">●</button>
             <button id="selection-edge" class="seg-button" title="Edge Select (2)">╱</button>
             <button id="selection-face" class="seg-button active" title="Face Select (3)">▰</button>
+            <button id="select-all-btn" class="seg-button wide" title="Select all (A)" disabled>All</button>
+            <button id="deselect-btn" class="seg-button wide" title="Deselect all (Alt+A)" disabled>None</button>
+            <button id="selection-menu-btn" class="subtle-button mobile-select-menu" title="Selection actions" disabled>Select ▾</button>
             <span class="toolbar-spacer"></span>
             <button id="shading-btn" class="subtle-button" title="Shading Pie (Z)">Solid ▾</button>
             <button id="frame-btn" class="subtle-button" title="Frame selected (Home)">Frame</button>
@@ -225,7 +228,7 @@
         const hadController = Boolean(navigator.serviceWorker.controller);
         if (hadController) {
           try {
-            const refreshKey = 'bl3nd-cache-refresh-v5';
+            const refreshKey = 'bl3nd-cache-refresh-v6';
             if (!sessionStorage.getItem(refreshKey)) {
               navigator.serviceWorker.addEventListener('controllerchange', () => {
                 sessionStorage.setItem(refreshKey, '1');
