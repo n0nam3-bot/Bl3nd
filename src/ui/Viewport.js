@@ -14,16 +14,33 @@ export class Viewport {
     this.renderer.shadowMap.enabled = true; this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.container.appendChild(this.renderer.domElement);
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
-    this.controls.enableDamping = true; this.controls.dampingFactor = 0.075; this.controls.target.set(0,0,0);
-    this.controls.mouseButtons.LEFT = null;
+    this.controls.enableDamping = true;
+    this.controls.dampingFactor = 0.075;
+    this.controls.target.set(0, 0, 0);
+    this.controls.enableRotate = true;
+    this.controls.enableZoom = true;
+    this.controls.enablePan = true;
+    this.controls.rotateSpeed = 0.85;
+    this.controls.zoomSpeed = 0.9;
+    this.controls.panSpeed = 0.9;
+    this.controls.screenSpacePanning = true;
+    this.controls.minDistance = 0.15;
+    this.controls.maxDistance = 2500;
+    this.controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE;
     this.controls.mouseButtons.MIDDLE = THREE.MOUSE.ROTATE;
     this.controls.mouseButtons.RIGHT = THREE.MOUSE.PAN;
-    this.controls.touches.ONE = THREE.TOUCH.ROTATE; this.controls.touches.TWO = THREE.TOUCH.DOLLY_PAN;
+    this.controls.touches.ONE = THREE.TOUCH.ROTATE;
+    this.controls.touches.TWO = THREE.TOUCH.DOLLY_PAN;
+    this.activeTouchPointers = new Set();
     this.raycaster = new THREE.Raycaster(); this.pointer = new THREE.Vector2();
     this.clock = new THREE.Clock(); this.running = true;
     this.setupStage(); this.resizeObserver = new ResizeObserver(() => this.resize()); this.resizeObserver.observe(container); this.resize();
     this.renderer.domElement.addEventListener('pointerdown', e => this.onPointerDown(e), { capture: true });
     this.renderer.domElement.addEventListener('pointerup', e => this.onPointerUp(e));
+    this.renderer.domElement.addEventListener('pointercancel', e => {
+      this.activeTouchPointers.delete(e.pointerId);
+      if (this.downPoint?.pointerId === e.pointerId) this.downPoint = null;
+    });
     this.renderer.domElement.addEventListener('contextmenu', e => e.preventDefault());
     this.animate();
   }
@@ -47,20 +64,41 @@ export class Viewport {
   }
 
   onPointerDown(event) {
-    this.downPoint = { x:event.clientX, y:event.clientY, button:event.button, time:Date.now() };
+    if (event.pointerType === 'touch') {
+      this.activeTouchPointers.add(event.pointerId);
+      // A second finger starts a gesture, never a tap-selection or cursor long-press.
+      if (this.activeTouchPointers.size > 1) this.downPoint = null;
+      else this.downPoint = { x: event.clientX, y: event.clientY, button: 0, pointerId: event.pointerId, pointerType: 'touch', time: Date.now() };
+    } else {
+      this.downPoint = { x: event.clientX, y: event.clientY, button: event.button, pointerId: event.pointerId, pointerType: 'mouse', time: Date.now() };
+      if (event.button === 0) this.controls.mouseButtons.LEFT = event.shiftKey ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE;
+    }
+
     if (event.button === 1 && event.shiftKey) this.controls.mouseButtons.MIDDLE = THREE.MOUSE.PAN;
     else if (event.button === 1) this.controls.mouseButtons.MIDDLE = THREE.MOUSE.ROTATE;
-    if (event.button === 2 && event.shiftKey) {
-      event.preventDefault(); event.stopImmediatePropagation(); this.placeCursorFromPointer(event.clientX,event.clientY); this.downPoint = null;
+
+    // Shift + right-click places the 3D cursor instead of starting a pan.
+    if (event.pointerType !== 'touch' && event.button === 2 && event.shiftKey) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      this.placeCursorFromPointer(event.clientX, event.clientY);
+      this.downPoint = null;
     }
   }
 
   onPointerUp(event) {
+    if (event.pointerType === 'touch') this.activeTouchPointers.delete(event.pointerId);
+    if (event.button === 0 && event.pointerType !== 'touch') this.controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE;
     if (event.button === 1) this.controls.mouseButtons.MIDDLE = THREE.MOUSE.ROTATE;
-    if (!this.downPoint || this.downPoint.button !== 0) return;
-    const distance = Math.hypot(event.clientX-this.downPoint.x,event.clientY-this.downPoint.y);
-    if (distance < 6 && Date.now()-this.downPoint.time < 650) this.pick(event.clientX,event.clientY);
+
+    const down = this.downPoint;
+    if (!down || down.pointerId !== event.pointerId || down.button !== 0) return;
+    const distance = Math.hypot(event.clientX - down.x, event.clientY - down.y);
+    const isTap = distance < 6 && Date.now() - down.time < 650;
     this.downPoint = null;
+    if (isTap && (event.pointerType !== 'touch' || this.activeTouchPointers.size === 0)) {
+      this.pick(event.clientX, event.clientY);
+    }
   }
 
   pointerToNdc(x,y) {

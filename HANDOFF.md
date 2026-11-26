@@ -85,7 +85,7 @@ Status meanings: **Working** = implemented end-to-end in the current foundation;
 | Modifiers | Partial | Worker-based midpoint subdivision, mirror, array and solidify; not Blender-equivalent. |
 | Undo/redo | Partial | OPFS snapshots with memory fallback; large snapshots can temporarily increase RAM. |
 | Model I/O | Partial | GLB, GLTF, OBJ and STL browser import/export paths; complex scenes/materials/animation need validation. |
-| Desktop/mobile input | Partial | Mouse orbit/pan/zoom, touch navigation, mobile action bar and numeric pad. Device testing remains. |
+| Desktop/mobile input | Partial | Desktop left-drag orbit (stationary click still selects), middle-drag orbit, right-drag/Shift+left-drag pan, wheel zoom; mobile one-finger orbit and two-finger dolly-pan; long-press cursor placement is suppressed during multi-touch. Device testing remains. |
 | Pie menus | Partial | Compact command menus; not true radial Blender pie menus. |
 | Bevel/Loop Cut/sculpt | Not Started | No production implementation yet. |
 | Exact Blender clone | Not Started | No claim of full Blender operator, BMesh, UI, or file-format parity. |
@@ -103,9 +103,10 @@ Status meanings: **Working** = implemented end-to-end in the current foundation;
 9. Undo snapshots are serialized in memory before OPFS write; no chunked serialization or inactive-scene disk paging exists.
 10. Modifier evaluation uses one worker and a full mesh payload; no worker pool, chunk scheduling, cancellation or progress protocol exists.
 11. Large model import/export may temporarily duplicate large geometry buffers; advanced GLTF materials, skinning and animation are not fully validated.
-12. GitHub Actions workflow files must be edited manually because the unpacker deliberately excludes `.github/workflows/**`.
-13. The Pages upload artifact must be created in the `build` job and deployed in the dependent `deploy` job. Do not reintroduce a `gh workflow run pages.yml` step in the unpack workflow; the `workflow_run` event handles deployment after unpack succeeds.
-14. The current Node.js 20 deprecation annotation from older action major versions is a warning, not the cause of the prior artifact lookup failure.
+12. The application uses a system UI font stack and contains no bundled Inter font files or `@font-face` declarations. Requests to `/assets/fonts/Inter-*.woff2` do not originate in the current repository source; if they persist after a clean reload, check injected browser-extension styles or stale browser caches.
+13. GitHub Actions workflow files must be edited manually because the unpacker deliberately excludes `.github/workflows/**`.
+14. The Pages upload artifact must be created in the `build` job and deployed in the dependent `deploy` job. Do not reintroduce a `gh workflow run pages.yml` step in the unpack workflow; the `workflow_run` event handles deployment after unpack succeeds.
+15. The current Node.js 20 deprecation annotation from older action major versions is a warning, not the cause of the prior artifact lookup failure.
 15. The initial starter object is document bootstrap state, not a user operation. Do not route its creation through the CommandBus or undo snapshots; later user-created objects must continue to use the CommandBus.
 
 ## Roadmap
@@ -159,6 +160,13 @@ Status meanings: **Working** = implemented end-to-end in the current foundation;
 - Isolated viewport framing and initial panel refresh as non-fatal startup steps, allowing a valid cube and workspace to remain available if a secondary presentation update fails.
 - Kept all user-triggered object creation routed through the CommandBus with normal undo recording.
 
+### 2026-11-26 — `bl3nd-console-camera-fix.zip` — v0.1.4
+- Fixed `refresh()` calling the nonexistent `refreshModal()` function; it now safely calls `ui?.refreshModal()`, preventing the same ReferenceError from breaking selection, object creation, transforms, and pivot updates.
+- Replaced the Inter font-family preference with a native system UI font stack. No Inter font files or font-face declarations exist in the repository; this removes the app’s dependency on an unavailable custom font.
+- Enabled desktop left-button drag orbit while retaining stationary click-to-select, middle-button orbit, right-button pan, Shift+left drag pan, Shift+middle pan, and wheel zoom.
+- Kept mobile one-finger orbit and two-finger dolly/pan; touch long-press cursor placement now cancels when a second finger joins the gesture.
+- Added visible desktop/mobile navigation hints and advanced the service-worker shell/runtime cache to v3 so deployed clients replace the earlier cached scripts.
+
 ## Next Roadmap Step
 
-Verify starter-cube creation and recovery behavior in desktop and mobile browsers, then continue Phase 1 by improving mesh-selection visualization and topology correctness. Keep all application updates zero-build and delta-ZIP only.
+Verify the startup/selection repair and camera gestures in desktop and mobile browsers, then continue Phase 1 by improving mesh-selection visualization and topology correctness. Keep all application updates zero-build and delta-ZIP only.

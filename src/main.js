@@ -241,7 +241,7 @@ function refresh() {
     input.value=mesh ? (kind==='rotation'?THREE.MathUtils.radToDeg(mesh.rotation[axis]):mesh[kind][axis]).toFixed(2) : '';
     input.disabled=!mesh;
   });
-  refreshCursor(); refreshModifiers(); refreshModal();
+  refreshCursor(); refreshModifiers(); ui?.refreshModal();
 }
 
 ui = {

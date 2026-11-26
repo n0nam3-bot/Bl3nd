@@ -64,7 +64,10 @@
           </div>
         </div>
         <div id="viewport" class="viewport" tabindex="0" aria-label="3D viewport">
-          <div class="viewport-hint" id="viewport-hint">Tap an object to select · Drag with one finger to orbit</div>
+          <div class="viewport-hint" id="viewport-hint">
+            <span class="hint-desktop">Drag to orbit · Right-drag to pan · Shift-drag to pan · Scroll to zoom · Click to select</span>
+            <span class="hint-mobile">One finger to orbit · Two fingers to pan/zoom · Long press for 3D Cursor</span>
+          </div>
           <div class="axis-gizmo" aria-label="View axes">
             <button data-view="front" class="axis-x">X</button>
             <button data-view="right" class="axis-y">Y</button>
@@ -218,7 +221,7 @@
         const hadController = Boolean(navigator.serviceWorker.controller);
         if (hadController) {
           try {
-            const refreshKey = 'bl3nd-cache-refresh-v2';
+            const refreshKey = 'bl3nd-cache-refresh-v3';
             if (!sessionStorage.getItem(refreshKey)) {
               navigator.serviceWorker.addEventListener('controllerchange', () => {
                 sessionStorage.setItem(refreshKey, '1');
