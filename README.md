@@ -18,8 +18,9 @@ The application does not require a build command. Open the GitHub Pages URL afte
 - `Tab`: Object/Edit Mode
 - `G`, `R`, `S`: start Move, Rotate or Scale; move the pointer to preview
 - Free `G` follows the current camera view plane, so screen-right/screen-up move with the current view
-- `X`, `Y`, `Z`: constrain to a global axis; `Shift + X/Y/Z`: constrain move/scale to the plane perpendicular to that axis
-- Free `R` uses a camera-oriented virtual trackball; `R` + `X/Y/Z` rotates around a global axis
+- `X`, `Y`, `Z`: constrain to an axis; `Shift + X/Y/Z`: constrain move/scale to the plane perpendicular to that axis
+- `,` during a transform toggles **Global / Local** orientation. Global is the default; Local uses the object's world-space starting axes for axis-constrained Move, Rotate and Scale. The mobile transform pad has the same toggle.
+- Free `R` uses a camera-oriented virtual trackball; `R` + `X/Y/Z` rotates around the chosen Global or Local axis
 - Numeric keys, `Enter`, `Esc`: enter a value, apply, cancel
 - Press `G/R/S` with the pointer over the viewport to begin there; otherwise the viewport center is used
 - Edit Mode `1/2/3`: vertex/edge/face selection; selected topology is drawn directly over the mesh

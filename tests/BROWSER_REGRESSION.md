@@ -100,6 +100,15 @@ Record each step as Pass / Fail / Not tested. If a region-tool result is unexpec
 - v0.1.39 tests the best-view direction for planar, multi-plane, six-sided and area-weighted face sets. v0.1.40 adds a focused-face regression showing that one active Individual Faces target overrides a balanced whole-selection view.
 - The owner confirmed on Android that v0.1.40 active-face focus follows the face when switching targets. v0.1.39 whole-selection framing had previously failed to move for a balanced eight-face selection; v0.1.40 addresses Individual Faces focus specifically. Desktop browser testing remains deferred.
 
+
+## Transform orientation regression — v0.1.43 (automated; browser acceptance pending)
+
+- `tests/TransformOrientation.test.js` verifies Global axes remain world-aligned, Local axes follow a rotated object's quaternion, the resulting basis stays normalized/orthogonal, and invalid quaternion data falls back safely.
+- On a rotated object, start Move with `G`, press `X`, then `,` to switch Global → Local. The constrained direction must change from world X to the object's starting local X direction. Repeat for `R` and `S`; confirm `Shift+X/Y/Z` uses the selected orientation's plane normal. Toggle back to Global and confirm the world-axis behavior returns.
+- On mobile, use the **GLOBAL AXES · SWITCH TO LOCAL** button in the numeric pad, then confirm it changes to **LOCAL AXES · SWITCH TO GLOBAL** and the readout names the active orientation. Axis constraints must update without a new modal start.
+- Confirm free movement still follows the camera-facing view plane and free rotation still uses the camera-oriented trackball. Local axes must remain anchored to the object's orientation at modal start while pointer previews update; Cancel restores the original transform and Apply creates one undoable operation.
+- Object-mode Global axis scaling retains its documented TRS approximation; Local axis scaling follows the object's local scale components. This update does not add snapping, proportional editing or exact multi-object pivot aggregation.
+
 ## Curved-surface Face Bevel regression — v0.1.42 (automated; Android retest pending)
 
 - `tests/CurvedFaceBevel.test.js` covers a triangulated spherical-cap patch, welded raised top seams, triangulated transition strips at 1–8 segments and all profile endpoints, planar-path separation, sharp-crease rejection and modal fallback to Individual Faces, invalid controls, modal preview/commit, mode switching and Cancel restoration. v0.1.42 adds an intentionally intersecting detached triangle that must reject atomically and a distant disconnected triangle that must not block a valid patch.

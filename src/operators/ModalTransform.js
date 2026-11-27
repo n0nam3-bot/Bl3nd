@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { resolveTransformAxis } from '../core/TransformOrientation.js';
 
 const AXES = {
   x: new THREE.Vector3(1, 0, 0),
@@ -37,6 +38,8 @@ export class ModalTransform {
     this.worldPivot = new THREE.Vector3();
     this.viewFrame = null;
     this.arcballStart = null;
+    this.orientation = 'global';
+    this.startWorldQuaternion = new THREE.Quaternion();
   }
 
   async begin(type, pointer = null) {
@@ -50,6 +53,7 @@ export class ModalTransform {
     this.numeric = '';
     this.object = this.document.activeObject;
     this.object.updateWorldMatrix(true, false);
+    this.startWorldQuaternion.copy(this.object.getWorldQuaternion(new THREE.Quaternion()));
     const origin = pointer || this.viewport?.getPointerOrigin?.() || { x: 0, y: 0 };
     this.startPointer = { x: Number(origin.x) || 0, y: Number(origin.y) || 0 };
     this.lastPointer = { ...this.startPointer };
@@ -91,7 +95,7 @@ export class ModalTransform {
     this.viewFrame = this.captureViewFrame();
     this.arcballStart = this.mapArcball(this.startPointer);
     this.active = true;
-    this.status?.(`${type.toUpperCase()} · drag in the current view · X/Y/Z global axis · Shift+axis plane · numeric value · Enter apply · Esc cancel`);
+    this.status?.(`${type.toUpperCase()} · ${this.orientation.toUpperCase()} orientation · drag in the current view · X/Y/Z axis · Shift+axis plane · numeric value · Enter apply · Esc cancel`);
     this.onChange?.();
     return true;
   }
@@ -138,8 +142,13 @@ export class ModalTransform {
     return new THREE.Vector2(delta.x, -delta.y);
   }
 
+  axisVector(axisName) {
+    const axis = resolveTransformAxis(axisName, this.orientation, this.startWorldQuaternion.toArray());
+    return axis ? new THREE.Vector3(...axis) : null;
+  }
+
   projectedAxis(axisName) {
-    const axis = AXES[axisName];
+    const axis = this.axisVector(axisName);
     const camera = this.viewFrame?.camera;
     if (!axis || !camera) return new THREE.Vector2(0, 0);
     const start = this.worldPivot.clone().project(camera);
@@ -158,7 +167,7 @@ export class ModalTransform {
   }
 
   planeBasis(normalName) {
-    const normal = AXES[normalName].clone().normalize();
+    const normal = this.axisVector(normalName)?.normalize() || AXES[normalName].clone().normalize();
     const right = this.viewFrame.right;
     const up = this.viewFrame.up;
     let u = right.clone().addScaledVector(normal, -right.dot(normal));
@@ -172,13 +181,13 @@ export class ModalTransform {
   getMoveWorldDelta(numeric) {
     const amount = Number(this.numeric);
     if (numeric) {
-      if (this.axis) return AXES[this.axis].clone().multiplyScalar(amount);
+      if (this.axis) return this.axisVector(this.axis).multiplyScalar(amount);
       if (this.planeNormal) return this.planeBasis(this.planeNormal).u.multiplyScalar(amount);
       return this.viewFrame.right.clone().multiplyScalar(amount);
     }
 
     const delta = this.screenDelta;
-    if (this.axis) return AXES[this.axis].clone().multiplyScalar(this.axisMouseAmount(this.axis));
+    if (this.axis) return this.axisVector(this.axis).multiplyScalar(this.axisMouseAmount(this.axis));
     if (this.planeNormal) {
       const { u, v } = this.planeBasis(this.planeNormal);
       return u.multiplyScalar(delta.x * this.viewFrame.unitsPerPixel)
@@ -203,7 +212,7 @@ export class ModalTransform {
   rotationDelta(numeric) {
     const constrainedAxis = this.axis || this.planeNormal;
     if (numeric) {
-      const axis = constrainedAxis ? AXES[constrainedAxis] : this.viewFrame.forward;
+      const axis = constrainedAxis ? this.axisVector(constrainedAxis) : this.viewFrame.forward;
       return new THREE.Quaternion().setFromAxisAngle(axis, THREE.MathUtils.degToRad(Number(this.numeric)));
     }
     if (constrainedAxis) {
@@ -212,7 +221,7 @@ export class ModalTransform {
         ? new THREE.Vector2(1, 0)
         : new THREE.Vector2(-projected.y, projected.x).normalize();
       const radians = this.screenDelta.dot(tangent) * 0.01;
-      return new THREE.Quaternion().setFromAxisAngle(AXES[constrainedAxis], radians);
+      return new THREE.Quaternion().setFromAxisAngle(this.axisVector(constrainedAxis), radians);
     }
     const current = this.mapArcball(this.lastPointer);
     const cameraDelta = new THREE.Quaternion().setFromUnitVectors(this.arcballStart, current);
@@ -234,11 +243,11 @@ export class ModalTransform {
 
   scaleWorldOffset(offset, factor) {
     if (this.axis) {
-      const axis = AXES[this.axis];
+      const axis = this.axisVector(this.axis);
       return offset.clone().addScaledVector(axis, offset.dot(axis) * (factor - 1));
     }
     if (this.planeNormal) {
-      const normal = AXES[this.planeNormal];
+      const normal = this.axisVector(this.planeNormal);
       const inPlane = offset.clone().addScaledVector(normal, -offset.dot(normal));
       return offset.clone().addScaledVector(inPlane, factor - 1);
     }
@@ -322,7 +331,18 @@ export class ModalTransform {
     if (plane) { this.axis = null; this.planeNormal = axis; }
     else { this.axis = axis; this.planeNormal = null; }
     this.apply();
+    this.status?.(`${this.type.toUpperCase()} · ${this.orientation.toUpperCase()} ${plane ? `${axis.toUpperCase()} plane` : `${axis.toUpperCase()} axis`} · Enter apply / Esc cancel`);
     this.onChange?.();
+  }
+
+  toggleOrientation() {
+    if (!this.active) return false;
+    this.orientation = this.orientation === 'global' ? 'local' : 'global';
+    this.apply();
+    const constraint = this.axis ? `${this.axis.toUpperCase()} axis` : this.planeNormal ? `${this.planeNormal.toUpperCase()} plane` : 'free view-plane';
+    this.status?.(`${this.type.toUpperCase()} · ${this.orientation.toUpperCase()} orientation · ${constraint} · Enter apply / Esc cancel`);
+    this.onChange?.();
+    return this.orientation;
   }
 
   appendNumeric(value) {

@@ -532,6 +532,7 @@ function registerCommands() {
   commandBus.register('transform.modal_cancel', async () => { const result = await modalTransform.cancel(); viewport.controls.enabled = true; await reapplyModifiers(); refresh(); return result; }, { recordUndo: false });
   commandBus.register('transform.modal_update', ({ point }) => { modalTransform.pointerMove(point); }, { recordUndo: false });
   commandBus.register('transform.modal_axis', ({ axis, plane = false }) => { modalTransform.setAxis(axis, plane); ui.refreshModal(); }, { recordUndo: false });
+  commandBus.register('transform.modal_orientation_toggle', () => modalTransform.toggleOrientation(), { recordUndo: false });
   commandBus.register('transform.modal_input', ({ value }) => { modalTransform.appendNumeric(value); ui.refreshModal(); }, { recordUndo: false });
   commandBus.register('cursor.set', ({ point }) => { sceneDocument.cursor.fromArray(point); refreshCursor(); return true; }, { recordUndo: false });
   commandBus.register('pivot.set', ({ pivot }) => { sceneDocument.pivot = pivot; refresh(); }, { recordUndo: false });
@@ -666,6 +667,8 @@ ui = {
   refreshModal(){
     const readout=$('#modal-readout'),pad=$('#numeric-pad'),padTitle=pad.querySelector('.pad-title');
     const axisButtons=pad.querySelectorAll('[data-axis]');
+    const orientationButton=$('#pad-transform-orientation');
+    orientationButton.hidden=true;
     const negativeKey=pad.querySelector('[data-key="-"]');
     if(faceOperationModal.active){
       negativeKey.hidden=faceOperationModal.operation!=='extrude';
@@ -762,9 +765,9 @@ ui = {
     axisButtons.forEach(button=>button.hidden=false);
     negativeKey.hidden=false;
     if(!modalTransform.active){readout.hidden=true;pad.hidden=true;return;}
-    const axis=modalTransform.axis?` · ${modalTransform.axis.toUpperCase()} axis`:modalTransform.planeNormal?` · ${modalTransform.planeNormal.toUpperCase()} plane`:'';
-    readout.hidden=false; readout.textContent=`${modalTransform.type.toUpperCase()}${axis} · ${modalTransform.numeric || 'mouse'} · Enter apply / Esc cancel`;
-    pad.hidden=!capabilities.tier.includes('Mobile'); $('#pad-value').textContent=modalTransform.numeric || '0';
+    const axis=modalTransform.axis?` · ${modalTransform.orientation.toUpperCase()} ${modalTransform.axis.toUpperCase()} axis`:modalTransform.planeNormal?` · ${modalTransform.orientation.toUpperCase()} ${modalTransform.planeNormal.toUpperCase()} plane`:` · ${modalTransform.orientation.toUpperCase()} orientation`;
+    readout.hidden=false; readout.textContent=`${modalTransform.type.toUpperCase()}${axis} · ${modalTransform.numeric || 'mouse'} · , switches Global/Local · Enter apply / Esc cancel`;
+    pad.hidden=!capabilities.tier.includes('Mobile'); orientationButton.hidden=false; orientationButton.textContent=`${modalTransform.orientation.toUpperCase()} AXES · SWITCH TO ${modalTransform.orientation==='global'?'LOCAL':'GLOBAL'}`; orientationButton.setAttribute('aria-label',`Current orientation: ${modalTransform.orientation}. Switch to ${modalTransform.orientation==='global'?'Local':'Global'}.`); orientationButton.setAttribute('aria-pressed',String(modalTransform.orientation==='local')); $('#pad-value').textContent=modalTransform.numeric || '0';
   }
 };
 loadingProgress(73, 'Building the workspace panels and editing controls…');
@@ -831,6 +834,7 @@ $('#pie-menu').addEventListener('click',async event=>{
 });
 $('#shading-btn').addEventListener('click',()=>ui.togglePie('shading'));
 $('#numeric-pad').addEventListener('click',async event=>{
+  if(modalTransform.active && event.target.closest('#pad-transform-orientation')){await run('transform.modal_orientation_toggle');return;}
   if(faceOperationModal.active){
     const faceKeyButton=event.target.closest('button[data-key]');if(!faceKeyButton)return;const faceKey=faceKeyButton.dataset.key;
     if(faceKey==='enter'){await run('mesh.face_operation_confirm');return;}

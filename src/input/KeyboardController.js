@@ -53,6 +53,7 @@ export class KeyboardController {
     if ((event.ctrlKey||event.metaKey) && key==='b') { event.preventDefault(); if(doc.mode==='edit') await this.dispatch('mesh.bevel'); return; }
     if ((event.ctrlKey||event.metaKey) && key==='r') { event.preventDefault(); if(doc.mode==='edit') await this.dispatch('mesh.loop_cut'); return; }
     if (this.modal.active) {
+      if (key===',') { event.preventDefault(); await this.dispatch('transform.modal_orientation_toggle'); return; }
       if (key==='escape') { event.preventDefault(); await this.dispatch('transform.modal_cancel'); return; }
       if (key==='enter') { event.preventDefault(); await this.dispatch('transform.modal_confirm'); return; }
       if (['x','y','z'].includes(key) && !event.ctrlKey && !event.altKey) { event.preventDefault(); await this.dispatch('transform.modal_axis',{axis:key,plane:event.shiftKey}); return; }
