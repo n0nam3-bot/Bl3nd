@@ -50,3 +50,6 @@ body.loop-cut-modal-active .topbar,body.loop-cut-modal-active .tool-rail,body.lo
 .modal-readout{max-width:calc(100% - 16px);white-space:normal;text-align:center;line-height:1.35}
 
 body.bevel-modal-active .topbar,body.bevel-modal-active .tool-rail,body.bevel-modal-active .properties-panel,body.bevel-modal-active .viewport-toolbar,body.bevel-modal-active .viewport-footer,body.bevel-modal-active .mobile-actionbar{pointer-events:none;opacity:.55}body.bevel-modal-active #numeric-pad{pointer-events:auto;opacity:1}body.bevel-modal-active .modal-readout,body.bevel-modal-active .axis-gizmo,body.bevel-modal-active .pie-menu{pointer-events:none;opacity:.55}
+
+/* Transactional face-operation previews share the mobile numeric pad. */
+body.face-operation-modal-active .topbar,body.face-operation-modal-active .tool-rail,body.face-operation-modal-active .properties-panel,body.face-operation-modal-active .viewport-toolbar,body.face-operation-modal-active .viewport-footer,body.face-operation-modal-active .mobile-actionbar{pointer-events:none;opacity:.55}body.face-operation-modal-active #numeric-pad{pointer-events:auto;opacity:1}body.face-operation-modal-active .modal-readout,body.face-operation-modal-active .axis-gizmo,body.face-operation-modal-active .pie-menu{pointer-events:none;opacity:.55}

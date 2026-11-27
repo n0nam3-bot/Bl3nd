@@ -97,6 +97,7 @@ export class Viewport {
   onPointerDown(event) {
     this.lastPointer = { x: event.clientX, y: event.clientY };
     if (this.modalOperationActive) {
+      this.onModalPointerStart?.(event);
       event.preventDefault();
       try { this.renderer.domElement.setPointerCapture(event.pointerId); } catch { /* capture is unavailable for some synthetic pointers */ }
       event.stopImmediatePropagation();

@@ -1,6 +1,6 @@
 export class KeyboardController {
-  constructor({ viewport, commandBus, modalTransform, loopCutModal = null, bevelModal = null, getDocument, ui, notify }) {
-    this.viewport=viewport; this.commandBus=commandBus; this.modal=modalTransform; this.loopCutModal=loopCutModal; this.bevelModal=bevelModal; this.getDocument=getDocument; this.ui=ui; this.notify=notify;
+  constructor({ viewport, commandBus, modalTransform, loopCutModal = null, bevelModal = null, faceOperationModal = null, getDocument, ui, notify }) {
+    this.viewport=viewport; this.commandBus=commandBus; this.modal=modalTransform; this.loopCutModal=loopCutModal; this.bevelModal=bevelModal; this.faceOperationModal=faceOperationModal; this.getDocument=getDocument; this.ui=ui; this.notify=notify;
     this.listener=event=>this.onKeyDown(event); window.addEventListener('keydown',this.listener);
   }
   dispatch(name,payload={}) { return this.commandBus.dispatch(name,{...payload,document:this.getDocument()}); }
@@ -8,6 +8,16 @@ export class KeyboardController {
   async onKeyDown(event) {
     if (this.isTyping(event.target)) return;
     const key=event.key.toLowerCase(), doc=this.getDocument();
+    if (this.faceOperationModal?.active) {
+      if (key==='escape') { event.preventDefault(); await this.dispatch('mesh.face_operation_cancel'); return; }
+      if (key==='enter') { event.preventDefault(); await this.dispatch('mesh.face_operation_confirm'); return; }
+      if (key==='arrowleft' || key==='arrowdown') { event.preventDefault(); await this.dispatch('mesh.face_operation_nudge',{direction:-1,fine:event.shiftKey}); return; }
+      if (key==='arrowright' || key==='arrowup') { event.preventDefault(); await this.dispatch('mesh.face_operation_nudge',{direction:1,fine:event.shiftKey}); return; }
+      if (/^\d$/.test(key) || key==='.' || key==='backspace' || (key==='-' && this.faceOperationModal.operation==='extrude')) {
+        event.preventDefault(); await this.dispatch('mesh.face_operation_input',{value:key==='backspace'?'backspace':key}); return;
+      }
+      return;
+    }
     if (this.bevelModal?.active) {
       if (key==='escape') { event.preventDefault(); await this.dispatch('mesh.bevel_cancel'); return; }
       if (key==='enter') { event.preventDefault(); await this.dispatch('mesh.bevel_confirm'); return; }

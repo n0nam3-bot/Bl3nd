@@ -8,7 +8,7 @@ Open the deployed app only after the latest Pages workflow succeeds:
 
 `https://n0nam3-bot.github.io/Bl3nd/`
 
-Build under desktop test: v0.1.27, `main` commit `34388f2edf4c243aacdc4bd7a934ca3775aa6bde`, Pages workflow run #35. Reload the app and allow the v25 service-worker cache to activate before testing.
+Latest deployed baseline before v0.1.29: v0.1.28, `main` commit `ca867f1fc301479447b22575d5292519fd8d6f73`, Pages workflow run #36. After uploading v0.1.29, reload and allow the v26 service-worker cache to activate before testing.
 
 ## Desktop — Chrome or Edge
 
@@ -30,10 +30,12 @@ Record each step as Pass / Fail / Not tested. If a region-tool result is unexpec
 1. Open the same deployed URL in Chrome on the phone. Reload after the deployment. Confirm the loading overlay disappears, the viewport fills its intended area, the properties panel and bottom action bar remain usable, and no startup error is shown.
 2. Use one finger to orbit. Use two fingers to pan/zoom. Confirm gestures do not become stuck after lifting either finger.
 3. Enter Edit Mode and switch to Edge Select. Open `Select ▾` and try each region tool. For Circle, a single tap centered on a visible corner should select nearby incident edges using the 25px brush radius. For Box or Lasso, draw one narrow region across a visible L-shaped pair or simple connected edge path; all visible edge segments intersecting that region should highlight, even when the region crosses between the old fixed sample positions. A selection of exactly two adjacent edges can start the supported corner miter. A longer selection must form one simple path. Three edges radiating from one vertex are a branch: the region tool may select them, but Bevel must reject them without changing the mesh. Vertex-only Bevel is not implemented.
-4. Start Bevel. Drag horizontally to adjust width. Use the on-screen segment and profile `+` / `−` controls. Confirm the numeric pad/readout reflects the settings and the model preview updates.
-5. Cancel once with the on-screen Cancel/Escape control. Confirm the original mesh returns. Start Bevel again and apply it with the on-screen Apply/Enter control.
-6. Tap Undo, then Redo. Confirm the mesh returns to the expected pre- and post-Bevel states.
-7. Repeat one-finger orbit and two-finger pan/zoom after Bevel has ended. Confirm viewport controls are re-enabled.
+4. Switch to Face Select and tap one visible cube face. Start Extrude from the bottom action bar or Edit Mesh panel. Drag vertically, then enter an exact distance with the numeric pad. Confirm the mesh previews the new position; Cancel must restore the original. Start it again and Apply; Undo/Redo must restore both states.
+5. Start Inset on one face. Drag vertically or enter an amount between 0.005 and 0.9. Confirm the inner face and border preview update. Cancel once, then repeat and Apply. Undo/Redo must restore both states. A multi-face Inset selection is currently unsupported and must be rejected without mutation.
+6. Start Bevel. Drag horizontally to adjust width. Use the on-screen segment and profile `+` / `−` controls. Confirm the numeric pad/readout reflects the settings and the model preview updates.
+7. Cancel once with the on-screen Cancel/Escape control. Confirm the original mesh returns. Start Bevel again and apply it with the on-screen Apply/Enter control.
+8. Tap Undo, then Redo. Confirm the mesh returns to the expected pre- and post-Bevel states.
+9. Repeat one-finger orbit and two-finger pan/zoom after each modal operation has ended. Confirm viewport controls are re-enabled.
 
 ## Recorded mobile run — v0.1.26 (user-reported, 2026-11-26)
 
@@ -48,6 +50,19 @@ Record each step as Pass / Fail / Not tested. If a region-tool result is unexpec
 - The earlier v0.1.26 startup, navigation, Bevel controls, cancel, apply and undo/redo passes were not changed by this selection-only update and remain the recorded results.
 - Three-edge branch rejection was requested as an additional safety check but was not explicitly confirmed in the user's report; keep it **Not tested** until checked.
 - Device model, OS and exact browser/version were not supplied. Desktop Chrome/Edge regression remains untested.
+
+## Recorded mobile run — v0.1.27 (user-reported, 2026-11-26)
+
+- Startup/layout: **Pass**.
+- One-finger orbit and two-finger pan/zoom: **Pass**.
+- Circle corner selection and Box/Lasso multi-edge region selection after v0.1.27: **Pass**.
+- Bevel controls, cancel, apply, undo/redo and restored viewport navigation: **Pass**.
+- Device/browser details were not supplied. The user cannot run the desktop regression soon; desktop testing is deferred and must not block continued modeling work. The browser-specific PC checklist remains unverified.
+
+## Face-operation regression — v0.1.29 (automated; device run pending)
+
+- Node tests cover modal Extrude and Inset preview, numeric input, negative Extrude, connected planar-region support, one-face Inset restriction, cancel restoration, one-step commit, safe rejection of invalid/disconnected selections, and drag anchoring on the actual pointer-down rather than the previous face-selection location.
+- Repeat these controls on Android Chrome after deployment. Desktop pointer behavior remains untested and is deferred until the user can access a PC; it does not block continued modeling work.
 
 ## Record results
 
