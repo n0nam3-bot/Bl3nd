@@ -1,0 +1,278 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { HalfEdgeMesh } from '../src/core/HalfEdgeMesh.js';
+import { BevelModal } from '../src/operators/BevelModal.js';
+
+const cubePositions = [
+  [-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],
+  [-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1]
+];
+const cubeFaces = [
+  [0,3,2,1],[4,5,6,7],[0,1,5,4],
+  [1,2,6,5],[2,3,7,6],[3,0,4,7]
+];
+
+function selectedMesh(positions, faces, selectedIds, { reverse = false } = {}) {
+  const sourceFaces = reverse ? faces.map(face => [...face].reverse()) : faces;
+  const mesh = new HalfEdgeMesh(positions, sourceFaces);
+  mesh.setSelectionMode('face');
+  selectedIds.forEach((id, index) => mesh.selectFace(id, index > 0));
+  return mesh;
+}
+
+function snapshot(mesh) {
+  return JSON.stringify({
+    positions: mesh.positions,
+    faces: mesh.faces,
+    mode: mesh.selectionMode,
+    selection: [...mesh.faceSelection].sort((a, b) => a - b)
+  });
+}
+
+function makeSession(hem) {
+  const mesh = { userData: { hem } };
+  const document = {
+    mode: 'edit',
+    selectionMode: 'face',
+    activeObject: mesh,
+    updateMesh() {},
+    async serialize() {
+      return {
+        selectionMode: this.selectionMode,
+        positions: mesh.userData.hem.positions.map(point => [...point]),
+        faces: mesh.userData.hem.faces.map(face => [...face]),
+        faceSelection: [...mesh.userData.hem.faceSelection]
+      };
+    },
+    async restore(value) {
+      const restored = new HalfEdgeMesh(value.positions, value.faces);
+      restored.setSelectionMode(value.selectionMode);
+      restored.faceSelection = new Set(value.faceSelection || []);
+      mesh.userData.hem = restored;
+      this.selectionMode = value.selectionMode;
+    }
+  };
+  const commits = [];
+  const undoManager = { async record(label, before, after) { commits.push({ label, before, after }); } };
+  const viewport = {
+    lastPointer: { x: 100, y: 80 },
+    renderer: { domElement: { getBoundingClientRect: () => ({ left: 0, top: 0, right: 400, bottom: 240, width: 400, height: 240 }) } }
+  };
+  return { hem, mesh, document, commits, undoManager, viewport };
+}
+
+test('Face Bevel raises a convex cube face and creates a validated mitered perimeter wall', () => {
+  const mesh = selectedMesh(cubePositions, cubeFaces, [1]);
+  const before = snapshot(mesh);
+  const result = mesh.bevelSelectedFaceRegion({ amount: 0.25 });
+
+  assert.equal(result.changed, true, result.reason);
+  assert.equal(result.operation, 'face-region');
+  assert.equal(result.selectedFaces, 1);
+  assert.equal(result.boundaryEdges, 4);
+  assert.equal(result.insertedVertices, 4);
+  assert.equal(result.createdFaces, 4);
+  assert.equal(result.convexCorners, 4);
+  assert.ok(Math.abs(result.width - 0.225) < 1e-10);
+  assert.ok(Math.abs(result.height - result.width) < 1e-12);
+  assert.deepEqual(result.normal, [0, 0, 1]);
+  const raised = mesh.positions.slice(8);
+  const expected = [
+    [-0.775,-0.775,1.225], [0.775,-0.775,1.225],
+    [0.775,0.775,1.225], [-0.775,0.775,1.225]
+  ];
+  raised.forEach((point, index) => point.forEach((value, axis) => assert.ok(Math.abs(value - expected[index][axis]) < 1e-10)));
+  assert.equal(mesh.faces.length, 10);
+  assert.equal(mesh.faceSelection.size, 1);
+  assert.equal(mesh.validateTopology().valid, true);
+  assert.notEqual(snapshot(mesh), before);
+});
+
+test('connected planar face region keeps its internal seam welded after Face Bevel', () => {
+  const mesh = selectedMesh(
+    [[0,0,0],[1,0,0],[2,0,0],[0,1,0],[1,1,0],[2,1,0]],
+    [[0,1,4,3],[1,2,5,4]],
+    [0,1]
+  );
+  const result = mesh.bevelSelectedFaceRegion({ amount: 0.25 });
+  assert.equal(result.changed, true, result.reason);
+  assert.equal(result.selectedFaces, 2);
+  assert.equal(result.boundaryEdges, 6);
+  assert.equal(result.insertedVertices, 6);
+  assert.equal(mesh.faceSelection.size, 2);
+  const selected = new Set(mesh.faceSelection);
+  const innerSeams = mesh.edges.filter(edge => edge.halfEdges.length === 2 &&
+    edge.halfEdges.every(halfEdge => selected.has(halfEdge.face.id)));
+  assert.equal(innerSeams.length, 1);
+  assert.equal(mesh.validateTopology().valid, true);
+});
+
+test('Face Bevel follows a rotated region normal and keeps bevel walls planar', () => {
+  const angle = Math.PI / 5;
+  const positions = [[0,0],[2,0],[2,1],[0,1]].map(([x,y]) => [x, y * Math.cos(angle), y * Math.sin(angle)]);
+  const mesh = selectedMesh(positions, [[0,1,2,3]], [0]);
+  const result = mesh.bevelSelectedFaceRegion({ amount: 0.2 });
+  assert.equal(result.changed, true, result.reason);
+  assert.ok(Math.abs(result.normal[0]) < 1e-10);
+  assert.ok(Math.abs(result.normal[1] + Math.sin(angle)) < 1e-10);
+  assert.ok(Math.abs(result.normal[2] - Math.cos(angle)) < 1e-10);
+  assert.equal(mesh.validateTopology().valid, true);
+  assert.equal(mesh.faces.length, 5);
+});
+
+test('Face Bevel preserves reversed region winding', () => {
+  const mesh = selectedMesh(
+    [[0,0,0],[2,0,0],[2,2,0],[0,2,0]],
+    [[0,1,2,3]],
+    [0],
+    { reverse: true }
+  );
+  const result = mesh.bevelSelectedFaceRegion({ amount: 0.2 });
+  assert.equal(result.changed, true, result.reason);
+  assert.deepEqual(result.normal, [0, 0, -1]);
+  assert.ok(mesh.positions.slice(4).every(point => Math.abs(point[2] + result.width) < 1e-10));
+  assert.equal(mesh.validateTopology().valid, true);
+});
+
+test('reflex/concave corners are explicitly rejected without changing the source', () => {
+  const mesh = selectedMesh(
+    [[0,0,0],[1,0,0],[2,0,0],[0,1,0],[1,1,0],[2,1,0],[0,2,0],[1,2,0]],
+    [[0,1,4,3],[1,2,5,4],[3,4,7,6]],
+    [0,1,2]
+  );
+  const before = snapshot(mesh);
+  const analysis = mesh.analyzeFaceRegion([...mesh.faceSelection]);
+  assert.equal(analysis.hasConcaveCorners, true);
+  assert.equal(mesh.bevelSelectedFaceRegion({ amount: 0.1 }).changed, false);
+  assert.equal(snapshot(mesh), before);
+});
+
+test('a selected region with a hole is rejected without mutation', () => {
+  const positions = [];
+  for (let y = 0; y <= 3; y++) for (let x = 0; x <= 3; x++) positions.push([x,y,0]);
+  const faces = [];
+  for (let y = 0; y < 3; y++) for (let x = 0; x < 3; x++) {
+    if (x === 1 && y === 1) continue;
+    const a = y * 4 + x;
+    faces.push([a,a+1,a+5,a+4]);
+  }
+  const mesh = selectedMesh(positions, faces, faces.map((_, index) => index));
+  const before = snapshot(mesh);
+  const result = mesh.bevelSelectedFaceRegion({ amount: 0.1 });
+  assert.equal(result.changed, false);
+  assert.match(result.reason, /boundary loop|holes/i);
+  assert.equal(snapshot(mesh), before);
+});
+
+test('disconnected face islands are rejected without mutation', () => {
+  const mesh = selectedMesh(
+    [[0,0,0],[1,0,0],[1,1,0],[0,1,0],[3,0,0],[4,0,0],[4,1,0],[3,1,0]],
+    [[0,1,2,3],[4,5,6,7]],
+    [0,1]
+  );
+  const before = snapshot(mesh);
+  const result = mesh.bevelSelectedFaceRegion({ amount: 0.1 });
+  assert.equal(result.changed, false);
+  assert.match(result.reason, /connected/i);
+  assert.equal(snapshot(mesh), before);
+});
+
+test('non-planar face regions are rejected without mutation', () => {
+  const mesh = selectedMesh(
+    [[0,0,0],[2,0,0],[2,2,0.2],[0,2,0]],
+    [[0,1,2,3]],
+    [0]
+  );
+  const before = snapshot(mesh);
+  const result = mesh.bevelSelectedFaceRegion({ amount: 0.1 });
+  assert.equal(result.changed, false);
+  assert.match(result.reason, /coplanar/i);
+  assert.equal(snapshot(mesh), before);
+});
+
+test('near-parallel acute corners reject excessive miter candidates without mutation', () => {
+  const mesh = selectedMesh(
+    [[0,0,0],[2,0,0],[2,0.05,0]],
+    [[0,1,2]],
+    [0]
+  );
+  const before = snapshot(mesh);
+  const result = mesh.bevelSelectedFaceRegion({ amount: 0.25 });
+  assert.equal(result.changed, false);
+  assert.match(result.reason, /miter/i);
+  assert.equal(snapshot(mesh), before);
+});
+
+test('invalid amount and wrong selection mode reject without mutation', () => {
+  const mesh = selectedMesh(cubePositions, cubeFaces, [1]);
+  const before = snapshot(mesh);
+  for (const amount of [0, -0.1, 1, 2, NaN, Infinity]) {
+    assert.equal(mesh.bevelSelectedFaceRegion({ amount }).changed, false);
+    assert.equal(snapshot(mesh), before);
+  }
+  mesh.setSelectionMode('edge');
+  const edgeMode = snapshot(mesh);
+  assert.equal(mesh.bevelSelectedFaceRegion({ amount: 0.25 }).changed, false);
+  assert.equal(snapshot(mesh), edgeMode);
+});
+
+test('Face Bevel modal previews from immutable source and applies amount updates', async () => {
+  const session = makeSession(selectedMesh(cubePositions, cubeFaces, [1]));
+  const modal = new BevelModal(session);
+  assert.equal(await modal.begin(), true, modal.lastError);
+  assert.equal(modal.mode, 'face-region');
+  assert.equal(modal.active, true);
+  assert.equal(modal.lastResult.operation, 'face-region');
+  const preview = await session.document.serialize();
+  assert.notDeepEqual(preview, { positions: cubePositions, faces: cubeFaces, faceSelection: [1] });
+  assert.equal(modal.setAmount(0.4), true, modal.lastError);
+  assert.ok(Math.abs(modal.lastResult.width - 0.36) < 1e-10);
+  assert.equal(session.mesh.userData.hem.validateTopology().valid, true);
+  assert.equal(modal.setSegments(2), false);
+  const result = await modal.confirm();
+  assert.equal(result.operation, 'face-region');
+  assert.equal(result.amount, 0.4);
+  assert.equal(modal.active, false);
+  assert.equal(session.commits.length, 1);
+  assert.equal(session.commits[0].label, 'Face Bevel');
+  assert.equal(session.mesh.userData.hem.validateTopology().valid, true);
+});
+
+test('Face Bevel numeric entry rejects values below the actual minimum', async () => {
+  const session = makeSession(selectedMesh(cubePositions, cubeFaces, [1]));
+  const modal = new BevelModal(session);
+  assert.equal(await modal.begin(), true, modal.lastError);
+  const beforeAmount = modal.amount;
+  for (const key of ['0', '.', '0', '0', '5']) modal.appendNumeric(key);
+  assert.equal(modal.amount, beforeAmount);
+  assert.equal(modal.numeric, beforeAmount.toFixed(2));
+  assert.match(modal.lastError, /0.01 and 0.95/i);
+  await modal.cancel();
+});
+
+test('Face Bevel modal cancel restores the complete source snapshot without an undo entry', async () => {
+  const session = makeSession(selectedMesh(cubePositions, cubeFaces, [1]));
+  const before = await session.document.serialize();
+  const modal = new BevelModal(session);
+  assert.equal(await modal.begin(), true, modal.lastError);
+  assert.equal(modal.setAmount(0.5), true, modal.lastError);
+  assert.notDeepEqual(await session.document.serialize(), before);
+  assert.equal(await modal.cancel(), true);
+  assert.deepEqual(await session.document.serialize(), before);
+  assert.equal(session.commits.length, 0);
+});
+
+test('Face Bevel modal rejects a concave selection before showing a preview', async () => {
+  const session = makeSession(selectedMesh(
+    [[0,0,0],[1,0,0],[2,0,0],[0,1,0],[1,1,0],[2,1,0],[0,2,0],[1,2,0]],
+    [[0,1,4,3],[1,2,5,4],[3,4,7,6]],
+    [0,1,2]
+  ));
+  const before = await session.document.serialize();
+  const modal = new BevelModal(session);
+  assert.equal(await modal.begin(), false);
+  assert.match(modal.lastError, /reflex\/concave/i);
+  assert.equal(modal.active, false);
+  assert.deepEqual(await session.document.serialize(), before);
+  assert.equal(session.commits.length, 0);
+});

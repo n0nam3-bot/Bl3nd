@@ -162,7 +162,7 @@
           </div>
           <p class="panel-note">Extrude / Inset: switch to Face Select, then press E or I. Extrude accepts one face or a connected coplanar region with one simple boundary; Inset accepts one face or a connected planar region. Drag vertically or enter a value; Enter applies one undoable operation and Esc cancels.</p>
           <p class="panel-note">Loop Cut: select one edge in Edge Select, then press Ctrl+R. Drag horizontally to slide the preview; use the mouse wheel or +/- to add/remove up to 8 evenly spaced cuts. Type an offset from 0–1, use ←/→ to slide, Enter to apply or Esc to cancel.</p>
-          <p class="panel-note">Bevel: select one supported interior edge, exactly two adjacent edges at one closed tri-valent corner, one simple connected path of three to eight consecutive edges (shared miters and closed terminal cap patches), two to four separate two-edge miter pairs (up to eight selected edges), or up to eight pairwise-disjoint single edges, then press Ctrl+B. Chains longer than eight edges, cycles, branches, mixed selections and overlapping neighborhoods are rejected; both endpoints and internal junctions may be closed valence-three through valence-six fans with validated triangular cap patches. Valence-five/six caps use conservative profile strength to prevent foldovers. Fans above valence six, boundaries, non-manifold, concave and non-planar regions are rejected. Drag horizontally or enter a width factor from 0–0.95; Enter applies and Esc cancels.</p>
+          <p class="panel-note">Bevel: in Edge Select, supported single edges, adjacent pairs, three-to-eight-edge paths and disjoint neighborhoods use the existing transactional edge Bevel. In Face Select, Ctrl+B starts the first Face Bevel for one connected, consistently wound, planar region with one simple boundary. It raises the selected region by the bevel width and builds one mitered transition wall around it. Convex and straight corners are supported; reflex/concave corners, holes, multiple loops, disconnected regions, non-planar input and excessive miters are rejected without mutation. Face Bevel currently uses one transition segment; profile shaping is not implemented. Drag horizontally or enter an amount from 0.01–0.95; Enter applies and Esc cancels.</p>
           <div class="panel-heading section-gap">PIVOT POINT</div>
           <select id="pivot-select"><option value="median">Median Point</option><option value="individual">Individual Origins</option><option value="cursor">3D Cursor</option></select>
           <div class="panel-heading section-gap">3D CURSOR</div>
@@ -251,7 +251,7 @@
         const hadController = Boolean(navigator.serviceWorker.controller);
         if (hadController) {
           try {
-            const refreshKey = 'bl3nd-cache-refresh-v29';
+            const refreshKey = 'bl3nd-cache-refresh-v30';
             if (!sessionStorage.getItem(refreshKey)) {
               navigator.serviceWorker.addEventListener('controllerchange', () => {
                 sessionStorage.setItem(refreshKey, '1');

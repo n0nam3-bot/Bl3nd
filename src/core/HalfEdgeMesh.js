@@ -747,6 +747,202 @@ export class HalfEdgeMesh {
     };
   }
 
+  /**
+   * Create the first conservative face-region Bevel: move the selected planar
+   * region along its normal by one bevel width and connect its inset boundary
+   * to the original perimeter with a single mitered transition wall.
+   *
+   * The candidate is built on a private mesh and committed atomically. The
+   * current envelope accepts one connected, planar, single-loop region whose
+   * region-facing corners are convex (collinear corners are allowed). Reflex
+   * corners are identified by the shared analyzer and rejected until their
+   * face-wall intersections have a separately validated construction.
+   */
+  bevelSelectedFaceRegion({ amount = 0.25 } = {}) {
+    const fail = reason => ({ changed: false, reason });
+    if (!Number.isFinite(amount) || amount < 0.01 || amount > 0.95) {
+      return fail('Face Bevel amount must be between 0.01 and 0.95.');
+    }
+    if (this.selectionMode !== 'face') return fail('Face Bevel requires Face Select mode.');
+
+    const selected = [...this.faceSelection]
+      .filter(id => Number.isInteger(id) && this.faces[id])
+      .sort((a, b) => a - b);
+    if (!selected.length || selected.length !== this.faceSelection.size) {
+      return fail('Select one valid face or one connected face region before using Face Bevel.');
+    }
+
+    const analysis = this.analyzeFaceRegion(selected);
+    if (!analysis.valid) return fail(analysis.reason || 'Face Bevel could not analyze the selected region.');
+    if (!analysis.connected) return fail('Face Bevel requires one connected face region.');
+    if (!analysis.planar) return fail('Face Bevel requires a consistently wound, coplanar face region.');
+    if (analysis.loopCount !== 1 || !analysis.boundaryLoops[0]?.isSimple || !analysis.singleSimpleBoundary) {
+      return fail('Face Bevel requires exactly one simple boundary loop with no holes.');
+    }
+    const sourceReport = this.validateTopology();
+    if (!sourceReport.valid) {
+      return fail('The source mesh has topology warnings. Validate and repair safe issues before Face Bevel.');
+    }
+
+    const loop = analysis.boundaryLoops[0];
+    if (loop.concaveVertexIds?.length) {
+      return fail(`Face Bevel currently rejects ${loop.concaveVertexIds.length} reflex/concave boundary corner(s); use a convex planar region.`);
+    }
+
+    const boundary = [...loop.vertexIds];
+    const normal = [...analysis.normal];
+    const origin = [...this.positions[boundary[0]]];
+    const reference = Math.abs(normal[2]) < 0.9 ? [0, 0, 1] : [0, 1, 0];
+    const cross = (a, b) => [
+      a[1] * b[2] - a[2] * b[1],
+      a[2] * b[0] - a[0] * b[2],
+      a[0] * b[1] - a[1] * b[0]
+    ];
+    const normalize = vector => {
+      const length = Math.hypot(...vector);
+      return length > 1e-12 ? vector.map(value => value / length) : null;
+    };
+    const basisU = normalize(cross(reference, normal));
+    const basisV = basisU && normalize(cross(normal, basisU));
+    if (!basisU || !basisV) return fail('Face Bevel could not establish a stable region plane.');
+
+    const regionPoints = boundary.map(vertexId => {
+      const delta = this.positions[vertexId].map((value, axis) => value - origin[axis]);
+      return [
+        delta.reduce((sum, value, axis) => sum + value * basisU[axis], 0),
+        delta.reduce((sum, value, axis) => sum + value * basisV[axis], 0)
+      ];
+    });
+    const coordinateBounds = [0, 1].map(axis => [
+      Math.min(...regionPoints.map(point => point[axis])),
+      Math.max(...regionPoints.map(point => point[axis]))
+    ]);
+    const regionScale = Math.max(1, ...coordinateBounds.map(([min, max]) => max - min));
+    const sourceArea = signedArea2D(regionPoints);
+    const epsilon = regionScale * regionScale * 1e-10;
+    if (Math.abs(sourceArea) <= epsilon || polygonSelfIntersects(regionPoints, epsilon)) {
+      return fail('Face Bevel requires a simple, non-degenerate region boundary.');
+    }
+
+    const edgeLengths = boundary.map((vertexId, index) => {
+      const a = this.positions[vertexId];
+      const b = this.positions[boundary[(index + 1) % boundary.length]];
+      return Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+    });
+    const shortestEdge = Math.min(...edgeLengths);
+    if (!Number.isFinite(shortestEdge) || shortestEdge <= 1e-10) {
+      return fail('Face Bevel region contains a zero-length boundary edge.');
+    }
+    const width = amount * shortestEdge * 0.45;
+    if (!Number.isFinite(width) || width <= 1e-9) return fail('Face Bevel width is too small for a stable candidate.');
+
+    const offset = offsetPolygonInward(regionPoints, width, regionScale);
+    if (!offset.changed) return fail(offset.reason.replace(/^Inset/, 'Face Bevel'));
+
+    // The shared analyzer classifies every corner from the selected-region
+    // side. Use a stricter miter envelope at all corners in this first pass;
+    // reflex corners are rejected above rather than guessed at.
+    const convexIds = new Set(loop.convexVertexIds || []);
+    const collinearIds = new Set(loop.collinearVertexIds || []);
+    for (let index = 0; index < boundary.length; index++) {
+      const vertexId = boundary[index];
+      if (!convexIds.has(vertexId) && !collinearIds.has(vertexId)) {
+        return fail(`Face Bevel could not classify boundary corner ${vertexId} unambiguously.`);
+      }
+      const point = regionPoints[index];
+      const insetPoint = offset.points[index];
+      const miterLength = Math.hypot(insetPoint[0] - point[0], insetPoint[1] - point[1]);
+      if (!Number.isFinite(miterLength) || miterLength > width * 4 + regionScale * 1e-8) {
+        return fail('Face Bevel corner requires an excessive miter. Reduce the amount.');
+      }
+    }
+
+    const height = width;
+    const selectedSet = new Set(selected);
+    const used = [...new Set(selected.flatMap(faceId => this.faces[faceId]))].sort((a, b) => a - b);
+    const boundaryIndexByVertex = new Map(boundary.map((vertexId, index) => [vertexId, index]));
+    const nextPositions = this.positions.map(point => [...point]);
+    const remap = new Map();
+    for (const vertexId of used) {
+      const source = this.positions[vertexId];
+      const raised = source.map((value, axis) => value + normal[axis] * height);
+      const boundaryIndex = boundaryIndexByVertex.get(vertexId);
+      if (boundaryIndex !== undefined) {
+        const point2D = offset.points[boundaryIndex];
+        for (let axis = 0; axis < 3; axis++) {
+          raised[axis] += basisU[axis] * point2D[0] + basisV[axis] * point2D[1] -
+            (basisU[axis] * regionPoints[boundaryIndex][0] + basisV[axis] * regionPoints[boundaryIndex][1]);
+        }
+      }
+      if (!raised.every(Number.isFinite)) return fail('Face Bevel produced a non-finite vertex position.');
+      remap.set(vertexId, nextPositions.length);
+      nextPositions.push(raised);
+    }
+
+    const nextFaces = this.faces.map((face, faceId) => selectedSet.has(faceId)
+      ? face.map(vertexId => remap.get(vertexId))
+      : [...face]);
+    const bevelFaceStart = nextFaces.length;
+    for (let index = 0; index < boundary.length; index++) {
+      const a = boundary[index];
+      const b = boundary[(index + 1) % boundary.length];
+      const wall = [a, b, remap.get(b), remap.get(a)];
+      if (!wall.every(Number.isInteger)) return fail('Face Bevel could not construct a complete perimeter wall.');
+      nextFaces.push(wall);
+    }
+
+    const candidate = new HalfEdgeMesh(nextPositions, nextFaces);
+    const report = candidate.validateTopology();
+    if (!report.valid) {
+      return fail(`Face Bevel candidate failed topology validation (${report.issueCount} issue(s)); the source mesh was not changed.`);
+    }
+    for (let faceId = 0; faceId < candidate.faces.length; faceId++) {
+      if (!candidate.triangulateFace(faceId).length) {
+        return fail('Face Bevel candidate contains a face that cannot be triangulated; the source mesh was not changed.');
+      }
+    }
+    for (let faceId = bevelFaceStart; faceId < candidate.faces.length; faceId++) {
+      const projection = projectedPolygon(candidate.positions, candidate.faces[faceId]);
+      const convex = projection && Math.abs(signedArea2D(projection.points)) > projection.scale * projection.scale * 1e-10 &&
+        !polygonSelfIntersects(projection.points, projection.scale * projection.scale * 1e-10) &&
+        projection.points.every((point, index) =>
+          cross2(
+            projection.points[(index - 1 + projection.points.length) % projection.points.length],
+            point,
+            projection.points[(index + 1) % projection.points.length]
+          ) * Math.sign(signedArea2D(projection.points)) >= -projection.scale * projection.scale * 1e-9
+        );
+      if (!projection || projection.deviation > projection.scale * 1e-5 || !convex) {
+        return fail('Face Bevel produced a non-planar, folded or non-convex perimeter wall; the source mesh was not changed.');
+      }
+    }
+
+    candidate.setSelectionMode('face');
+    candidate.faceSelection = new Set(selected);
+    this.positions = candidate.positions.map(point => [...point]);
+    this.faces = candidate.faces.map(face => [...face]);
+    this.selectionMode = 'face';
+    this.clearSelection();
+    this.rebuild();
+    this.faceSelection = new Set(selected);
+
+    return {
+      changed: true,
+      operation: 'face-region',
+      amount,
+      width,
+      height,
+      normal,
+      selectedFaces: selected.length,
+      boundaryEdges: boundary.length,
+      convexCorners: loop.convexVertexIds.length,
+      collinearCorners: loop.collinearVertexIds.length,
+      insertedVertices: used.length,
+      createdFaces: boundary.length,
+      topology: report
+    };
+  }
+
   deleteSelectedElements() {
     const removedFaces = new Set();
     if (this.selectionMode === 'face') {

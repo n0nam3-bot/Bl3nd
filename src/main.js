@@ -374,7 +374,11 @@ function registerCommands() {
     document.body.classList.remove('bevel-modal-active');
     if (result) {
       await reapplyActiveModifiers();
-      notify(`Bevel applied · ${result.bevelCount || 1} edge(s) · ${result.insertedVertices} vertices · ${result.createdFaces} faces · avg width ${result.width.toFixed(3)}.`, 'success');
+      if (result.operation === 'face-region') {
+        notify(`Face Bevel applied · ${result.selectedFaces} face(s) · ${result.boundaryEdges} boundary edges · ${result.insertedVertices} vertices · width ${result.width.toFixed(3)}.`, 'success');
+      } else {
+        notify(`Bevel applied · ${result.bevelCount || 1} edge(s) · ${result.insertedVertices} vertices · ${result.createdFaces} faces · avg width ${result.width.toFixed(3)}.`, 'success');
+      }
     }
     refresh(); ui.refreshModal();
     return Boolean(result);
@@ -594,7 +598,9 @@ ui = {
   refreshModal(){
     const readout=$('#modal-readout'),pad=$('#numeric-pad'),padTitle=pad.querySelector('.pad-title');
     const axisButtons=pad.querySelectorAll('[data-axis]');
+    const negativeKey=pad.querySelector('[data-key="-"]');
     if(faceOperationModal.active){
+      negativeKey.hidden=faceOperationModal.operation!=='extrude';
       const label=faceOperationModal.operation==='extrude'?'EXTRUDE':'INSET';
       const unit=faceOperationModal.operation==='extrude'?'distance':'amount';
       readout.hidden=false;
@@ -615,22 +621,27 @@ ui = {
       return;
     }
     if(bevelModal.active){
+      negativeKey.hidden=true;
+      const faceRegion = bevelModal.mode === 'face-region';
       readout.hidden=false;
-      readout.textContent=`BEVEL · ${bevelModal.seedEdgeIds.length} edge(s) · ${bevelModal.segments} segment(s) · Profile ${bevelModal.profile.toFixed(2)} · Amount ${bevelModal.amount.toFixed(2)} · Drag / arrows: width · +/-: segments · [ ]: profile · Enter apply / Esc cancel`;
+      readout.textContent=faceRegion
+        ? `FACE BEVEL · ${bevelModal.lastResult?.selectedFaces || bevelModal.seedFaceIds.length} face(s) · Width ${bevelModal.lastResult?.width?.toFixed(3) || '—'} · Amount ${bevelModal.amount.toFixed(2)} · Drag / arrows · Enter apply / Esc cancel`
+        : `BEVEL · ${bevelModal.seedEdgeIds.length} edge(s) · ${bevelModal.segments} segment(s) · Profile ${bevelModal.profile.toFixed(2)} · Amount ${bevelModal.amount.toFixed(2)} · Drag / arrows: width · +/-: segments · [ ]: profile · Enter apply / Esc cancel`;
       pad.hidden=!capabilities.tier.includes('Mobile');
       pad.classList.remove('loop-cut-mode','bevel-mode');
       pad.classList.add('bevel-mode');
-      padTitle.textContent='BEVEL AMOUNT · 0–0.95';
+      padTitle.textContent=faceRegion?'FACE BEVEL AMOUNT · 0.01–0.95':'BEVEL AMOUNT · 0–0.95';
       axisButtons.forEach(button=>button.hidden=true);
       $('#pad-value').textContent=bevelModal.numeric || bevelModal.amount.toFixed(2);
       $('#pad-count-row').hidden=true;
-      $('#pad-bevel-segments-row').hidden=false;
-      $('#pad-bevel-profile-row').hidden=false;
+      $('#pad-bevel-segments-row').hidden=faceRegion;
+      $('#pad-bevel-profile-row').hidden=faceRegion;
       $('#pad-bevel-segments').textContent=String(bevelModal.segments);
       $('#pad-bevel-profile').textContent=bevelModal.profile.toFixed(2);
       return;
     }
     if(loopCutModal.active){
+      negativeKey.hidden=true;
       readout.hidden=false;
       readout.textContent=`LOOP CUT · ${loopCutModal.cuts} cut(s) · Offset ${loopCutModal.offset.toFixed(2)} · Wheel / +/- count · Enter apply / Esc cancel`;
       pad.hidden=!capabilities.tier.includes('Mobile');
@@ -651,6 +662,7 @@ ui = {
     $('#pad-bevel-profile-row').hidden=true;
     padTitle.textContent='TRANSFORM VALUE';
     axisButtons.forEach(button=>button.hidden=false);
+    negativeKey.hidden=false;
     if(!modalTransform.active){readout.hidden=true;pad.hidden=true;return;}
     const axis=modalTransform.axis?` · ${modalTransform.axis.toUpperCase()} axis`:modalTransform.planeNormal?` · ${modalTransform.planeNormal.toUpperCase()} plane`:'';
     readout.hidden=false; readout.textContent=`${modalTransform.type.toUpperCase()}${axis} · ${modalTransform.numeric || 'mouse'} · Enter apply / Esc cancel`;
