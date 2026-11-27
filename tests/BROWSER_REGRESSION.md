@@ -8,7 +8,7 @@ Open the deployed app only after the latest Pages workflow succeeds:
 
 `https://n0nam3-bot.github.io/Bl3nd/`
 
-Latest deployed baseline before this package is v0.1.39, `main` commit `8909d9d4b9e8a9d3c13419bc224d00c0fd68143b`, Pages workflow run #47 (success). After uploading v0.1.40, reload and allow the v37 service-worker cache to activate before testing.
+Latest deployed baseline before this package is v0.1.40, `main` commit `e87ee77ee3fb1e44bec50fbbe08f601be3ba1ab3`, Pages workflow run #48 (success). After uploading v0.1.41, reload and allow the v38 service-worker cache to activate before testing.
 
 ## Desktop — Chrome or Edge
 
@@ -44,7 +44,7 @@ Record each step as Pass / Fail / Not tested. If a region-tool result is unexpec
 10. Try 1, 2, 4 and 8 segments. Try profile 0, 0.50 and 1. Confirm the model, count readout and profile readout update without cracks or invalid geometry. Use the Edit Height button, adjust height with +/- and numeric entry, then switch back to Edit Width; confirm one dimension changes without changing the other.
 11. Cancel and verify the exact original mesh returns without an undo entry. Start again, set multiple segments/profile, and Apply; verify one undo step, then Undo/Redo.
 12. Select two adjacent coplanar faces and repeat. Confirm the common inner seam stays welded and the transition walls form one continuous perimeter. Then select a planar 2×2 and 3×3 face grid; both must bevel successfully, retain every internal seam and pass topology validation without isolated vertices. Repeat with a concave L region and confirm the transition remains valid.
-13. On a sphere, select a connected group of faces that span different face planes. It must reject non-destructively as non-planar; one individual face should remain bevelable.
+13. On a sphere, select a small connected group of faces that span different face planes. If it forms one simple boundary and adjacent normals vary smoothly, Face Bevel should enter **Continuous Surface** mode and preserve the shared raised top seams. If the patch contains a sharp crease, a hole, disconnected faces or excessive curvature, it must use Individual Faces when possible or reject without source mutation. A single individual polygon should remain bevelable through the existing Region path.
 14. Before launching Face Bevel, set Box/Circle/Lasso selection. After Apply or Cancel, verify Click Select is restored automatically and orbit/pan work immediately without changing Object/Edit Mode or manually selecting Click Select.
 15. Repeat one-finger orbit and two-finger pan/zoom after Extrude, Inset and Face Bevel have ended. Confirm viewport controls are re-enabled.
 
@@ -54,12 +54,13 @@ Record each step as Pass / Fail / Not tested. If a region-tool result is unexpec
 
 18. On a curved/non-planar object, select a group of at least three faces and start Face Bevel. It should enter Individual Faces mode when the selection is not one supported planar region, and the camera must rotate/center on the first active face. Tap Next Face repeatedly: the camera must reorient to each newly active face so it can be edited even when it was on the back/side of the object. Previous Face must do the same in reverse. Change width, height, segments and profile on the current face; the camera should stay on that face while parameters change. Toggle Region/Individual mode where allowed and confirm each mode frames its actual target. The operation's geometry, face IDs, per-face settings, Cancel and one-step Apply/Undo must remain unchanged by camera movement.
 
-## Owner-reported Android acceptance — v0.1.31 through v0.1.38 (2026-11-27)
+## Owner-reported Android acceptance — v0.1.31 through v0.1.40 (2026-11-27)
 
 - The owner reports Pass for connected-region Extrude, concave L-region Extrude, single-face Inset, connected-face Inset, convex Face Bevel, concave Face Bevel, Cancel restoration, Apply and Undo/Redo.
 - Before the v0.1.35 input-recovery fix, post-operation viewport gestures were recoverable only after switching to Object Mode or choosing Edit Mode → Click Select. This earlier build behavior was a UX defect; the owner later confirmed the v0.1.35 automatic recovery passes.
 - The owner confirms Pass for the v0.1.35 1–8 segment control, profile 0/0.50/1 controls and immediate post-modal Click Select/orbit recovery on Android.
 - The owner confirms that the v0.1.36 multi-row/multi-column planar Face Bevel fix works. The owner asked how to adjust multiple selected faces individually; v0.1.37 adds an explicit Individual Faces mode with per-face settings. Android verification of that new mode remains pending. v0.1.38 adds mobile More drawer auto-minimize when a modal starts; Android acceptance is pending.
+- The owner confirms v0.1.40 active-face camera focus works on Android: the view follows the active face target when switching faces.
 - Device model, Android version and Chrome version were not supplied.
 
 ## Recorded mobile run — v0.1.26 (user-reported, 2026-11-26)
@@ -92,11 +93,17 @@ Record each step as Pass / Fail / Not tested. If a region-tool result is unexpec
 
 ## Face-region Bevel regression — v0.1.33–v0.1.37 (automated; latest browser run pending)
 
-## Selection-aware view regression — v0.1.39–v0.1.40 (automated; Android run pending)
+## Selection-aware view regression — v0.1.39–v0.1.40 (automated; active-face Android focus confirmed)
 
 - `tests/SelectionView.test.js` verifies planar face alignment, two-plane compromise orientation, a corner view for all six cube faces, face-area weighting and safe fallback for invalid/empty normals.
 - v0.1.39 tests the best-view direction for planar, multi-plane, six-sided and area-weighted face sets. v0.1.40 adds a focused-face regression showing that one active Individual Faces target overrides a balanced whole-selection view.
-- On Android, use steps 17–18 above to verify actual Three.js camera framing, especially previous/next face changes in Individual Faces mode. The pure direction tests do not cover browser camera integration; desktop browser testing remains deferred.
+- The owner confirmed on Android that v0.1.40 active-face focus follows the face when switching targets. v0.1.39 whole-selection framing had previously failed to move for a balanced eight-face selection; v0.1.40 addresses Individual Faces focus specifically. Desktop browser testing remains deferred.
+
+## Curved-surface Face Bevel regression — v0.1.41 (automated; Android run pending)
+
+- `tests/CurvedFaceBevel.test.js` covers a triangulated spherical-cap patch, welded raised top seams, triangulated transition strips at 1–8 segments and all profile endpoints, planar-path separation, sharp-crease rejection and modal fallback to Individual Faces, invalid controls, modal preview/commit, mode switching and Cancel restoration.
+- The supported prototype is intentionally limited to one connected non-planar patch with one simple projected boundary, stable area-weighted vertex normals, and adjacent face-normal changes no greater than 55 degrees. The complete private candidate must pass topology validation; top triangles must retain their source-facing orientation; transition triangles must face outward without fold/inversion. It does not yet perform a general global self-collision/occlusion solve.
+- On Android, use step 19 above. Automated tests establish the operator's geometric envelope but do not replace browser interaction, rendering, touch-control or visual quality acceptance. Desktop Chrome/Edge remains deferred.
 
 - v0.1.33 automated tests cover convex single-face and connected multi-face regions, welded internal seams, rotated-plane normals, reversed winding, miter limits, numeric bounds, modal amount updates, Cancel and one-step commit/undo metadata.
 - v0.1.34 adds concave L-shaped and two-reflex U-shaped regions, rotated and reversed concave regions, retained internal seams, modal preview/Cancel/Apply and an acute reflex notch that must reject for excessive miter without source mutation. Holes, multiple loops, disconnected islands, non-planar input and invalid amounts remain rejected.
@@ -116,7 +123,7 @@ For each device, record:
 - Whether Cancel restored the original mesh without an undo entry.
 - Whether Face-region Inset and concave multi-face Extrude previewed correctly, Cancel restored the original, Confirm created one undoable operation and Undo/Redo restored both states.
 - Whether Face Bevel Region mode previewed/applied for supported convex and concave planar regions and multi-row/multi-column grids; internal seams stayed welded, width and height changed independently, segment/profile changes updated geometry, Cancel restored the source, one undo operation was recorded, and Undo/Redo restored both states.
-- Whether Individual Faces mode allowed targeting each selected face and assigning different width, height, segment and profile values; whether curved groups auto-entered this mode; and whether the separate panel/groove geometry passed topology validation and restored correctly through Cancel/Apply/Undo/Redo.
+- Whether Individual Faces mode allowed targeting each selected face and assigning different width, height, segment and profile values; whether curved groups auto-entered Continuous Surface or safely fell back to Individual Faces; and whether welded continuous patches / separate panels passed topology validation and restored correctly through Cancel/Apply/Undo/Redo.
 - Whether Click Select was restored after each modal operation and viewport orbit/pan worked immediately without switching Object/Edit Mode.
 - Any visible error text and the first app-owned console error, if available.
 
@@ -125,3 +132,5 @@ Mark each step as **Pass**, **Fail**, or **Not tested**. Do not interpret extens
 ## Scope and limitations
 
 This procedure validates browser interaction for the starter cube. The automated mixed-fan matrix in `tests/MixedFanBevel.test.js` separately covers terminal/internal valences four through six, rotated geometry and the guarded skewed cases. `tests/ScreenRegion.test.js` validates pure 2D segment/region intersection math; it does not replace the real browser raycast/touch check. Real-device results must be recorded before the handoff can describe desktop/mobile browser regression as complete.
+
+19. On a UV Sphere, select a small connected patch of approximately 4–12 adjacent faces away from a pole/seam. Start Face Bevel. Confirm it enters **Continuous Surface** (not Individual Faces), moves the whole raised patch as one welded surface, and creates one continuous triangulated transition band without separate grooves along internal selected seams. Adjust width, height, 1–8 segments and profile; the preview must remain topologically valid and must not develop inverted/folded transition triangles. Cancel and confirm exact source restoration; repeat Apply and verify one Undo/Redo step. Increase the selected patch until adjacent-normal or offset safety checks reject; the source must remain unchanged or switch to the Individual Faces fallback. Try a selection crossing a sharp crease and confirm it does not force a continuous bevel.

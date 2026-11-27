@@ -697,12 +697,13 @@ ui = {
       const faceRegion = bevelModal.mode === 'face-region';
       readout.hidden=false;
       const individualFace = faceRegion && bevelModal.faceBevelMode === 'individual';
+      const curvedSurface = faceRegion && bevelModal.faceBevelMode === 'curved-region';
       const activeFaceId = individualFace ? bevelModal.seedFaceIds[bevelModal.activeFaceIndex] : null;
       const activeFaceResult = individualFace
         ? bevelModal.lastResult?.perFace?.find(item => item.faceId === activeFaceId)
         : bevelModal.lastResult;
       readout.textContent=faceRegion
-        ? `FACE BEVEL · ${individualFace ? `INDIVIDUAL ${bevelModal.activeFaceIndex + 1}/${bevelModal.seedFaceIds.length}` : 'CONNECTED REGION'} · ${bevelModal.lastResult?.selectedFaces || bevelModal.seedFaceIds.length} face(s) · ${bevelModal.segments} segment(s) · Profile ${bevelModal.profile.toFixed(2)} · Width ${activeFaceResult?.width?.toFixed(3) || '—'} · Height ${activeFaceResult?.height?.toFixed(3) || '—'} · Drag / arrows / type: ${bevelModal.activeDimension} · H switches · I changes mode${individualFace ? ' · PageUp/Down changes face' : ''} · Enter apply / Esc cancel`
+        ? `FACE BEVEL · ${individualFace ? `INDIVIDUAL ${bevelModal.activeFaceIndex + 1}/${bevelModal.seedFaceIds.length}` : curvedSurface ? 'CONTINUOUS SURFACE' : 'CONNECTED REGION'} · ${bevelModal.lastResult?.selectedFaces || bevelModal.seedFaceIds.length} face(s) · ${bevelModal.segments} segment(s) · Profile ${bevelModal.profile.toFixed(2)} · Width ${activeFaceResult?.width?.toFixed(3) || '—'} · Height ${activeFaceResult?.height?.toFixed(3) || '—'} · Drag / arrows / type: ${bevelModal.activeDimension} · H switches · I changes mode${individualFace ? ' · PageUp/PageDown changes face' : ''} · Enter apply / Esc cancel`
         : `BEVEL · ${bevelModal.seedEdgeIds.length} edge(s) · ${bevelModal.segments} segment(s) · Profile ${bevelModal.profile.toFixed(2)} · Amount ${bevelModal.amount.toFixed(2)} · Drag / arrows: width · +/-: segments · [ ]: profile · Enter apply / Esc cancel`;
       pad.hidden=!capabilities.tier.includes('Mobile');
       pad.classList.remove('loop-cut-mode','bevel-mode');
@@ -720,8 +721,11 @@ ui = {
       $('#pad-bevel-face-target-row').hidden=!individualFace || bevelModal.seedFaceIds.length < 2;
       $('#pad-bevel-face-index').textContent=String(bevelModal.activeFaceIndex + 1);
       $('#pad-bevel-face-count').textContent=String(bevelModal.seedFaceIds.length);
-      $('#pad-bevel-mode-toggle').hidden=!faceRegion || bevelModal.seedFaceIds.length < 2;
-      $('#pad-bevel-mode-toggle').textContent=individualFace?'USE REGION MODE':'INDIVIDUAL FACES';
+      const hasSharedAlternative = bevelModal.hasContinuousCurvedRegionCandidate() || bevelModal.hasPlanarRegionCandidate();
+      $('#pad-bevel-mode-toggle').hidden=!faceRegion || bevelModal.seedFaceIds.length < 2 || (individualFace && !hasSharedAlternative);
+      $('#pad-bevel-mode-toggle').textContent=individualFace
+        ? (bevelModal.hasContinuousCurvedRegionCandidate()?'CONTINUOUS SURFACE':'USE REGION MODE')
+        : 'INDIVIDUAL FACES';
       $('#pad-bevel-segments').textContent=String(bevelModal.segments);
       $('#pad-bevel-profile').textContent=bevelModal.profile.toFixed(2);
       return;

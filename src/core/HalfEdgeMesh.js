@@ -1004,6 +1004,352 @@ export class HalfEdgeMesh {
 
 
   /**
+   * Create one continuous Face Bevel over a small, smoothly curved connected
+   * surface patch. The selected top remains welded: every selected source
+   * vertex is duplicated once and displaced along an area-weighted smooth
+   * vertex normal. The boundary is inset in its local tangent planes and the
+   * transition is triangulated so curved rows never rely on warped quads.
+   *
+   * This deliberately narrow envelope requires one connected non-planar patch,
+   * one simple projected boundary, smooth adjacent face normals and a validated
+   * private candidate. Unsupported curvature/folds reject without mutation.
+   */
+  bevelSelectedCurvedFaceRegion({ amount = 0.25, heightAmount = amount, segments = 1, profile = 0.5 } = {}) {
+    const fail = reason => ({ changed: false, reason });
+    if (!Number.isFinite(amount) || amount < 0.01 || amount > 0.95) return fail('Curved Face Bevel amount must be between 0.01 and 0.95.');
+    if (!Number.isFinite(heightAmount) || heightAmount < 0.01 || heightAmount > 0.95) return fail('Curved Face Bevel height must be between 0.01 and 0.95.');
+    if (!Number.isInteger(segments) || segments < 1 || segments > 8) return fail('Curved Face Bevel supports between one and eight segments.');
+    if (!Number.isFinite(profile) || profile < 0 || profile > 1) return fail('Curved Face Bevel profile must be between 0 and 1.');
+    if (this.selectionMode !== 'face') return fail('Curved Face Bevel requires Face Select mode.');
+
+    const selected = [...this.faceSelection].filter(id => Number.isInteger(id) && this.faces[id]).sort((a, b) => a - b);
+    if (selected.length < 2 || selected.length !== this.faceSelection.size) {
+      return fail('Continuous Curved Face Bevel requires at least two valid selected faces.');
+    }
+    const analysis = this.analyzeFaceRegion(selected);
+    if (!analysis.valid) return fail(analysis.reason || 'Curved Face Bevel could not analyze the selected region.');
+    if (!analysis.connected) return fail('Continuous Curved Face Bevel requires one connected face region.');
+    if (analysis.planar) return fail('Use Connected Region Face Bevel for planar selections.');
+    if (analysis.loopCount !== 1) return fail('Continuous Curved Face Bevel requires exactly one boundary loop with no holes.');
+
+    const sourceReport = this.validateTopology();
+    if (!sourceReport.valid) return fail('The source mesh has topology warnings. Validate and repair safe issues before Curved Face Bevel.');
+
+    const selectedSet = new Set(selected);
+    const vectorLength = vector => Math.hypot(vector[0], vector[1], vector[2]);
+    const normalize = vector => {
+      const length = vectorLength(vector);
+      return Number.isFinite(length) && length > 1e-12 ? vector.map(value => value / length) : null;
+    };
+    const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    const cross = (a, b) => [
+      a[1] * b[2] - a[2] * b[1],
+      a[2] * b[0] - a[0] * b[2],
+      a[0] * b[1] - a[1] * b[0]
+    ];
+    const subtract = (a, b) => a.map((value, axis) => value - b[axis]);
+    const addScaled = (point, direction, scale) => point.map((value, axis) => value + direction[axis] * scale);
+    const polygonAreaVector = face => {
+      const area = [0, 0, 0];
+      for (let index = 0; index < face.length; index++) {
+        const a = this.positions[face[index]], b = this.positions[face[(index + 1) % face.length]];
+        area[0] += (a[1] - b[1]) * (a[2] + b[2]);
+        area[1] += (a[2] - b[2]) * (a[0] + b[0]);
+        area[2] += (a[0] - b[0]) * (a[1] + b[1]);
+      }
+      return area;
+    };
+    const faceNormals = new Map();
+    const vertexNormalSums = this.positions.map(() => [0, 0, 0]);
+    const vertexNormalWeights = this.positions.map(() => 0);
+    const edgeUses = new Map();
+    const used = [...new Set(selected.flatMap(faceId => this.faces[faceId]))].sort((a, b) => a - b);
+    let regionAreaVector = [0, 0, 0], totalSelectedArea = 0;
+
+    for (let faceId = 0; faceId < this.faces.length; faceId++) {
+      const face = this.faces[faceId];
+      const areaVector = polygonAreaVector(face);
+      const doubleArea = vectorLength(areaVector);
+      if (!Number.isFinite(doubleArea) || doubleArea <= 1e-10) {
+        if (selectedSet.has(faceId)) return fail(`Selected face ${faceId + 1} has no stable surface normal.`);
+        continue;
+      }
+      const normal = areaVector.map(value => value / doubleArea);
+      faceNormals.set(faceId, normal);
+      for (const vertexId of face) {
+        for (let axis = 0; axis < 3; axis++) vertexNormalSums[vertexId][axis] += areaVector[axis];
+        vertexNormalWeights[vertexId] += doubleArea;
+      }
+      if (selectedSet.has(faceId)) {
+        for (let axis = 0; axis < 3; axis++) regionAreaVector[axis] += areaVector[axis];
+        totalSelectedArea += doubleArea;
+      }
+      for (let index = 0; index < face.length; index++) {
+        const key = keyFor(face[index], face[(index + 1) % face.length]);
+        if (!edgeUses.has(key)) edgeUses.set(key, []);
+        edgeUses.get(key).push(faceId);
+      }
+    }
+
+    const regionNormal = normalize(regionAreaVector);
+    const regionCoherence = vectorLength(regionAreaVector) / Math.max(1e-12, totalSelectedArea);
+    if (!regionNormal || regionCoherence < 0.58) {
+      return fail('The selected surface patch bends too far for one continuous bevel. Select a smaller, more locally consistent patch.');
+    }
+
+    // Reject hard creases at both the selected interior and its perimeter.
+    // The supported prototype is for smoothly varying normals, not sharp edges.
+    const minimumNormalDot = Math.cos(55 * Math.PI / 180);
+    for (const [edgeKey, incidents] of edgeUses) {
+      if (!incidents.some(faceId => selectedSet.has(faceId))) continue;
+      if (incidents.length > 2) return fail(`Curved Face Bevel touches non-manifold edge ${edgeKey}.`);
+      if (incidents.length === 2) {
+        const a = faceNormals.get(incidents[0]), b = faceNormals.get(incidents[1]);
+        if (!a || !b || dot(a, b) < minimumNormalDot) {
+          return fail('Curved Face Bevel only supports smoothly varying adjacent face normals; a sharp crease was found.');
+        }
+      }
+    }
+
+    const vertexNormals = new Map();
+    for (const vertexId of used) {
+      const sum = vertexNormalSums[vertexId];
+      const weight = vertexNormalWeights[vertexId];
+      const normal = normalize(sum);
+      const coherence = weight > 0 ? vectorLength(sum) / weight : 0;
+      if (!normal || coherence < 0.68) {
+        return fail(`Vertex ${vertexId + 1} has an ambiguous smooth normal. Reduce the selected patch or use Individual Faces mode.`);
+      }
+      vertexNormals.set(vertexId, normal);
+    }
+    for (const faceId of selected) {
+      const faceNormal = faceNormals.get(faceId);
+      for (const vertexId of this.faces[faceId]) {
+        if (dot(vertexNormals.get(vertexId), faceNormal) < 0.45) {
+          return fail('The selected patch has no stable tangent-normal field. Use Individual Faces mode for this selection.');
+        }
+      }
+    }
+
+    const boundary = [...analysis.boundaryLoops[0].vertexIds];
+    if (boundary.length < 3 || new Set(boundary).size !== boundary.length) {
+      return fail('Curved Face Bevel requires one simple, non-repeating boundary loop.');
+    }
+    const reference = Math.abs(regionNormal[2]) < 0.9 ? [0, 0, 1] : [0, 1, 0];
+    const basisU = normalize(cross(reference, regionNormal));
+    const basisV = basisU && normalize(cross(regionNormal, basisU));
+    if (!basisU || !basisV) return fail('Curved Face Bevel could not establish a stable reference tangent plane.');
+    const origin = this.positions[boundary[0]];
+    const project = point => {
+      const delta = subtract(point, origin);
+      return [dot(delta, basisU), dot(delta, basisV)];
+    };
+    const boundary2D = boundary.map(vertexId => project(this.positions[vertexId]));
+    const bounds = [0, 1].map(axis => [
+      Math.min(...boundary2D.map(point => point[axis])),
+      Math.max(...boundary2D.map(point => point[axis]))
+    ]);
+    const boundaryScale = Math.max(1, ...bounds.map(([min, max]) => max - min));
+    const epsilon = boundaryScale * boundaryScale * 1e-10;
+    if (Math.abs(signedArea2D(boundary2D)) <= epsilon || polygonSelfIntersects(boundary2D, epsilon)) {
+      return fail('The curved region boundary is not simple in its local tangent-plane projection.');
+    }
+
+    const edgeLengths = boundary.map((vertexId, index) => vectorLength(subtract(
+      this.positions[boundary[(index + 1) % boundary.length]], this.positions[vertexId]
+    )));
+    const shortestEdge = Math.min(...edgeLengths);
+    if (!Number.isFinite(shortestEdge) || shortestEdge <= 1e-10) return fail('Curved Face Bevel contains a zero-length boundary edge.');
+    const width = amount * shortestEdge * 0.45;
+    const height = heightAmount * shortestEdge * 0.45;
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 1e-9 || height <= 1e-9) {
+      return fail('Curved Face Bevel width or height is too small for a stable candidate.');
+    }
+
+    const projectTangent = (vector, normal) => normalize(subtract(vector, normal.map(value => value * dot(vector, normal))));
+    const inwardOffsets = new Map();
+    const offsetLoop2D = [];
+    for (let index = 0; index < boundary.length; index++) {
+      const vertexId = boundary[index];
+      const previousId = boundary[(index - 1 + boundary.length) % boundary.length];
+      const nextId = boundary[(index + 1) % boundary.length];
+      const normal = vertexNormals.get(vertexId);
+      const incoming = projectTangent(subtract(this.positions[vertexId], this.positions[previousId]), normal);
+      const outgoing = projectTangent(subtract(this.positions[nextId], this.positions[vertexId]), normal);
+      if (!incoming || !outgoing) return fail(`Boundary vertex ${vertexId + 1} has no stable tangent direction.`);
+      const inwardPrevious = normalize(cross(normal, incoming));
+      const inwardNext = normalize(cross(normal, outgoing));
+      const bisector = inwardPrevious && inwardNext ? normalize(inwardPrevious.map((value, axis) => value + inwardNext[axis])) : null;
+      if (!bisector) return fail(`Boundary vertex ${vertexId + 1} has an ambiguous inward tangent.`);
+      const alignment = Math.min(dot(bisector, inwardPrevious), dot(bisector, inwardNext));
+      if (!Number.isFinite(alignment) || alignment <= 0.25) {
+        return fail('Curved Face Bevel encountered an acute or ambiguous tangent miter. Reduce the amount or use Individual Faces mode.');
+      }
+      const miterLength = width / alignment;
+      if (!Number.isFinite(miterLength) || miterLength > width * 4) {
+        return fail('Curved Face Bevel requires an excessive tangent miter. Reduce the amount.');
+      }
+      const offset = bisector.map(value => value * miterLength);
+      if (dot(offset, inwardPrevious) < width * 0.98 || dot(offset, inwardNext) < width * 0.98) {
+        return fail('Curved Face Bevel could not form a consistent inward tangent offset.');
+      }
+      const sourcePoint = this.positions[vertexId];
+      const targetPoint = sourcePoint.map((value, axis) => value + offset[axis]);
+      const target2D = project(targetPoint);
+      if (!pointInPolygon2D(target2D, boundary2D, epsilon)) {
+        return fail('Curved Face Bevel tangent offset leaves the selected patch. Reduce the amount.');
+      }
+      inwardOffsets.set(vertexId, offset);
+      offsetLoop2D.push(target2D);
+    }
+    if (polygonSelfIntersects(offsetLoop2D, epsilon) || Math.abs(signedArea2D(offsetLoop2D)) <= epsilon ||
+        Math.sign(signedArea2D(offsetLoop2D)) !== Math.sign(signedArea2D(boundary2D))) {
+      return fail('Curved Face Bevel inward tangent offset collapses or self-intersects. Reduce the amount.');
+    }
+
+    const boundarySet = new Set(boundary);
+    const boundaryIndexByVertex = new Map(boundary.map((vertexId, index) => [vertexId, index]));
+    const nextPositions = this.positions.map(point => [...point]);
+    const remap = new Map();
+    for (const vertexId of used) {
+      const source = this.positions[vertexId];
+      const normal = vertexNormals.get(vertexId);
+      let raised = source.map((value, axis) => value + normal[axis] * height);
+      if (boundarySet.has(vertexId)) {
+        const offset = inwardOffsets.get(vertexId);
+        raised = raised.map((value, axis) => value + offset[axis]);
+      }
+      if (!raised.every(Number.isFinite)) return fail('Curved Face Bevel produced a non-finite raised vertex.');
+      remap.set(vertexId, nextPositions.length);
+      nextPositions.push(raised);
+    }
+
+    // Keep one shared raised copy per source vertex. Triangulate selected source
+    // polygons before offsetting so even a warped raised quad becomes valid
+    // planar triangles while all selected internal seams remain welded.
+    const nextFaces = [];
+    const selectedOutputFaceIds = new Set();
+    for (let faceId = 0; faceId < this.faces.length; faceId++) {
+      if (!selectedSet.has(faceId)) {
+        nextFaces.push([...this.faces[faceId]]);
+        continue;
+      }
+      const triangles = this.triangulateFace(faceId);
+      if (!triangles.length) return fail(`Selected face ${faceId + 1} could not be triangulated for the curved offset.`);
+      const expectedNormal = faceNormals.get(faceId);
+      for (const triangle of triangles) {
+        const mapped = triangle.map(vertexId => remap.get(vertexId));
+        if (mapped.some(vertexId => !Number.isInteger(vertexId))) return fail('Curved Face Bevel could not remap a selected top-face vertex.');
+        const a = nextPositions[mapped[0]], b = nextPositions[mapped[1]], c = nextPositions[mapped[2]];
+        const areaNormal = cross(subtract(b, a), subtract(c, a));
+        const areaMagnitude = vectorLength(areaNormal);
+        if (!Number.isFinite(areaMagnitude) || areaMagnitude <= boundaryScale * boundaryScale * 1e-10 ||
+            dot(areaNormal, expectedNormal) <= areaMagnitude * 0.08) {
+          return fail('Curved Face Bevel would invert or collapse a raised top triangle. Reduce the height.');
+        }
+        selectedOutputFaceIds.add(nextFaces.length);
+        nextFaces.push(mapped);
+      }
+    }
+
+    const boundaryRows = [boundary.map(vertexId => vertexId)];
+    const profileControl = 0.25 + profile * 0.6045694996615875;
+    const profileFactors = t => {
+      const inverse = 1 - t;
+      return {
+        inward: 3 * inverse * t * t * (1 - profileControl) + t * t * t,
+        rise: 3 * inverse * inverse * t * profileControl + 3 * inverse * t * t + t * t * t
+      };
+    };
+    for (let step = 1; step < segments; step++) {
+      const factors = profileFactors(step / segments);
+      const row = [];
+      for (const vertexId of boundary) {
+        const source = this.positions[vertexId];
+        const normal = vertexNormals.get(vertexId);
+        const inward = inwardOffsets.get(vertexId);
+        const point = source.map((value, axis) => value + inward[axis] * factors.inward + normal[axis] * height * factors.rise);
+        if (!point.every(Number.isFinite)) return fail('Curved Face Bevel profile produced a non-finite transition vertex.');
+        row.push(nextPositions.length);
+        nextPositions.push(point);
+      }
+      boundaryRows.push(row);
+    }
+    boundaryRows.push(boundary.map(vertexId => remap.get(vertexId)));
+
+    const transitionFaceStart = nextFaces.length;
+    for (let step = 0; step < segments; step++) {
+      const lower = boundaryRows[step], upper = boundaryRows[step + 1];
+      for (let index = 0; index < boundary.length; index++) {
+        const next = (index + 1) % boundary.length;
+        const quad = [lower[index], lower[next], upper[next], upper[index]];
+        const points = quad.map(vertexId => nextPositions[vertexId]);
+        const diagonal02 = vectorLength(subtract(points[2], points[0]));
+        const diagonal13 = vectorLength(subtract(points[3], points[1]));
+        const triangles = diagonal02 <= diagonal13
+          ? [[quad[0], quad[1], quad[2]], [quad[0], quad[2], quad[3]]]
+          : [[quad[0], quad[1], quad[3]], [quad[1], quad[2], quad[3]]];
+        const edgeDirection = normalize(subtract(this.positions[boundary[next]], this.positions[boundary[index]]));
+        const averageNormal = normalize(vertexNormals.get(boundary[index]).map((value, axis) =>
+          value + vertexNormals.get(boundary[next])[axis]));
+        const expectedOutward = edgeDirection && averageNormal ? normalize(cross(edgeDirection, averageNormal)) : null;
+        if (!expectedOutward) return fail('Curved Face Bevel could not establish a stable transition-wall direction.');
+        for (const triangle of triangles) {
+          const [aId, bId, cId] = triangle;
+          const a = nextPositions[aId], b = nextPositions[bId], c = nextPositions[cId];
+          const areaNormal = cross(subtract(b, a), subtract(c, a));
+          const areaMagnitude = vectorLength(areaNormal);
+          if (!Number.isFinite(areaMagnitude) || areaMagnitude <= boundaryScale * boundaryScale * 1e-10 ||
+              dot(areaNormal, expectedOutward) <= areaMagnitude * 0.025) {
+            return fail('Curved Face Bevel produced a folded or inverted transition triangle. Reduce width/height or use Individual Faces mode.');
+          }
+          nextFaces.push(triangle);
+        }
+      }
+    }
+
+    const candidate = new HalfEdgeMesh(nextPositions, nextFaces);
+    let report = candidate.validateTopology();
+    if (report.counts.isolatedVertices) {
+      candidate.compact();
+      report = candidate.validateTopology();
+    }
+    if (!report.valid) {
+      return fail(`Curved Face Bevel candidate failed topology validation (${report.issueCount} issue(s)); the source mesh was not changed.`);
+    }
+    for (let faceId = 0; faceId < candidate.faces.length; faceId++) {
+      if (!candidate.triangulateFace(faceId).length) {
+        return fail('Curved Face Bevel candidate contains a triangle that could not be validated; the source mesh was not changed.');
+      }
+    }
+
+    this.positions = candidate.positions.map(point => [...point]);
+    this.faces = candidate.faces.map(face => [...face]);
+    this.selectionMode = 'face';
+    this.clearSelection();
+    this.rebuild();
+    this.faceSelection = new Set(selectedOutputFaceIds);
+    return {
+      changed: true,
+      operation: 'face-curved-region',
+      amount,
+      heightAmount,
+      width,
+      height,
+      normal: regionNormal,
+      selectedFaces: selected.length,
+      selectedTopTriangles: selectedOutputFaceIds.size,
+      boundaryEdges: boundary.length,
+      insertedVertices: used.length + boundary.length * (segments - 1),
+      createdFaces: nextFaces.length - transitionFaceStart,
+      segments,
+      profile,
+      maximumAdjacentNormalAngle: 55,
+      topology: report
+    };
+  }
+
+  /**
    * Bevel every selected polygon as its own panel. Each face is processed on
    * one private candidate using the validated single-face region path, so a
    * curved selection can still work when every individual polygon is planar.
