@@ -375,7 +375,7 @@ function registerCommands() {
     if (result) {
       await reapplyActiveModifiers();
       if (result.operation === 'face-region') {
-        notify(`Face Bevel applied · ${result.selectedFaces} face(s) · ${result.boundaryEdges} boundary edges · ${result.insertedVertices} vertices · width ${result.width.toFixed(3)}.`, 'success');
+        notify(`Face Bevel applied · ${result.selectedFaces} face(s) · ${result.reflexCorners || 0} reflex corner(s) · ${result.boundaryEdges} boundary edges · ${result.insertedVertices} vertices · width ${result.width.toFixed(3)}.`, 'success');
       } else {
         notify(`Bevel applied · ${result.bevelCount || 1} edge(s) · ${result.insertedVertices} vertices · ${result.createdFaces} faces · avg width ${result.width.toFixed(3)}.`, 'success');
       }
@@ -625,7 +625,7 @@ ui = {
       const faceRegion = bevelModal.mode === 'face-region';
       readout.hidden=false;
       readout.textContent=faceRegion
-        ? `FACE BEVEL · ${bevelModal.lastResult?.selectedFaces || bevelModal.seedFaceIds.length} face(s) · Width ${bevelModal.lastResult?.width?.toFixed(3) || '—'} · Amount ${bevelModal.amount.toFixed(2)} · Drag / arrows · Enter apply / Esc cancel`
+        ? `FACE BEVEL · ${bevelModal.lastResult?.selectedFaces || bevelModal.seedFaceIds.length} face(s) · ${bevelModal.lastResult?.reflexCorners || 0} reflex · Width ${bevelModal.lastResult?.width?.toFixed(3) || '—'} · Amount ${bevelModal.amount.toFixed(2)} · Drag / arrows · Enter apply / Esc cancel`
         : `BEVEL · ${bevelModal.seedEdgeIds.length} edge(s) · ${bevelModal.segments} segment(s) · Profile ${bevelModal.profile.toFixed(2)} · Amount ${bevelModal.amount.toFixed(2)} · Drag / arrows: width · +/-: segments · [ ]: profile · Enter apply / Esc cancel`;
       pad.hidden=!capabilities.tier.includes('Mobile');
       pad.classList.remove('loop-cut-mode','bevel-mode');

@@ -29,6 +29,37 @@ function snapshot(mesh) {
   });
 }
 
+function gridRegion(cells, { rotated = false, reverse = false } = {}) {
+  const vertexIds = new Map();
+  const positions = [];
+  const transform = ([x, y]) => {
+    if (!rotated) return [x, y, 0];
+    const rz = 0.47, rx = 0.39, ry = 0.28;
+    const cz = Math.cos(rz), sz = Math.sin(rz);
+    const cx = Math.cos(rx), sx = Math.sin(rx);
+    const cy = Math.cos(ry), sy = Math.sin(ry);
+    const afterZ = [cz * x - sz * y, sz * x + cz * y, 0];
+    const afterX = [afterZ[0], cx * afterZ[1], sx * afterZ[1]];
+    return [cy * afterX[0] + sy * afterX[2] + 2, afterX[1] - 3, -sy * afterX[0] + cy * afterX[2] + 1];
+  };
+  const id = (x, y) => {
+    const key = `${x},${y}`;
+    if (!vertexIds.has(key)) {
+      vertexIds.set(key, positions.length);
+      positions.push(transform([x, y]));
+    }
+    return vertexIds.get(key);
+  };
+  const faces = cells.map(([x, y]) => {
+    const face = [id(x, y), id(x + 1, y), id(x + 1, y + 1), id(x, y + 1)];
+    return reverse ? face.reverse() : face;
+  });
+  return selectedMesh(positions, faces, faces.map((_, index) => index));
+}
+
+const lRegionCells = [[0, 0], [1, 0], [0, 1]];
+const uRegionCells = [[0, 0], [1, 0], [2, 0], [0, 1], [2, 1], [0, 2], [2, 2]];
+
 function makeSession(hem) {
   const mesh = { userData: { hem } };
   const document = {
@@ -134,16 +165,68 @@ test('Face Bevel preserves reversed region winding', () => {
   assert.equal(mesh.validateTopology().valid, true);
 });
 
-test('reflex/concave corners are explicitly rejected without changing the source', () => {
+test('concave L-shaped face region bevels with a validated reflex miter and welded seams', () => {
+  const mesh = gridRegion(lRegionCells);
+  const analysis = mesh.analyzeFaceRegion([...mesh.faceSelection]);
+  assert.equal(analysis.valid, true);
+  assert.equal(analysis.hasConcaveCorners, true);
+  const result = mesh.bevelSelectedFaceRegion({ amount: 0.1 });
+
+  assert.equal(result.changed, true, result.reason);
+  assert.equal(result.reflexCorners, 1);
+  assert.equal(result.boundaryEdges, 8);
+  assert.equal(result.createdFaces, 8);
+  assert.equal(mesh.validateTopology().valid, true);
+  const selected = new Set(mesh.faceSelection);
+  const innerSeams = mesh.edges.filter(edge => edge.halfEdges.length === 2 &&
+    edge.halfEdges.every(halfEdge => selected.has(halfEdge.face.id)));
+  assert.equal(innerSeams.length, 2);
+  assert.ok(mesh.faces.every((_, faceId) => mesh.triangulateFace(faceId).length > 0));
+});
+
+test('two-reflex U-shaped region bevels when the inner boundary remains simple', () => {
+  const mesh = gridRegion(uRegionCells);
+  const analysis = mesh.analyzeFaceRegion([...mesh.faceSelection]);
+  assert.equal(analysis.boundaryLoops[0].concaveVertexIds.length, 2);
+  const result = mesh.bevelSelectedFaceRegion({ amount: 0.2 });
+  assert.equal(result.changed, true, result.reason);
+  assert.equal(result.reflexCorners, 2);
+  assert.equal(result.boundaryEdges, 16);
+  assert.equal(result.createdFaces, 16);
+  assert.equal(mesh.validateTopology().valid, true);
+});
+
+test('rotated concave region bevel follows its world-space normal', () => {
+  const mesh = gridRegion(lRegionCells, { rotated: true });
+  const result = mesh.bevelSelectedFaceRegion({ amount: 0.2 });
+  assert.equal(result.changed, true, result.reason);
+  assert.equal(result.reflexCorners, 1);
+  assert.ok(result.normal.every(Number.isFinite));
+  assert.ok(Math.abs(result.normal[0]) > 0.1);
+  assert.ok(Math.abs(result.normal[1]) > 0.1);
+  assert.ok(Math.abs(result.normal[2]) > 0.1);
+  assert.equal(mesh.validateTopology().valid, true);
+});
+
+test('concave region bevel preserves reversed face winding', () => {
+  const mesh = gridRegion(lRegionCells, { reverse: true });
+  const result = mesh.bevelSelectedFaceRegion({ amount: 0.2 });
+  assert.equal(result.changed, true, result.reason);
+  assert.equal(result.reflexCorners, 1);
+  assert.deepEqual(result.normal, [0, 0, -1]);
+  assert.equal(mesh.validateTopology().valid, true);
+});
+
+test('acute reflex notch rejects excessive miter without changing the source', () => {
   const mesh = selectedMesh(
-    [[0,0,0],[1,0,0],[2,0,0],[0,1,0],[1,1,0],[2,1,0],[0,2,0],[1,2,0]],
-    [[0,1,4,3],[1,2,5,4],[3,4,7,6]],
-    [0,1,2]
+    [[0,0,0],[4,0,0],[4,3,0],[2.1,3,0],[2,2,0],[1.9,3,0],[0,3,0]],
+    [[0,1,2,3,4,5,6]],
+    [0]
   );
   const before = snapshot(mesh);
-  const analysis = mesh.analyzeFaceRegion([...mesh.faceSelection]);
-  assert.equal(analysis.hasConcaveCorners, true);
-  assert.equal(mesh.bevelSelectedFaceRegion({ amount: 0.1 }).changed, false);
+  const result = mesh.bevelSelectedFaceRegion({ amount: 0.95 });
+  assert.equal(result.changed, false);
+  assert.match(result.reason, /excessive miter/i);
   assert.equal(snapshot(mesh), before);
 });
 
@@ -262,17 +345,24 @@ test('Face Bevel modal cancel restores the complete source snapshot without an u
   assert.equal(session.commits.length, 0);
 });
 
-test('Face Bevel modal rejects a concave selection before showing a preview', async () => {
-  const session = makeSession(selectedMesh(
-    [[0,0,0],[1,0,0],[2,0,0],[0,1,0],[1,1,0],[2,1,0],[0,2,0],[1,2,0]],
-    [[0,1,4,3],[1,2,5,4],[3,4,7,6]],
-    [0,1,2]
-  ));
+test('Face Bevel modal previews, cancels and commits a supported concave region transactionally', async () => {
+  const session = makeSession(gridRegion(lRegionCells));
   const before = await session.document.serialize();
   const modal = new BevelModal(session);
-  assert.equal(await modal.begin(), false);
-  assert.match(modal.lastError, /reflex\/concave/i);
-  assert.equal(modal.active, false);
+  assert.equal(await modal.begin(), true, modal.lastError);
+  assert.equal(modal.lastResult.reflexCorners, 1);
+  assert.equal(modal.setAmount(0.2), true, modal.lastError);
+  assert.equal(session.mesh.userData.hem.validateTopology().valid, true);
+  assert.equal(await modal.cancel(), true);
   assert.deepEqual(await session.document.serialize(), before);
   assert.equal(session.commits.length, 0);
+
+  assert.equal(await modal.begin(), true, modal.lastError);
+  assert.equal(modal.setAmount(0.2), true, modal.lastError);
+  const committed = await modal.confirm();
+  assert.equal(committed.reflexCorners, 1);
+  assert.equal(committed.operation, 'face-region');
+  assert.equal(session.commits.length, 1);
+  assert.equal(session.commits[0].label, 'Face Bevel');
+  assert.equal(session.mesh.userData.hem.validateTopology().valid, true);
 });

@@ -74,7 +74,7 @@ export class BevelModal {
     this.applyPreview(preview.hem);
     this.active = true;
     this.status?.(this.mode === 'face-region'
-      ? `FACE BEVEL · ${this.lastResult.selectedFaces} face(s) · width ${this.lastResult.width.toFixed(3)} · drag / type amount · Enter apply · Esc cancel`
+      ? `FACE BEVEL · ${this.lastResult.selectedFaces} face(s) · ${this.lastResult.reflexCorners || 0} reflex corner(s) · width ${this.lastResult.width.toFixed(3)} · drag / type amount · Enter apply · Esc cancel`
       : `BEVEL · ${this.segments} segment(s) · profile ${this.profile.toFixed(2)}${this.profileSafetyNote()} · drag width · +/- segments · [ ] profile · Enter apply · Esc cancel`);
     this.onChange?.();
     return true;
@@ -113,7 +113,7 @@ export class BevelModal {
     this.lastError = '';
     this.applyPreview(preview.hem);
     this.status?.(this.mode === 'face-region'
-      ? `Face Bevel · ${preview.result.selectedFaces} face(s) · amount ${this.amount.toFixed(2)} · width ${preview.result.width.toFixed(3)} · Enter apply / Esc cancel`
+      ? `Face Bevel · ${preview.result.selectedFaces} face(s) · ${preview.result.reflexCorners || 0} reflex corner(s) · amount ${this.amount.toFixed(2)} · width ${preview.result.width.toFixed(3)} · Enter apply / Esc cancel`
       : `Bevel · ${this.segments} segment(s) · profile ${this.profile.toFixed(2)}${this.profileSafetyNote()} · amount ${this.amount.toFixed(2)} · width ${preview.result.width.toFixed(3)} · Enter apply / Esc cancel`);
     this.onChange?.();
     return true;

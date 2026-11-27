@@ -8,7 +8,7 @@ Open the deployed app only after the latest Pages workflow succeeds:
 
 `https://n0nam3-bot.github.io/Bl3nd/`
 
-Latest deployed baseline before this package is v0.1.32, `main` commit `6a385cb7af45bc70b2c93aaed53c6f357d95a26e`, Pages workflow run #40 (success). After uploading v0.1.33, reload and allow the v30 service-worker cache to activate before testing.
+Latest deployed baseline before this package is v0.1.33, `main` commit `b12c14eca2ad0054a86a1b1a439fef8e92c35291`, Pages workflow run #41 (success). After uploading v0.1.34, reload and allow the v31 service-worker cache to activate before testing.
 
 ## Desktop — Chrome or Edge
 
@@ -24,7 +24,7 @@ Latest deployed baseline before this package is v0.1.32, `main` commit `6a385cb7
 10. Repeat Bevel using numeric width and arrow-key nudges. Confirm invalid/unsupported values do not mutate the source mesh.
 11. Switch to Face Select (`3`), select one cube face, and press `Ctrl+B`. Confirm the FACE BEVEL readout appears and the selected patch rises with one continuous perimeter transition. Drag horizontally and type a value; the reported width and mesh must update together. Segment/profile controls must be absent/ignored in this mode.
 12. Cancel and confirm the original positions, faces and selection return with no undo entry. Start again and apply; confirm one Face Bevel undo entry and exact Undo/Redo restoration.
-13. Select a connected two-face planar region and confirm the shared internal seam remains welded after Face Bevel. A concave L-shaped region, hole/multiple-loop region, disconnected selection or non-planar region must reject before source mutation; no unsupported case may leave a partial preview.
+13. Select a connected two-face planar region and confirm the shared internal seam remains welded after Face Bevel. Then select a concave L-shaped region and a U-shaped region with two reflex corners; use a small amount and confirm each produces a continuous, valid transition when the inner boundary remains simple. An acute reflex notch that requires an excessive miter, a hole/multiple-loop region, disconnected selection or non-planar region must reject before source mutation; no rejected case may leave a partial preview.
 
 Record each step as Pass / Fail / Not tested. If a region-tool result is unexpected, note the tool, drag direction, shape, viewport orientation and whether the missed edge was visible.
 
@@ -71,11 +71,12 @@ Record each step as Pass / Fail / Not tested. If a region-tool result is unexpec
 - The v0.1.30 Inset regressions cover constant-offset miters, connected two-face regions, concave L-shaped regions, rotated-plane world-distance consistency, reversed winding, disconnected regions, holes, collapsing offsets, excessive miters and non-planar faces. The v0.1.31 Extrude regressions cover concave L regions, tilted-plane world normals, reversed winding, shared interior seams, invalid distance/mode, holes and disconnected selections. v0.1.32 adds ten read-only boundary-analysis regressions for convex/concave loops, annular holes, disconnected and nested-independent islands, non-planar regions, inconsistent winding and non-manifold edges. These automated tests do not replace real touch/browser validation.
 - On Android Chrome, verify connected-region Inset on a subdivided Plane and concave L-region Extrude. Confirm shared internal seams stay welded, previews update, Cancel restores the original, Apply creates one undoable operation, and Undo/Redo restores both states. This is still pending owner/device acceptance; automated boundary analysis is not evidence of browser interaction correctness. Desktop pointer behavior remains deferred until the user can access a PC; it does not block continued modeling work.
 
-## Face-region Bevel regression — v0.1.33 (automated; browser run pending)
+## Face-region Bevel regression — v0.1.33/v0.1.34 (automated; browser run pending)
 
-- Automated tests cover a convex cube face, a connected two-face planar patch with a retained internal seam, rotated-plane normals, reversed winding, miter limits, numeric bounds, modal amount updates, cancel restoration, one-step commit/undo metadata and non-destructive rejection of concave/reflex corners, holes, disconnected islands and non-planar input.
-- The first increment accepts only one connected, consistently wound planar region with one simple boundary whose corners are convex or collinear. It raises the selected region by the computed width and creates one validated perimeter transition. It uses one transition segment; profile shaping and concave-corner construction are not implemented.
-- Android Chrome acceptance is pending. Verify startup, Face Select, panel Bevel launch, visible readout, touch drag/numeric amount update, hidden segment/profile controls, Cancel, Apply, Undo/Redo and restored viewport gestures. Desktop Chrome/Edge remains deferred until the owner can access a PC.
+- v0.1.33 automated tests cover convex single-face and connected multi-face regions, welded internal seams, rotated-plane normals, reversed winding, miter limits, numeric bounds, modal amount updates, Cancel and one-step commit/undo metadata.
+- v0.1.34 adds concave L-shaped and two-reflex U-shaped regions, rotated and reversed concave regions, retained internal seams, modal preview/Cancel/Apply and an acute reflex notch that must reject for excessive miter without source mutation. Holes, multiple loops, disconnected islands, non-planar input and invalid amounts remain rejected.
+- Face Bevel still accepts only one connected, consistently wound planar region with one simple boundary. Supported reflex/concave corners are accepted only when the inward offset remains inside and simple and every miter and transition wall passes candidate validation. It still uses one transition segment; profile shaping and independently adjustable height are not implemented.
+- Android Chrome acceptance is pending. Verify startup, Face Select, panel Bevel launch, visible reflex-corner/width readout, touch drag/numeric amount update, hidden segment/profile controls, a concave L-region preview, Cancel, Apply, Undo/Redo and restored viewport gestures. Confirm an acute reflex notch and holes/disconnected/non-planar regions reject without mutation. Desktop Chrome/Edge remains deferred until the owner can access a PC.
 
 ## Record results
 
@@ -88,7 +89,7 @@ For each device, record:
 - Whether Edge Bevel width, segment and profile controls updated the preview; for Face Bevel, whether amount/width updated and segment/profile controls remained hidden.
 - Whether Cancel restored the original mesh without an undo entry.
 - Whether Face-region Inset and concave multi-face Extrude previewed correctly, Cancel restored the original, Confirm created one undoable operation and Undo/Redo restored both states.
-- Whether Face Bevel previewed/applied for a supported convex planar region, Cancel restored the source, one undo operation was recorded, Undo/Redo restored both states, and unsupported concave/hole/disconnected/non-planar regions rejected safely.
+- Whether Face Bevel previewed/applied for supported convex and concave planar regions, Cancel restored the source, one undo operation was recorded, Undo/Redo restored both states, and excessive-miter/hole/disconnected/non-planar regions rejected safely.
 - Any visible error text and the first app-owned console error, if available.
 
 Mark each step as **Pass**, **Fail**, or **Not tested**. Do not interpret extension-injected console messages as Bl3nd errors without confirming their source. Do not change topology validation to make a failing geometry case appear to pass; unsupported or invalid candidates must leave the source mesh unchanged.

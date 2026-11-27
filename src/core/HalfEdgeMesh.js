@@ -748,15 +748,15 @@ export class HalfEdgeMesh {
   }
 
   /**
-   * Create the first conservative face-region Bevel: move the selected planar
-   * region along its normal by one bevel width and connect its inset boundary
-   * to the original perimeter with a single mitered transition wall.
+   * Create a conservative face-region Bevel: raise the selected planar region
+   * and connect its inward-offset boundary to the original perimeter with one
+   * mitered transition wall per boundary edge.
    *
-   * The candidate is built on a private mesh and committed atomically. The
-   * current envelope accepts one connected, planar, single-loop region whose
-   * region-facing corners are convex (collinear corners are allowed). Reflex
-   * corners are identified by the shared analyzer and rejected until their
-   * face-wall intersections have a separately validated construction.
+   * The candidate is built on a private mesh and committed atomically. One
+   * connected, consistently wound planar region with one simple boundary is
+   * required. Convex, collinear and reflex corners are accepted only when the
+   * inward offset remains inside/simple and every miter and wall validates.
+   * Excessive miters, folded walls, holes and unsupported topology reject.
    */
   bevelSelectedFaceRegion({ amount = 0.25 } = {}) {
     const fail = reason => ({ changed: false, reason });
@@ -785,10 +785,6 @@ export class HalfEdgeMesh {
     }
 
     const loop = analysis.boundaryLoops[0];
-    if (loop.concaveVertexIds?.length) {
-      return fail(`Face Bevel currently rejects ${loop.concaveVertexIds.length} reflex/concave boundary corner(s); use a convex planar region.`);
-    }
-
     const boundary = [...loop.vertexIds];
     const normal = [...analysis.normal];
     const origin = [...this.positions[boundary[0]]];
@@ -839,14 +835,16 @@ export class HalfEdgeMesh {
     const offset = offsetPolygonInward(regionPoints, width, regionScale);
     if (!offset.changed) return fail(offset.reason.replace(/^Inset/, 'Face Bevel'));
 
-    // The shared analyzer classifies every corner from the selected-region
-    // side. Use a stricter miter envelope at all corners in this first pass;
-    // reflex corners are rejected above rather than guessed at.
+    // The shared analyzer classifies corners from the selected-region side.
+    // Convex and reflex corners use the same inward offset-line intersection;
+    // the offset solver and the complete wall candidate must prove that every
+    // result remains simple, inside the source, planar and convex.
     const convexIds = new Set(loop.convexVertexIds || []);
+    const concaveIds = new Set(loop.concaveVertexIds || []);
     const collinearIds = new Set(loop.collinearVertexIds || []);
     for (let index = 0; index < boundary.length; index++) {
       const vertexId = boundary[index];
-      if (!convexIds.has(vertexId) && !collinearIds.has(vertexId)) {
+      if (!convexIds.has(vertexId) && !concaveIds.has(vertexId) && !collinearIds.has(vertexId)) {
         return fail(`Face Bevel could not classify boundary corner ${vertexId} unambiguously.`);
       }
       const point = regionPoints[index];
@@ -936,6 +934,7 @@ export class HalfEdgeMesh {
       selectedFaces: selected.length,
       boundaryEdges: boundary.length,
       convexCorners: loop.convexVertexIds.length,
+      reflexCorners: loop.concaveVertexIds.length,
       collinearCorners: loop.collinearVertexIds.length,
       insertedVertices: used.length,
       createdFaces: boundary.length,
