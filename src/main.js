@@ -87,6 +87,21 @@ async function reapplyActiveModifiers() {
   if(mesh?.userData.modifiers?.length) { try { await modifierStack.evaluate(mesh); } catch(error) { notify(error.message,'error'); } }
 }
 
+function frameCurrentBevelTarget() {
+  if (!bevelModal.active || bevelModal.mode !== 'face-region' || !bevelModal.mesh) return false;
+  const sourceTopology = { positions: bevelModal.basePositions, faces: bevelModal.baseFaces };
+  if (bevelModal.faceBevelMode === 'individual') {
+    const faceId = bevelModal.seedFaceIds?.[bevelModal.activeFaceIndex];
+    if (!Number.isInteger(faceId)) return false;
+    const framed = viewport.frameSelection(bevelModal.mesh, sourceTopology, { focusFaceId: faceId });
+    if (framed) bevelModal.startPointer = null;
+    return framed;
+  }
+  const framed = viewport.frameSelection(bevelModal.mesh, sourceTopology, { faceIds: bevelModal.seedFaceIds || [] });
+  if (framed) bevelModal.startPointer = null;
+  return framed;
+}
+
 async function startFaceOperation(operation) {
   if (modalTransform.active || loopCutModal.active || bevelModal.active || faceOperationModal.active) {
     notify('Confirm or cancel the current operation before starting Extrude or Inset.');
@@ -346,7 +361,10 @@ function registerCommands() {
     const started = await bevelModal.begin();
     if (!started) { notify(`Bevel skipped · ${bevelModal.lastError || 'Unable to start Bevel.'}`, 'error'); return false; }
     minimizeMobilePropertiesPanel();
-    if (viewport.frameSelection(selectedObject, sourceTopology, selection)) bevelModal.startPointer = null;
+    const framed = bevelModal.mode === 'face-region'
+      ? frameCurrentBevelTarget()
+      : viewport.frameSelection(selectedObject, sourceTopology, selection);
+    if (framed) bevelModal.startPointer = null;
     viewport.controls.enabled = false;
     viewport.selectionTool = 'tap';
     viewport.modalOperationActive = true;
@@ -384,11 +402,13 @@ function registerCommands() {
   }, { recordUndo: false });
   commandBus.register('mesh.bevel_face_mode_toggle', () => {
     const changed = bevelModal.toggleFaceBevelMode();
+    if (changed) frameCurrentBevelTarget();
     ui.refreshModal();
     return changed;
   }, { recordUndo: false });
   commandBus.register('mesh.bevel_face_target', ({ delta }) => {
     const changed = bevelModal.selectFaceTarget(delta);
+    if (changed) frameCurrentBevelTarget();
     ui.refreshModal();
     return changed;
   }, { recordUndo: false });

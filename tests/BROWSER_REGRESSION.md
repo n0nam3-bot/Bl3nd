@@ -8,7 +8,7 @@ Open the deployed app only after the latest Pages workflow succeeds:
 
 `https://n0nam3-bot.github.io/Bl3nd/`
 
-Latest deployed baseline before this package is v0.1.38, `main` commit `af760c2ea62a6a6a328434995f6218ed55e22752`, Pages workflow run #46 (success). After uploading v0.1.39, reload and allow the v36 service-worker cache to activate before testing.
+Latest deployed baseline before this package is v0.1.39, `main` commit `8909d9d4b9e8a9d3c13419bc224d00c0fd68143b`, Pages workflow run #47 (success). After uploading v0.1.40, reload and allow the v37 service-worker cache to activate before testing.
 
 ## Desktop — Chrome or Edge
 
@@ -52,6 +52,8 @@ Record each step as Pass / Fail / Not tested. If a region-tool result is unexpec
 
 17. In Face Select, select two adjacent cube faces and start Face Bevel. Confirm the camera recenters on the selected area and rotates to show both selected planes as clearly as possible. Cancel, then select all six cube faces and start Face Bevel again; confirm the camera chooses a corner angle that exposes the greatest combined selected-face area instead of staying on a front-only view. A single view cannot show opposing front/back faces at the same time, so orbit to inspect hidden sides as needed. Confirm camera framing does not change topology, selection IDs or the modal preview. Repeat with two adjacent edges for Edge Bevel and a Loop Cut seed edge; single-face/single-edge operations should not cause an unnecessary camera jump.
 
+18. On a curved/non-planar object, select a group of at least three faces and start Face Bevel. It should enter Individual Faces mode when the selection is not one supported planar region, and the camera must rotate/center on the first active face. Tap Next Face repeatedly: the camera must reorient to each newly active face so it can be edited even when it was on the back/side of the object. Previous Face must do the same in reverse. Change width, height, segments and profile on the current face; the camera should stay on that face while parameters change. Toggle Region/Individual mode where allowed and confirm each mode frames its actual target. The operation's geometry, face IDs, per-face settings, Cancel and one-step Apply/Undo must remain unchanged by camera movement.
+
 ## Owner-reported Android acceptance — v0.1.31 through v0.1.38 (2026-11-27)
 
 - The owner reports Pass for connected-region Extrude, concave L-region Extrude, single-face Inset, connected-face Inset, convex Face Bevel, concave Face Bevel, Cancel restoration, Apply and Undo/Redo.
@@ -90,10 +92,11 @@ Record each step as Pass / Fail / Not tested. If a region-tool result is unexpec
 
 ## Face-region Bevel regression — v0.1.33–v0.1.37 (automated; latest browser run pending)
 
-## Selection-aware view regression — v0.1.39 (automated; Android run pending)
+## Selection-aware view regression — v0.1.39–v0.1.40 (automated; Android run pending)
 
 - `tests/SelectionView.test.js` verifies planar face alignment, two-plane compromise orientation, a corner view for all six cube faces, face-area weighting and safe fallback for invalid/empty normals.
-- On Android, use step 17 above to verify the actual Three.js camera recenters the selected surface group and maximizes the combined projected area of selected face normals when Face Bevel, Edge Bevel, Extrude, Inset or Loop Cut starts. Real camera framing is not covered by the pure direction-math tests; desktop browser testing remains deferred.
+- v0.1.39 tests the best-view direction for planar, multi-plane, six-sided and area-weighted face sets. v0.1.40 adds a focused-face regression showing that one active Individual Faces target overrides a balanced whole-selection view.
+- On Android, use steps 17–18 above to verify actual Three.js camera framing, especially previous/next face changes in Individual Faces mode. The pure direction tests do not cover browser camera integration; desktop browser testing remains deferred.
 
 - v0.1.33 automated tests cover convex single-face and connected multi-face regions, welded internal seams, rotated-plane normals, reversed winding, miter limits, numeric bounds, modal amount updates, Cancel and one-step commit/undo metadata.
 - v0.1.34 adds concave L-shaped and two-reflex U-shaped regions, rotated and reversed concave regions, retained internal seams, modal preview/Cancel/Apply and an acute reflex notch that must reject for excessive miter without source mutation. Holes, multiple loops, disconnected islands, non-planar input and invalid amounts remain rejected.

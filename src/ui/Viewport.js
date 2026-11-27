@@ -193,28 +193,36 @@ export class Viewport {
    * exposes the greatest combined projected area of its incident faces.
    * The topology argument is the immutable source mesh captured before a modal
    * operator replaces the live half-edge data with its preview candidate.
+   * `focusFaceId` overrides group scoring and frames one active Individual Faces target.
    */
-  frameSelection(object, topology, { faceIds = [], edgeIds = [], vertexIds = [] } = {}) {
+  frameSelection(object, topology, { faceIds = [], edgeIds = [], vertexIds = [], focusFaceId = null } = {}) {
     if (!object || !topology?.faces?.length || !topology?.positions?.length) return false;
+    const focusedFaceId = Number.isInteger(focusFaceId) && topology.faces[focusFaceId] ? focusFaceId : null;
     const selectedFaces = new Set();
-    for (const faceId of faceIds) if (Number.isInteger(faceId) && topology.faces[faceId]) selectedFaces.add(faceId);
-    for (const edgeId of edgeIds) {
-      const edge = topology.edges?.[edgeId];
-      for (const halfEdge of edge?.halfEdges || []) {
-        const faceId = halfEdge.face?.id;
-        if (Number.isInteger(faceId) && topology.faces[faceId]) selectedFaces.add(faceId);
+    if (focusedFaceId !== null) {
+      // Individual Faces Bevel deliberately frames one editable target at a
+      // time, even when the complete selection has balanced/opposing normals.
+      selectedFaces.add(focusedFaceId);
+    } else {
+      for (const faceId of faceIds) if (Number.isInteger(faceId) && topology.faces[faceId]) selectedFaces.add(faceId);
+      for (const edgeId of edgeIds) {
+        const edge = topology.edges?.[edgeId];
+        for (const halfEdge of edge?.halfEdges || []) {
+          const faceId = halfEdge.face?.id;
+          if (Number.isInteger(faceId) && topology.faces[faceId]) selectedFaces.add(faceId);
+        }
       }
+      if (vertexIds.length) {
+        const selectedVertices = new Set(vertexIds);
+        topology.faces.forEach((face, faceId) => {
+          if (face.some(vertexId => selectedVertices.has(vertexId))) selectedFaces.add(faceId);
+        });
+      }
+      // One selected face/edge is already visible; avoid surprising camera
+      // jumps. Reframe only when the user's actual topology selection is a set.
+      const selectedElementCount = new Set(faceIds).size + new Set(edgeIds).size + new Set(vertexIds).size;
+      if (selectedElementCount < 2 || selectedFaces.size < 2) return false;
     }
-    if (vertexIds.length) {
-      const selectedVertices = new Set(vertexIds);
-      topology.faces.forEach((face, faceId) => {
-        if (face.some(vertexId => selectedVertices.has(vertexId))) selectedFaces.add(faceId);
-      });
-    }
-    // One selected face/edge is already visible; avoid surprising camera
-    // jumps. Reframe only when the user's actual topology selection is a set.
-    const selectedElementCount = new Set(faceIds).size + new Set(edgeIds).size + new Set(vertexIds).size;
-    if (selectedElementCount < 2 || selectedFaces.size < 2) return false;
 
     object.updateMatrixWorld(true);
     const selectedBounds = new THREE.Box3();
@@ -245,7 +253,9 @@ export class Viewport {
     const target = selectedBounds.getCenter(new THREE.Vector3());
     const selectedSphere = selectedBounds.getBoundingSphere(new THREE.Sphere());
     const objectSphere = new THREE.Box3().setFromObject(object).getBoundingSphere(new THREE.Sphere());
-    const radius = Math.max(0.08, selectedSphere.radius * 1.12, objectSphere.radius * 0.62);
+    const radius = focusedFaceId !== null
+      ? Math.max(0.08, selectedSphere.radius * 1.38, objectSphere.radius * 0.28)
+      : Math.max(0.08, selectedSphere.radius * 1.12, objectSphere.radius * 0.62);
     const currentDirection = this.camera.position.clone().sub(this.controls.target).normalize();
     const viewDirection = new THREE.Vector3(...chooseSelectionViewDirection(faceSamples, currentDirection.toArray()));
 

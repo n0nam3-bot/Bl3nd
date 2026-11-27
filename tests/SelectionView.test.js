@@ -57,3 +57,29 @@ test('empty, invalid and zero-area samples preserve the current view direction',
   ], [0, -2, 0]);
   assert.deepEqual(direction, [0, -1, 0]);
 });
+
+test('an Individual Faces target aligns the camera to that face even when the full selection is balanced', () => {
+  const balancedSelection = [
+    [1, 0, 0], [-1, 0, 0],
+    [0, 1, 0], [0, -1, 0],
+    [0, 0, 1], [0, 0, -1]
+  ];
+  const fullSelectionView = chooseSelectionViewDirection(
+    balancedSelection.map(normal => ({ normal, weight: 1 })), [0, -1, 0]
+  );
+  const activeFaceNormal = [1, 0, 0];
+  const activeFaceView = chooseSelectionViewDirection(
+    [{ normal: activeFaceNormal, weight: 1 }], fullSelectionView
+  );
+  assert.ok(dot(activeFaceView, activeFaceNormal) > 1 - 1e-10);
+  assert.ok(dot(activeFaceView, fullSelectionView) < 0.95, 'The active face must override the balanced whole-selection compromise');
+});
+
+test('an Individual Faces target on the back side turns the view through to its outward normal', () => {
+  const backFaceNormal = [0, 0, -1];
+  const direction = chooseSelectionViewDirection(
+    [{ normal: backFaceNormal, weight: 1 }],
+    [0, 0, 1]
+  );
+  assert.ok(dot(direction, backFaceNormal) > 1 - 1e-10);
+});
