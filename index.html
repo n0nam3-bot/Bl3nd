@@ -160,7 +160,7 @@
             <button id="validate-topology-btn" disabled>Validate Mesh</button>
             <button id="repair-topology-btn" disabled>Repair Safe Issues</button>
           </div>
-          <p class="panel-note">Extrude / Inset: switch to Face Select, then press E or I. Extrude accepts one face or a connected planar face region; Inset accepts one face. Drag vertically or enter a value; Enter applies one undoable operation and Esc cancels.</p>
+          <p class="panel-note">Extrude / Inset: switch to Face Select, then press E or I. Extrude accepts one face or a connected coplanar region with one simple boundary; Inset accepts one face or a connected planar region. Drag vertically or enter a value; Enter applies one undoable operation and Esc cancels.</p>
           <p class="panel-note">Loop Cut: select one edge in Edge Select, then press Ctrl+R. Drag horizontally to slide the preview; use the mouse wheel or +/- to add/remove up to 8 evenly spaced cuts. Type an offset from 0–1, use ←/→ to slide, Enter to apply or Esc to cancel.</p>
           <p class="panel-note">Bevel: select one supported interior edge, exactly two adjacent edges at one closed tri-valent corner, one simple connected path of three to eight consecutive edges (shared miters and closed terminal cap patches), two to four separate two-edge miter pairs (up to eight selected edges), or up to eight pairwise-disjoint single edges, then press Ctrl+B. Chains longer than eight edges, cycles, branches, mixed selections and overlapping neighborhoods are rejected; both endpoints and internal junctions may be closed valence-three through valence-six fans with validated triangular cap patches. Valence-five/six caps use conservative profile strength to prevent foldovers. Fans above valence six, boundaries, non-manifold, concave and non-planar regions are rejected. Drag horizontally or enter a width factor from 0–0.95; Enter applies and Esc cancels.</p>
           <div class="panel-heading section-gap">PIVOT POINT</div>
@@ -251,7 +251,7 @@
         const hadController = Boolean(navigator.serviceWorker.controller);
         if (hadController) {
           try {
-            const refreshKey = 'bl3nd-cache-refresh-v27';
+            const refreshKey = 'bl3nd-cache-refresh-v28';
             if (!sessionStorage.getItem(refreshKey)) {
               navigator.serviceWorker.addEventListener('controllerchange', () => {
                 sessionStorage.setItem(refreshKey, '1');

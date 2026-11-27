@@ -84,7 +84,7 @@ export class FaceOperationModal {
     this.applyPreview(preview.hem);
     this.active = true;
     this.status?.(operation === 'extrude'
-      ? 'EXTRUDE · drag up/down or type a distance · Enter apply · Esc cancel'
+      ? `EXTRUDE · ${this.lastResult.selectedFaces} face(s) · ${this.lastResult.boundaryEdges} boundary edges · distance ${this.lastResult.distance.toFixed(3)} · drag / type · Enter apply · Esc cancel`
       : `INSET · ${this.seedFaceIds.length} face(s) · offset ${this.lastResult.distance.toFixed(3)} · drag / type amount · Enter apply · Esc cancel`);
     this.onChange?.();
     return true;
@@ -104,9 +104,10 @@ export class FaceOperationModal {
     hem.faceSelection = new Set(this.seedFaceIds);
     let operationDetails;
     if (this.operation === 'extrude') {
-      const changed = hem.extrudeSelected(value);
-      if (!changed) return { hem, result: { changed: false, reason: 'The selected faces could not be extruded as one connected planar region.' } };
-      operationDetails = { selectedFaces: this.seedFaceIds.length };
+      operationDetails = hem.extrudeSelectedRegion(value);
+      if (!operationDetails?.changed) {
+        return { hem, result: { changed: false, reason: operationDetails?.reason || 'The selected faces could not be extruded as one connected planar region.' } };
+      }
     } else {
       operationDetails = hem.insetSelectedRegion(value);
       if (!operationDetails?.changed) {
@@ -125,8 +126,9 @@ export class FaceOperationModal {
         operation: this.operation,
         value,
         selectedFaces: this.seedFaceIds.length,
-        distance: this.operation === 'inset' ? operationDetails.distance : undefined,
-        boundaryEdges: this.operation === 'inset' ? operationDetails.boundaryEdges : undefined,
+        distance: operationDetails.distance,
+        normal: operationDetails.normal,
+        boundaryEdges: operationDetails.boundaryEdges,
         insertedVertices: hem.positions.length - this.basePositions.length,
         createdFaces: hem.faces.length - sourceFaces,
         topology: report
@@ -160,9 +162,9 @@ export class FaceOperationModal {
     this.lastResult = preview.result;
     this.lastError = '';
     this.applyPreview(preview.hem);
-    const insetDistance = this.operation === 'inset' && Number.isFinite(this.lastResult?.distance)
-      ? ` · offset ${this.lastResult.distance.toFixed(3)}` : '';
-    this.status?.(`${this.operation === 'extrude' ? 'Extrude' : 'Inset'} preview · ${this.value.toFixed(3)}${insetDistance} · Enter apply / Esc cancel`);
+    const distanceDetail = Number.isFinite(this.lastResult?.distance)
+      ? ` · ${this.operation === 'extrude' ? 'distance' : 'offset'} ${this.lastResult.distance.toFixed(3)}` : '';
+    this.status?.(`${this.operation === 'extrude' ? 'Extrude' : 'Inset'} preview · ${this.value.toFixed(3)}${distanceDetail} · Enter apply / Esc cancel`);
     this.onChange?.();
     return true;
   }

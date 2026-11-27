@@ -498,34 +498,115 @@ export class HalfEdgeMesh {
     return n.map(x => x / length);
   }
 
+  // Preserve the original boolean entry point for older command callers.
   extrudeSelected(distance = 1) {
-    const selected = [...this.faceSelection];
-    if (!selected.length) return false;
-    const selectedSet = new Set(selected), boundary = new Map(), normal = [0, 0, 0], used = new Set();
+    return this.extrudeSelectedRegion(distance).changed;
+  }
+
+  /**
+   * Extrude one face or one connected, coplanar face region along its boundary
+   * plane normal. The complete result is built on a private candidate mesh and
+   * replaces the source only after topology and polygon validation succeed.
+   */
+  extrudeSelectedRegion(distance = 1) {
+    const fail = reason => ({ changed: false, reason });
+    if (!Number.isFinite(distance) || Math.abs(distance) < 1e-4 || Math.abs(distance) > 100) {
+      return fail('Extrude distance must be non-zero and within ±100.');
+    }
+    if (this.selectionMode !== 'face') return fail('Extrude requires Face Select mode.');
+
+    const selected = [...this.faceSelection]
+      .filter(id => Number.isInteger(id) && this.faces[id])
+      .sort((a, b) => a - b);
+    if (!selected.length || selected.length !== this.faceSelection.size) {
+      return fail('Select one valid face or one connected planar face region before extruding.');
+    }
+
+    const sourceReport = this.validateTopology();
+    if (!sourceReport.valid) {
+      return fail('The source mesh has topology warnings. Validate and repair safe issues before extruding.');
+    }
+
+    const boundary = selected.length === 1
+      ? [...this.faces[selected[0]]]
+      : this.boundaryForRegion(selected);
+    if (!boundary || boundary.length < 3 || new Set(boundary).size !== boundary.length) {
+      return fail('Extrude requires one connected planar face region with a single simple boundary and no holes.');
+    }
+
+    const projection = projectedPolygon(this.positions, boundary);
+    if (!projection) return fail('The selected face-region boundary has no stable plane.');
+    const tolerance = Math.max(1, projection.scale) * 1e-5;
+    if (projection.deviation > tolerance || !triangulatePolygon(this.positions, boundary)) {
+      return fail('Extrude requires a simple, planar face-region boundary.');
+    }
+
+    // Verify every selected face agrees with the region plane and winding.
+    // The boundary's Newell normal is stable for concave polygons, unlike a
+    // cross product from an arbitrary first triangle or an unweighted sum of
+    // face normals.
+    const origin = this.positions[boundary[0]];
     for (const faceId of selected) {
-      const face = this.faces[faceId]; const n = this.faceNormal(faceId);
-      n.forEach((v, i) => normal[i] += v);
-      for (const v of face) used.add(v);
-      for (let i = 0; i < face.length; i++) {
-        const a = face[i], b = face[(i + 1) % face.length], key = keyFor(a, b);
-        const item = boundary.get(key) || { count: 0, a, b };
-        item.count++; boundary.set(key, item);
+      const faceProjection = projectedPolygon(this.positions, this.faces[faceId]);
+      if (!faceProjection || faceProjection.deviation > tolerance ||
+          faceProjection.normal.reduce((sum, value, axis) => sum + value * projection.normal[axis], 0) < 0.999 ||
+          this.faces[faceId].some(vertexId => Math.abs(projection.normal.reduce((sum, value, axis) =>
+            sum + value * (this.positions[vertexId][axis] - origin[axis]), 0)) > tolerance) ||
+          !this.triangulateFace(faceId).length) {
+        return fail('Extrude requires consistently wound, coplanar selected faces.');
       }
     }
-    const nLen = Math.hypot(...normal) || 1; normal.forEach((v, i) => normal[i] = v / nLen);
+
+    const used = new Set(selected.flatMap(faceId => this.faces[faceId]));
+    const nextPositions = this.positions.map(point => [...point]);
     const remap = new Map();
-    for (const oldId of used) {
-      remap.set(oldId, this.positions.length);
-      this.positions.push(this.positions[oldId].map((v, axis) => v + normal[axis] * distance));
+    for (const vertexId of [...used].sort((a, b) => a - b)) {
+      const source = this.positions[vertexId];
+      const moved = source.map((value, axis) => value + projection.normal[axis] * distance);
+      if (!moved.every(Number.isFinite)) return fail('Extrude produced a non-finite vertex position.');
+      remap.set(vertexId, nextPositions.length);
+      nextPositions.push(moved);
     }
-    const oldFaces = this.faces.map((face, id) => selectedSet.has(id) ? face.map(v => remap.get(v)) : face);
-    for (const edge of boundary.values()) if (edge.count === 1) oldFaces.push([edge.a, edge.b, remap.get(edge.b), remap.get(edge.a)]);
-    this.faces = oldFaces;
+
+    const selectedSet = new Set(selected);
+    const nextFaces = this.faces.map((face, faceId) => selectedSet.has(faceId)
+      ? face.map(vertexId => remap.get(vertexId))
+      : [...face]);
+    for (let index = 0; index < boundary.length; index++) {
+      const a = boundary[index], b = boundary[(index + 1) % boundary.length];
+      const wall = [a, b, remap.get(b), remap.get(a)];
+      if (!wall.every(Number.isInteger)) return fail('Extrude could not construct a complete boundary wall.');
+      nextFaces.push(wall);
+    }
+
+    const candidate = new HalfEdgeMesh(nextPositions, nextFaces);
+    const report = candidate.validateTopology();
+    if (!report.valid) {
+      return fail(`Extrude candidate failed topology validation (${report.issueCount} issue(s)); the source mesh was not changed.`);
+    }
+    if (candidate.faces.some((_, faceId) => !candidate.triangulateFace(faceId).length)) {
+      return fail('Extrude candidate contains a face that cannot be triangulated; the source mesh was not changed.');
+    }
+
+    candidate.setSelectionMode('face');
+    candidate.faceSelection = new Set(selected);
+    this.positions = candidate.positions.map(point => [...point]);
+    this.faces = candidate.faces.map(face => [...face]);
+    this.selectionMode = 'face';
     this.clearSelection();
-    for (let id = 0; id < selected.length; id++) this.faceSelection.add(selected[id]);
     this.rebuild();
-    this.faceSelection = new Set(selected.map(id => id));
-    return true;
+    this.faceSelection = new Set(selected);
+
+    return {
+      changed: true,
+      distance,
+      normal: [...projection.normal],
+      selectedFaces: selected.length,
+      boundaryEdges: boundary.length,
+      insertedVertices: used.size,
+      createdFaces: boundary.length,
+      topology: report
+    };
   }
 
   // Preserve the original public entry point while routing it through the

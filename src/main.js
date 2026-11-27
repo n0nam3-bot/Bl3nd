@@ -600,7 +600,9 @@ ui = {
       readout.hidden=false;
       const offsetDetail = faceOperationModal.operation==='inset' && Number.isFinite(faceOperationModal.lastResult?.distance)
         ? ` · offset ${faceOperationModal.lastResult.distance.toFixed(3)}` : '';
-      readout.textContent=`${label} · ${faceOperationModal.seedFaceIds.length} face(s) · ${unit} ${faceOperationModal.value.toFixed(3)}${offsetDetail} · drag up/down or arrows · Enter apply / Esc cancel`;
+      const boundaryDetail = faceOperationModal.operation==='extrude' && Number.isFinite(faceOperationModal.lastResult?.boundaryEdges)
+        ? ` · ${faceOperationModal.lastResult.boundaryEdges} boundary edges` : '';
+      readout.textContent=`${label} · ${faceOperationModal.seedFaceIds.length} face(s)${boundaryDetail} · ${unit} ${faceOperationModal.value.toFixed(3)}${offsetDetail} · drag up/down or arrows · Enter apply / Esc cancel`;
       pad.hidden=!capabilities.tier.includes('Mobile');
       pad.classList.remove('loop-cut-mode','bevel-mode');
       pad.classList.add('face-operation-mode');

@@ -1,7 +1,7 @@
 export const MeshOperators = {
   extrude(document, distance = 1) {
     const hem = document.activeObject?.userData?.hem;
-    if (!hem || !hem.extrudeSelected(distance)) return false;
+    if (!hem || !hem.extrudeSelectedRegion(distance).changed) return false;
     document.updateMesh(); return true;
   },
   inset(document, amount = 0.12) {
