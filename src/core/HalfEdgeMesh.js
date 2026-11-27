@@ -1,3 +1,5 @@
+import { analyzeFaceRegionBoundary } from './FaceRegionBoundary.js';
+
 function keyFor(a, b) { return a < b ? `${a}:${b}` : `${b}:${a}`; }
 
 function cross2(a, b, c) {
@@ -527,13 +529,15 @@ export class HalfEdgeMesh {
       return fail('The source mesh has topology warnings. Validate and repair safe issues before extruding.');
     }
 
-    const boundary = selected.length === 1
-      ? [...this.faces[selected[0]]]
-      : this.boundaryForRegion(selected);
-    if (!boundary || boundary.length < 3 || new Set(boundary).size !== boundary.length) {
+    const analysis = this.analyzeFaceRegion(selected);
+    if (!analysis.valid) return fail(analysis.reason || 'Extrude could not analyze the selected face region.');
+    if (!analysis.connected) return fail('Extrude requires one connected planar face region.');
+    if (!analysis.planar) return fail('Extrude requires consistently wound, coplanar selected faces.');
+    if (analysis.loopCount !== 1 || !analysis.boundaryLoops[0]?.isSimple) {
       return fail('Extrude requires one connected planar face region with a single simple boundary and no holes.');
     }
 
+    const boundary = [...analysis.boundaryLoops[0].vertexIds];
     const projection = projectedPolygon(this.positions, boundary);
     if (!projection) return fail('The selected face-region boundary has no stable plane.');
     const tolerance = Math.max(1, projection.scale) * 1e-5;
@@ -629,14 +633,15 @@ export class HalfEdgeMesh {
     }
     const selected = [...this.faceSelection].filter(id => Number.isInteger(id) && this.faces[id]).sort((a, b) => a - b);
     if (!selected.length) return fail('Select one connected face region before insetting.');
-    if (selected.length > 1 && !this.boundaryForRegion(selected)) {
+    const analysis = this.analyzeFaceRegion(selected);
+    if (!analysis.valid) return fail(analysis.reason || 'Inset could not analyze the selected face region.');
+    if (!analysis.connected) return fail('Inset requires one connected planar face region.');
+    if (analysis.loopCount !== 1 || !analysis.boundaryLoops[0]?.isSimple) {
       return fail('Inset requires one connected planar face region with one simple boundary and no holes.');
     }
+    if (!analysis.planar) return fail('Inset requires a planar, consistently wound face region.');
 
-    const boundary = selected.length === 1 ? [...this.faces[selected[0]]] : this.boundaryForRegion(selected);
-    if (!boundary || boundary.length < 3 || new Set(boundary).size !== boundary.length) {
-      return fail('Inset requires one simple face-region boundary.');
-    }
+    const boundary = [...analysis.boundaryLoops[0].vertexIds];
     const projection = projectedPolygon(this.positions, boundary);
     if (!projection) return fail('Inset region boundary could not be projected to a stable plane.');
     const tolerance = projection.scale * 1e-5;
@@ -767,67 +772,18 @@ export class HalfEdgeMesh {
   // Keep the original method name for compatibility with earlier callers.
   deleteSelectedFaces() { return this.deleteSelectedElements(); }
 
+  analyzeFaceRegion(faceIds) {
+    return analyzeFaceRegionBoundary(this.positions, this.faces, faceIds);
+  }
+
+  // Preserve the legacy single-loop API used by Extrude, Inset and Dissolve.
+  // New operators should consume analyzeFaceRegion() so holes and multiple
+  // components remain explicit instead of collapsing into a generic null.
   boundaryForRegion(faceIds) {
     if (!Array.isArray(faceIds) || faceIds.length < 2) return null;
-    const edgeUses = new Map();
-    for (const faceId of faceIds) {
-      const face = this.faces[faceId];
-      if (!face || face.length < 3 || new Set(face).size !== face.length) return null;
-      for (let i = 0; i < face.length; i++) {
-        const a = face[i], b = face[(i + 1) % face.length];
-        if (!this.positions[a] || !this.positions[b] || a === b) return null;
-        const key = keyFor(a, b);
-        if (!edgeUses.has(key)) edgeUses.set(key, []);
-        edgeUses.get(key).push({ a, b });
-      }
-    }
-
-    const boundary = [];
-    for (const incidents of edgeUses.values()) {
-      if (incidents.length > 2) return null;
-      if (incidents.length === 1) boundary.push(incidents[0]);
-      else if (incidents[0].a === incidents[1].a && incidents[0].b === incidents[1].b) return null;
-    }
-    if (boundary.length < 3) return null;
-
-    const outgoing = new Map(), incoming = new Map();
-    for (const edge of boundary) {
-      if (outgoing.has(edge.a) || incoming.has(edge.b)) return null;
-      outgoing.set(edge.a, edge.b);
-      incoming.set(edge.b, edge.a);
-    }
-    if (outgoing.size !== boundary.length || incoming.size !== boundary.length) return null;
-
-    const polygon = [], start = boundary[0].a;
-    let current = start;
-    for (let i = 0; i < boundary.length; i++) {
-      if (!outgoing.has(current) || polygon.includes(current)) return null;
-      polygon.push(current);
-      current = outgoing.get(current);
-      if (current === start) break;
-    }
-    if (current !== start || polygon.length !== boundary.length) return null;
-
-    // Dissolve can now preserve concave planar boundaries, but still rejects
-    // folded, inconsistent, multi-loop, self-intersecting or non-manifold patches.
-    const boundaryProjection = projectedPolygon(this.positions, polygon);
-    if (!boundaryProjection) return null;
-    const origin = this.positions[polygon[0]];
-    const scale = Math.max(1, boundaryProjection.scale);
-    const tolerance = scale * 1e-5;
-    for (const faceId of faceIds) {
-      const face = this.faces[faceId];
-      const faceProjection = projectedPolygon(this.positions, face);
-      if (!faceProjection) return null;
-      if (faceProjection.deviation > tolerance) return null;
-      if (faceProjection.normal.reduce((sum, value, axis) => sum + value * boundaryProjection.normal[axis], 0) < 0.999) return null;
-      for (const vertexId of face) {
-        const point = this.positions[vertexId];
-        const distance = boundaryProjection.normal.reduce((sum, value, axis) => sum + value * (point[axis] - origin[axis]), 0);
-        if (Math.abs(distance) > tolerance) return null;
-      }
-    }
-    return triangulatePolygon(this.positions, polygon) ? polygon : null;
+    const analysis = this.analyzeFaceRegion(faceIds);
+    if (!analysis.valid || !analysis.supportsPlanarSingleBoundary) return null;
+    return [...analysis.boundaryLoops[0].vertexIds];
   }
 
   dissolveSelected() {

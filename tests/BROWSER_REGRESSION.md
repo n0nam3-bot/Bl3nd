@@ -8,7 +8,7 @@ Open the deployed app only after the latest Pages workflow succeeds:
 
 `https://n0nam3-bot.github.io/Bl3nd/`
 
-Latest deployed baseline before this package is v0.1.30, `main` commit `3a2018385ef85dbe5f31f5e46eefa15098097125`, Pages workflow run #38 (success). After uploading v0.1.31, reload and allow the v28 service-worker cache to activate before testing.
+Latest deployed baseline before this package is v0.1.31, `main` commit `99d70bc520372ea72bac5ec1ec249d19e81371d1`, Pages workflow run #39 (success). After uploading v0.1.32, reload and allow the v29 service-worker cache to activate before testing.
 
 ## Desktop — Chrome or Edge
 
@@ -59,11 +59,11 @@ Record each step as Pass / Fail / Not tested. If a region-tool result is unexpec
 - Bevel controls, cancel, apply, undo/redo and restored viewport navigation: **Pass**.
 - Device/browser details were not supplied. The user cannot run the desktop regression soon; desktop testing is deferred and must not block continued modeling work. The browser-specific PC checklist remains unverified.
 
-## Face-operation regression — v0.1.29 (automated; device run pending)
+## Face-operation regression — v0.1.31 (automated; Android run pending)
 
 - Node tests cover modal Extrude and Inset preview, numeric input, negative Extrude, connected planar-region Extrude, concave and rotated face regions, single-face inset, cancel restoration, one-step commit, safe rejection of invalid/disconnected selections, and drag anchoring on the actual pointer-down.
-- The v0.1.30 Inset regressions cover constant-offset miters, connected two-face regions, concave L-shaped regions, rotated-plane world-distance consistency, reversed winding, disconnected regions, holes, collapsing offsets, excessive miters and non-planar faces. The v0.1.31 Extrude regressions cover concave L regions, tilted-plane world normals, reversed winding, shared interior seams, invalid distance/mode, holes and disconnected selections. These automated tests do not replace real touch/browser validation.
-- On Android Chrome, verify connected-region Inset on a subdivided Plane and concave L-region Extrude. Confirm shared internal seams stay welded, previews update, Cancel restores the original, Apply creates one undoable operation, and Undo/Redo restores both states. Desktop pointer behavior remains deferred until the user can access a PC; it does not block continued modeling work.
+- The v0.1.30 Inset regressions cover constant-offset miters, connected two-face regions, concave L-shaped regions, rotated-plane world-distance consistency, reversed winding, disconnected regions, holes, collapsing offsets, excessive miters and non-planar faces. The v0.1.31 Extrude regressions cover concave L regions, tilted-plane world normals, reversed winding, shared interior seams, invalid distance/mode, holes and disconnected selections. v0.1.32 adds ten read-only boundary-analysis regressions for convex/concave loops, annular holes, disconnected and nested-independent islands, non-planar regions, inconsistent winding and non-manifold edges. These automated tests do not replace real touch/browser validation.
+- On Android Chrome, verify connected-region Inset on a subdivided Plane and concave L-region Extrude. Confirm shared internal seams stay welded, previews update, Cancel restores the original, Apply creates one undoable operation, and Undo/Redo restores both states. This is still pending owner/device acceptance; automated boundary analysis is not evidence of browser interaction correctness. Desktop pointer behavior remains deferred until the user can access a PC; it does not block continued modeling work.
 
 ## Record results
 
@@ -75,7 +75,7 @@ For each device, record:
 - Whether orbit, pan, zoom and selection behaved as expected.
 - Whether Bevel width, segment and profile controls updated the preview.
 - Whether Cancel restored the original mesh without an undo entry.
-- Whether Confirm created one undoable operation and Undo/Redo restored both states.
+- Whether Face-region Inset and concave multi-face Extrude previewed correctly, Cancel restored the original, Confirm created one undoable operation and Undo/Redo restored both states.
 - Any visible error text and the first app-owned console error, if available.
 
 Mark each step as **Pass**, **Fail**, or **Not tested**. Do not interpret extension-injected console messages as Bl3nd errors without confirming their source. Do not change topology validation to make a failing geometry case appear to pass; unsupported or invalid candidates must leave the source mesh unchanged.
