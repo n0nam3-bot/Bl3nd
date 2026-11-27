@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { detectCapabilities } from './core/DeviceCapabilities.js';
 import { CommandBus } from './core/CommandBus.js';
 import { SceneDocument } from './core/SceneDocument.js';
+import { buildMoveReadout } from './core/TransformReadout.js';
 import { UndoManager } from './core/UndoManager.js';
 import { MeshOperators } from './operators/MeshOperators.js';
 import { SelectionOperators } from './operators/SelectionOperators.js';
@@ -668,7 +669,9 @@ ui = {
     const readout=$('#modal-readout'),pad=$('#numeric-pad'),padTitle=pad.querySelector('.pad-title');
     const axisButtons=pad.querySelectorAll('[data-axis]');
     const orientationButton=$('#pad-transform-orientation');
+    const padDetail=$('#pad-detail');
     orientationButton.hidden=true;
+    padDetail.hidden=true;
     const negativeKey=pad.querySelector('[data-key="-"]');
     if(faceOperationModal.active){
       negativeKey.hidden=faceOperationModal.operation!=='extrude';
@@ -766,8 +769,37 @@ ui = {
     negativeKey.hidden=false;
     if(!modalTransform.active){readout.hidden=true;pad.hidden=true;return;}
     const axis=modalTransform.axis?` · ${modalTransform.orientation.toUpperCase()} ${modalTransform.axis.toUpperCase()} axis`:modalTransform.planeNormal?` · ${modalTransform.orientation.toUpperCase()} ${modalTransform.planeNormal.toUpperCase()} plane`:` · ${modalTransform.orientation.toUpperCase()} orientation`;
-    readout.hidden=false; readout.textContent=`${modalTransform.type.toUpperCase()}${axis} · ${modalTransform.numeric || 'mouse'} · , switches Global/Local · Enter apply / Esc cancel`;
-    pad.hidden=!capabilities.tier.includes('Mobile'); orientationButton.hidden=false; orientationButton.textContent=`${modalTransform.orientation.toUpperCase()} AXES · SWITCH TO ${modalTransform.orientation==='global'?'LOCAL':'GLOBAL'}`; orientationButton.setAttribute('aria-label',`Current orientation: ${modalTransform.orientation}. Switch to ${modalTransform.orientation==='global'?'Local':'Global'}.`); orientationButton.setAttribute('aria-pressed',String(modalTransform.orientation==='local')); $('#pad-value').textContent=modalTransform.numeric || '0';
+    let moveReadout=null;
+    if(modalTransform.type==='move'){
+      const numeric=modalTransform.numeric.trim()!=='' && Number.isFinite(Number(modalTransform.numeric));
+      const delta=modalTransform.getMoveWorldDelta(numeric);
+      const startPosition=sceneDocument.mode==='edit'
+        ? modalTransform.worldPivot.toArray()
+        : modalTransform.original?.worldPosition?.toArray() || [0,0,0];
+      moveReadout=buildMoveReadout({
+        delta:delta.toArray(),
+        startPosition,
+        axisVector:modalTransform.axis ? modalTransform.axisVector(modalTransform.axis).toArray() : null,
+        targetLabel:sceneDocument.mode==='edit'?'PIVOT':'TO'
+      });
+      readout.textContent=`MOVE${axis} · ${numeric?`VALUE ${modalTransform.numeric}`:`DIST ${moveReadout.value}`} · Enter apply / Esc cancel`;
+      padTitle.textContent='MOVE DISTANCE · WORLD UNITS';
+      padDetail.hidden=false;
+      const [dx,dy,dz]=moveReadout.delta;
+      const [tx,ty,tz]=moveReadout.target;
+      const signed=(value)=>`${value< -0.0005?'−':'+'}${Math.abs(value)<0.0005?'0.000':Math.abs(value).toFixed(3)}`;
+      $('#pad-delta-x').textContent=`X ${signed(dx)}`;
+      $('#pad-delta-y').textContent=`Y ${signed(dy)}`;
+      $('#pad-delta-z').textContent=`Z ${signed(dz)}`;
+      $('#pad-target-label').textContent=sceneDocument.mode==='edit'?'PIVOT':'TO';
+      $('#pad-target-x').textContent=`X ${signed(tx)}`;
+      $('#pad-target-y').textContent=`Y ${signed(ty)}`;
+      $('#pad-target-z').textContent=`Z ${signed(tz)}`;
+    }else{
+      readout.textContent=`${modalTransform.type.toUpperCase()}${axis} · ${modalTransform.numeric || 'mouse'} · , switches Global/Local · Enter apply / Esc cancel`;
+      padTitle.textContent=modalTransform.type==='rotate'?'ROTATION · DEGREES':'SCALE FACTOR';
+    }
+    pad.hidden=!capabilities.tier.includes('Mobile'); orientationButton.hidden=false; orientationButton.textContent=`${modalTransform.orientation.toUpperCase()} AXES · SWITCH TO ${modalTransform.orientation==='global'?'LOCAL':'GLOBAL'}`; orientationButton.setAttribute('aria-label',`Current orientation: ${modalTransform.orientation}. Switch to ${modalTransform.orientation==='global'?'Local':'Global'}.`); orientationButton.setAttribute('aria-pressed',String(modalTransform.orientation==='local')); $('#pad-value').textContent=modalTransform.numeric || (moveReadout?.value || '0');
   }
 };
 loadingProgress(73, 'Building the workspace panels and editing controls…');

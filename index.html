@@ -90,6 +90,10 @@
             <div class="pad-title">TRANSFORM VALUE</div>
             <button type="button" class="pad-dimension-toggle" id="pad-transform-orientation" hidden>GLOBAL AXES · SWITCH TO LOCAL</button>
             <div class="pad-value" id="pad-value">0</div>
+            <div class="pad-detail" id="pad-detail" hidden aria-live="polite">
+              <div class="pad-detail-row"><span class="pad-detail-label">Δ</span><span id="pad-delta-x">X +0.000</span><span id="pad-delta-y">Y +0.000</span><span id="pad-delta-z">Z +0.000</span></div>
+              <div class="pad-detail-row"><span class="pad-detail-label" id="pad-target-label">TO</span><span id="pad-target-x">X +0.000</span><span id="pad-target-y">Y +0.000</span><span id="pad-target-z">Z +0.000</span></div>
+            </div>
             <div class="pad-count-row" id="pad-count-row" hidden>
               <button type="button" data-cuts="-1" aria-label="Fewer cuts">−</button>
               <span>LOOP CUTS <b id="pad-cuts">1</b></span>
