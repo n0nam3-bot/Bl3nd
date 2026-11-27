@@ -92,12 +92,16 @@ async function startFaceOperation(operation) {
     notify('Confirm or cancel the current operation before starting Extrude or Inset.');
     return false;
   }
+  const selectedObject = sceneDocument.activeObject;
+  const sourceTopology = selectedObject?.userData?.hem;
+  const selectedFaceIds = [...(sourceTopology?.faceSelection || [])];
   const started = await faceOperationModal.begin(operation);
   if (!started) {
     notify(`${operation === 'extrude' ? 'Extrude' : 'Inset'} skipped · ${faceOperationModal.lastError || 'Unable to start the face operation.'}`, 'error');
     return false;
   }
   minimizeMobilePropertiesPanel();
+  viewport.frameSelection(selectedObject, sourceTopology, { faceIds: selectedFaceIds });
   viewport.controls.enabled = false;
   viewport.selectionTool = 'tap';
   viewport.modalOperationActive = true;
@@ -332,9 +336,17 @@ function registerCommands() {
   commandBus.register('mesh.subdivide', async () => { if (sceneDocument.mode !== 'edit') return false; MeshOperators.subdivide(sceneDocument); await reapplyActiveModifiers(); refresh(); return true; });
   commandBus.register('mesh.bevel', async () => {
     if (modalTransform.active || loopCutModal.active || faceOperationModal.active) { notify('Confirm or cancel the current operation before starting Bevel.'); return false; }
+    const selectedObject = sceneDocument.activeObject;
+    const sourceTopology = selectedObject?.userData?.hem;
+    const selection = {
+      faceIds: [...(sourceTopology?.faceSelection || [])],
+      edgeIds: [...(sourceTopology?.edgeSelection || [])],
+      vertexIds: [...(sourceTopology?.vertexSelection || [])]
+    };
     const started = await bevelModal.begin();
     if (!started) { notify(`Bevel skipped · ${bevelModal.lastError || 'Unable to start Bevel.'}`, 'error'); return false; }
     minimizeMobilePropertiesPanel();
+    if (viewport.frameSelection(selectedObject, sourceTopology, selection)) bevelModal.startPointer = null;
     viewport.controls.enabled = false;
     viewport.selectionTool = 'tap';
     viewport.modalOperationActive = true;
@@ -425,9 +437,13 @@ function registerCommands() {
   }, { recordUndo: false });
   commandBus.register('mesh.loop_cut', async () => {
     if (modalTransform.active || bevelModal.active || faceOperationModal.active) { notify('Confirm or cancel the current operation before starting Loop Cut.'); return false; }
+    const selectedObject = sceneDocument.activeObject;
+    const sourceTopology = selectedObject?.userData?.hem;
+    const selection = { edgeIds: [...(sourceTopology?.edgeSelection || [])] };
     const started = await loopCutModal.begin();
     if (!started) { notify(`Loop Cut skipped · ${loopCutModal.lastError || 'Unable to start the cut.'}`, 'error'); return false; }
     minimizeMobilePropertiesPanel();
+    if (viewport.frameSelection(selectedObject, sourceTopology, selection)) loopCutModal.startPointer = null;
     viewport.controls.enabled = false;
     viewport.selectionTool = 'tap';
     viewport.modalOperationActive = true;

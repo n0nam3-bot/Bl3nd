@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { EditModeOverlay } from './EditModeOverlay.js';
+import { chooseSelectionViewDirection } from '../core/SelectionView.js';
 
 export class Viewport {
   constructor(container, { pixelRatio = 1.5, onSelect, onCursor, onStatus } = {}) {
@@ -185,6 +186,84 @@ export class Viewport {
     const direction = this.camera.position.clone().sub(this.controls.target).normalize();
     this.controls.target.copy(target); this.camera.position.copy(target).addScaledVector(direction,radius*3.1);
     this.camera.near = Math.max(0.01,radius/100); this.camera.far = radius*1000; this.camera.updateProjectionMatrix(); this.controls.update();
+  }
+
+  /**
+   * Reframe a multi-face / multi-edge edit selection and choose a view that
+   * exposes the greatest combined projected area of its incident faces.
+   * The topology argument is the immutable source mesh captured before a modal
+   * operator replaces the live half-edge data with its preview candidate.
+   */
+  frameSelection(object, topology, { faceIds = [], edgeIds = [], vertexIds = [] } = {}) {
+    if (!object || !topology?.faces?.length || !topology?.positions?.length) return false;
+    const selectedFaces = new Set();
+    for (const faceId of faceIds) if (Number.isInteger(faceId) && topology.faces[faceId]) selectedFaces.add(faceId);
+    for (const edgeId of edgeIds) {
+      const edge = topology.edges?.[edgeId];
+      for (const halfEdge of edge?.halfEdges || []) {
+        const faceId = halfEdge.face?.id;
+        if (Number.isInteger(faceId) && topology.faces[faceId]) selectedFaces.add(faceId);
+      }
+    }
+    if (vertexIds.length) {
+      const selectedVertices = new Set(vertexIds);
+      topology.faces.forEach((face, faceId) => {
+        if (face.some(vertexId => selectedVertices.has(vertexId))) selectedFaces.add(faceId);
+      });
+    }
+    // One selected face/edge is already visible; avoid surprising camera
+    // jumps. Reframe only when the user's actual topology selection is a set.
+    const selectedElementCount = new Set(faceIds).size + new Set(edgeIds).size + new Set(vertexIds).size;
+    if (selectedElementCount < 2 || selectedFaces.size < 2) return false;
+
+    object.updateMatrixWorld(true);
+    const selectedBounds = new THREE.Box3();
+    const faceSamples = [];
+    for (const faceId of selectedFaces) {
+      const face = topology.faces[faceId];
+      const points = face.map(vertexId => {
+        const position = topology.positions[vertexId];
+        return position ? new THREE.Vector3(...position).applyMatrix4(object.matrixWorld) : null;
+      });
+      if (points.length < 3 || points.some(point => !point || !point.toArray().every(Number.isFinite))) continue;
+      points.forEach(point => selectedBounds.expandByPoint(point));
+
+      // Newell's area vector provides a stable, area-weighted normal for both
+      // convex and simple concave polygon faces, in the object's world frame.
+      const areaVector = new THREE.Vector3();
+      for (let index = 0; index < points.length; index++) {
+        const a = points[index], b = points[(index + 1) % points.length];
+        areaVector.x += (a.y - b.y) * (a.z + b.z);
+        areaVector.y += (a.z - b.z) * (a.x + b.x);
+        areaVector.z += (a.x - b.x) * (a.y + b.y);
+      }
+      const doubleArea = areaVector.length();
+      if (doubleArea > 1e-9) faceSamples.push({ normal: areaVector.multiplyScalar(1 / doubleArea).toArray(), weight: doubleArea * 0.5 });
+    }
+    if (selectedBounds.isEmpty() || !faceSamples.length) return false;
+
+    const target = selectedBounds.getCenter(new THREE.Vector3());
+    const selectedSphere = selectedBounds.getBoundingSphere(new THREE.Sphere());
+    const objectSphere = new THREE.Box3().setFromObject(object).getBoundingSphere(new THREE.Sphere());
+    const radius = Math.max(0.08, selectedSphere.radius * 1.12, objectSphere.radius * 0.62);
+    const currentDirection = this.camera.position.clone().sub(this.controls.target).normalize();
+    const viewDirection = new THREE.Vector3(...chooseSelectionViewDirection(faceSamples, currentDirection.toArray()));
+
+    const verticalFov = THREE.MathUtils.degToRad(this.camera.fov);
+    const horizontalFov = 2 * Math.atan(Math.tan(verticalFov / 2) * Math.max(0.1, this.camera.aspect));
+    const limitingHalfFov = Math.max(0.05, Math.min(verticalFov, horizontalFov) / 2);
+    const distance = radius / Math.sin(limitingHalfFov) * 1.12;
+
+    this.controls.target.copy(target);
+    this.camera.up.set(0, 0, 1);
+    if (Math.abs(viewDirection.dot(this.camera.up)) > 0.96) this.camera.up.set(0, 1, 0);
+    this.camera.position.copy(target).addScaledVector(viewDirection, distance);
+    this.camera.near = Math.max(0.01, radius / 100);
+    this.camera.far = Math.max(2000, radius * 1000);
+    this.camera.updateProjectionMatrix();
+    this.camera.lookAt(target);
+    this.controls.update();
+    return true;
   }
 
   animate = () => {

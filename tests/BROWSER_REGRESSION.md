@@ -8,7 +8,7 @@ Open the deployed app only after the latest Pages workflow succeeds:
 
 `https://n0nam3-bot.github.io/Bl3nd/`
 
-Latest deployed baseline before this package is v0.1.37, `main` commit `f2f6befcb6b6935aa1f2f02b43b504e8d0fd2224`, Pages workflow run #45 (success). After uploading v0.1.38, reload and allow the v35 service-worker cache to activate before testing.
+Latest deployed baseline before this package is v0.1.38, `main` commit `af760c2ea62a6a6a328434995f6218ed55e22752`, Pages workflow run #46 (success). After uploading v0.1.39, reload and allow the v36 service-worker cache to activate before testing.
 
 ## Desktop — Chrome or Edge
 
@@ -50,12 +50,14 @@ Record each step as Pass / Fail / Not tested. If a region-tool result is unexpec
 
 16. Open the **More** properties drawer from the bottom action bar. While it is open, start Face Bevel from Edit Mesh. Confirm the drawer slides closed as soon as the modal starts and does not cover the viewport adjustment controls/numeric pad. Apply or Cancel; the drawer must stay minimized. Tap **More** to reopen it. Repeat with Extrude, Inset, Loop Cut and a G/R/S transform. A modal that fails to start must not close the drawer.
 
-## Owner-reported Android acceptance — v0.1.31 through v0.1.36 (2026-11-27)
+17. In Face Select, select two adjacent cube faces and start Face Bevel. Confirm the camera recenters on the selected area and rotates to show both selected planes as clearly as possible. Cancel, then select all six cube faces and start Face Bevel again; confirm the camera chooses a corner angle that exposes the greatest combined selected-face area instead of staying on a front-only view. A single view cannot show opposing front/back faces at the same time, so orbit to inspect hidden sides as needed. Confirm camera framing does not change topology, selection IDs or the modal preview. Repeat with two adjacent edges for Edge Bevel and a Loop Cut seed edge; single-face/single-edge operations should not cause an unnecessary camera jump.
+
+## Owner-reported Android acceptance — v0.1.31 through v0.1.38 (2026-11-27)
 
 - The owner reports Pass for connected-region Extrude, concave L-region Extrude, single-face Inset, connected-face Inset, convex Face Bevel, concave Face Bevel, Cancel restoration, Apply and Undo/Redo.
 - Before the v0.1.35 input-recovery fix, post-operation viewport gestures were recoverable only after switching to Object Mode or choosing Edit Mode → Click Select. This earlier build behavior was a UX defect; the owner later confirmed the v0.1.35 automatic recovery passes.
 - The owner confirms Pass for the v0.1.35 1–8 segment control, profile 0/0.50/1 controls and immediate post-modal Click Select/orbit recovery on Android.
-- The owner confirms that the v0.1.36 multi-row/multi-column planar Face Bevel fix works. The owner asked how to adjust multiple selected faces individually; v0.1.37 adds an explicit Individual Faces mode with per-face settings. Android verification of that new mode remains pending.
+- The owner confirms that the v0.1.36 multi-row/multi-column planar Face Bevel fix works. The owner asked how to adjust multiple selected faces individually; v0.1.37 adds an explicit Individual Faces mode with per-face settings. Android verification of that new mode remains pending. v0.1.38 adds mobile More drawer auto-minimize when a modal starts; Android acceptance is pending.
 - Device model, Android version and Chrome version were not supplied.
 
 ## Recorded mobile run — v0.1.26 (user-reported, 2026-11-26)
@@ -87,6 +89,11 @@ Record each step as Pass / Fail / Not tested. If a region-tool result is unexpec
 - On Android Chrome, verify connected-region Inset on a subdivided Plane and concave L-region Extrude. Confirm shared internal seams stay welded, previews update, Cancel restores the original, Apply creates one undoable operation, and Undo/Redo restores both states. This is still pending owner/device acceptance; automated boundary analysis is not evidence of browser interaction correctness. Desktop pointer behavior remains deferred until the user can access a PC; it does not block continued modeling work.
 
 ## Face-region Bevel regression — v0.1.33–v0.1.37 (automated; latest browser run pending)
+
+## Selection-aware view regression — v0.1.39 (automated; Android run pending)
+
+- `tests/SelectionView.test.js` verifies planar face alignment, two-plane compromise orientation, a corner view for all six cube faces, face-area weighting and safe fallback for invalid/empty normals.
+- On Android, use step 17 above to verify the actual Three.js camera recenters the selected surface group and maximizes the combined projected area of selected face normals when Face Bevel, Edge Bevel, Extrude, Inset or Loop Cut starts. Real camera framing is not covered by the pure direction-math tests; desktop browser testing remains deferred.
 
 - v0.1.33 automated tests cover convex single-face and connected multi-face regions, welded internal seams, rotated-plane normals, reversed winding, miter limits, numeric bounds, modal amount updates, Cancel and one-step commit/undo metadata.
 - v0.1.34 adds concave L-shaped and two-reflex U-shaped regions, rotated and reversed concave regions, retained internal seams, modal preview/Cancel/Apply and an acute reflex notch that must reject for excessive miter without source mutation. Holes, multiple loops, disconnected islands, non-planar input and invalid amounts remain rejected.
