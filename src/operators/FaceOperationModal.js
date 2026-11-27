@@ -3,7 +3,7 @@ import { HalfEdgeMesh } from '../core/HalfEdgeMesh.js';
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
 /**
- * Transactional preview for face-region Extrude and single-face Inset.
+ * Transactional preview for face-region Extrude and connected-region Inset.
  * Each preview is rebuilt from immutable source topology. Unsupported or
  * invalid candidates never replace the live source; confirm records one undo
  * entry and cancel restores the full document snapshot.
@@ -41,11 +41,7 @@ export class FaceOperationModal {
       return false;
     }
     if (this.document.selectionMode !== 'face' || source.selectionMode !== 'face' || !source.faceSelection.size) {
-      this.lastError = `Switch to Face Select and select ${operation === 'inset' ? 'one face' : 'a connected planar face region'}.`;
-      return false;
-    }
-    if (operation === 'inset' && source.faceSelection.size !== 1) {
-      this.lastError = 'Inset currently supports exactly one selected face. Select one face and try again.';
+      this.lastError = 'Switch to Face Select and select one connected planar face region.';
       return false;
     }
     const sourceReport = source.validateTopology();
@@ -89,7 +85,7 @@ export class FaceOperationModal {
     this.active = true;
     this.status?.(operation === 'extrude'
       ? 'EXTRUDE · drag up/down or type a distance · Enter apply · Esc cancel'
-      : 'INSET · drag up/down or type an amount · Enter apply · Esc cancel');
+      : `INSET · ${this.seedFaceIds.length} face(s) · offset ${this.lastResult.distance.toFixed(3)} · drag / type amount · Enter apply · Esc cancel`);
     this.onChange?.();
     return true;
   }
@@ -106,10 +102,17 @@ export class FaceOperationModal {
     const hem = new HalfEdgeMesh(this.basePositions, this.baseFaces);
     hem.setSelectionMode('face');
     hem.faceSelection = new Set(this.seedFaceIds);
-    const changed = this.operation === 'extrude'
-      ? hem.extrudeSelected(value)
-      : hem.insetSelected(value);
-    if (!changed) return { hem, result: { changed: false, reason: `The selected faces could not be ${this.operation}d.` } };
+    let operationDetails;
+    if (this.operation === 'extrude') {
+      const changed = hem.extrudeSelected(value);
+      if (!changed) return { hem, result: { changed: false, reason: 'The selected faces could not be extruded as one connected planar region.' } };
+      operationDetails = { selectedFaces: this.seedFaceIds.length };
+    } else {
+      operationDetails = hem.insetSelectedRegion(value);
+      if (!operationDetails?.changed) {
+        return { hem, result: { changed: false, reason: operationDetails?.reason || 'The selected faces could not be inset safely.' } };
+      }
+    }
     const report = hem.validateTopology();
     if (!report.valid) {
       return { hem, result: { changed: false, reason: `${this.operation === 'extrude' ? 'Extrude' : 'Inset'} candidate failed topology validation; the source mesh was not changed.` } };
@@ -122,6 +125,8 @@ export class FaceOperationModal {
         operation: this.operation,
         value,
         selectedFaces: this.seedFaceIds.length,
+        distance: this.operation === 'inset' ? operationDetails.distance : undefined,
+        boundaryEdges: this.operation === 'inset' ? operationDetails.boundaryEdges : undefined,
         insertedVertices: hem.positions.length - this.basePositions.length,
         createdFaces: hem.faces.length - sourceFaces,
         topology: report
@@ -155,7 +160,9 @@ export class FaceOperationModal {
     this.lastResult = preview.result;
     this.lastError = '';
     this.applyPreview(preview.hem);
-    this.status?.(`${this.operation === 'extrude' ? 'Extrude' : 'Inset'} preview · ${this.value.toFixed(3)} · Enter apply / Esc cancel`);
+    const insetDistance = this.operation === 'inset' && Number.isFinite(this.lastResult?.distance)
+      ? ` · offset ${this.lastResult.distance.toFixed(3)}` : '';
+    this.status?.(`${this.operation === 'extrude' ? 'Extrude' : 'Inset'} preview · ${this.value.toFixed(3)}${insetDistance} · Enter apply / Esc cancel`);
     this.onChange?.();
     return true;
   }
@@ -201,7 +208,7 @@ export class FaceOperationModal {
     if (!Number.isFinite(parsed) || (this.operation === 'extrude' ? Math.abs(parsed) < 1e-4 || Math.abs(parsed) > 100 : parsed < 0.005 || parsed > 0.9)) {
       this.status?.(this.operation === 'extrude'
         ? 'Extrude distance must be non-zero and within ±100.'
-        : 'Inset amount must be between 0.005 and 0.9.');
+        : 'Inset amount must be between 0.005 and 0.9 (a fraction of the shortest region boundary edge).');
       this.onChange?.();
       return false;
     }

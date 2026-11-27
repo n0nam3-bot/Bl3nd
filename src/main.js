@@ -233,7 +233,9 @@ function registerCommands() {
     document.body.classList.remove('face-operation-modal-active');
     if (result) {
       await reapplyActiveModifiers();
-      notify(`${result.operation === 'extrude' ? 'Extrude' : 'Inset'} applied · ${result.selectedFaces} face(s) · ${result.insertedVertices} vertices · ${result.createdFaces} added faces · value ${result.value.toFixed(3)}.`, 'success');
+      const insetDistance = result.operation === 'inset' && Number.isFinite(result.distance)
+        ? ` · offset ${result.distance.toFixed(3)}` : '';
+      notify(`${result.operation === 'extrude' ? 'Extrude' : 'Inset'} applied · ${result.selectedFaces} face(s) · ${result.insertedVertices} vertices · ${result.createdFaces} added faces · value ${result.value.toFixed(3)}${insetDistance}.`, 'success');
     }
     refresh(); ui.refreshModal();
     return Boolean(result);
@@ -596,7 +598,9 @@ ui = {
       const label=faceOperationModal.operation==='extrude'?'EXTRUDE':'INSET';
       const unit=faceOperationModal.operation==='extrude'?'distance':'amount';
       readout.hidden=false;
-      readout.textContent=`${label} · ${faceOperationModal.seedFaceIds.length} face(s) · ${unit} ${faceOperationModal.value.toFixed(3)} · drag up/down or arrows · Enter apply / Esc cancel`;
+      const offsetDetail = faceOperationModal.operation==='inset' && Number.isFinite(faceOperationModal.lastResult?.distance)
+        ? ` · offset ${faceOperationModal.lastResult.distance.toFixed(3)}` : '';
+      readout.textContent=`${label} · ${faceOperationModal.seedFaceIds.length} face(s) · ${unit} ${faceOperationModal.value.toFixed(3)}${offsetDetail} · drag up/down or arrows · Enter apply / Esc cancel`;
       pad.hidden=!capabilities.tier.includes('Mobile');
       pad.classList.remove('loop-cut-mode','bevel-mode');
       pad.classList.add('face-operation-mode');

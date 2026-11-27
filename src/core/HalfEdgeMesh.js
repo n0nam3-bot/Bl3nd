@@ -87,6 +87,83 @@ function signedArea2D(points) {
   return area * 0.5;
 }
 
+function pointInPolygon2D(point, polygon, epsilon = 1e-9) {
+  if (!point || !Array.isArray(polygon) || polygon.length < 3) return false;
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const a = polygon[j], b = polygon[i];
+    if (Math.abs(cross2(a, b, point)) <= epsilon &&
+        (point[0] - a[0]) * (point[0] - b[0]) + (point[1] - a[1]) * (point[1] - b[1]) <= epsilon) return true;
+    if (((a[1] > point[1]) !== (b[1] > point[1])) &&
+        point[0] < (b[0] - a[0]) * (point[1] - a[1]) / ((b[1] - a[1]) || epsilon) + a[0]) inside = !inside;
+  }
+  return inside;
+}
+
+/**
+ * Offset a simple 2D polygon toward its interior using shared miter joins.
+ * The result is rejected when a corner needs an extreme miter or the offset
+ * changes winding, leaves the source region, or self-intersects.
+ */
+function offsetPolygonInward(points, distance, scale) {
+  const fail = reason => ({ changed: false, reason });
+  if (!Array.isArray(points) || points.length < 3 || !Number.isFinite(distance) || distance <= 0) {
+    return fail('Inset requires a simple polygon and a positive offset distance.');
+  }
+  const epsilon = Math.max(1e-10, scale * scale * 1e-10);
+  if (polygonSelfIntersects(points, epsilon)) return fail('The selected region boundary is self-intersecting.');
+  const sourceArea = signedArea2D(points);
+  if (Math.abs(sourceArea) <= epsilon) return fail('The selected region boundary has negligible area.');
+  const winding = Math.sign(sourceArea);
+  const edgeData = [];
+  for (let i = 0; i < points.length; i++) {
+    const a = points[i], b = points[(i + 1) % points.length];
+    const dx = b[0] - a[0], dy = b[1] - a[1];
+    const length = Math.hypot(dx, dy);
+    if (length <= Math.sqrt(epsilon)) return fail('The selected region has a zero-length boundary edge.');
+    const normal = winding > 0 ? [-dy / length, dx / length] : [dy / length, -dx / length];
+    edgeData.push({ dx, dy, length, normal });
+  }
+
+  const inset = [];
+  for (let i = 0; i < points.length; i++) {
+    const point = points[i];
+    const previous = edgeData[(i - 1 + points.length) % points.length];
+    const next = edgeData[i];
+    const p = [point[0] + previous.normal[0] * distance, point[1] + previous.normal[1] * distance];
+    const q = [point[0] + next.normal[0] * distance, point[1] + next.normal[1] * distance];
+    const denominator = previous.dx * next.dy - previous.dy * next.dx;
+    let result;
+    if (Math.abs(denominator) <= 1e-9 * previous.length * next.length) {
+      const alignment = previous.normal[0] * next.normal[0] + previous.normal[1] * next.normal[1];
+      if (alignment < 0.999) return fail('Inset encountered a nearly reversed or ambiguous corner.');
+      const nx = previous.normal[0] + next.normal[0];
+      const ny = previous.normal[1] + next.normal[1];
+      const normalLength = Math.hypot(nx, ny) || 1;
+      result = [point[0] + nx / normalLength * distance, point[1] + ny / normalLength * distance];
+    } else {
+      const qpx = q[0] - p[0], qpy = q[1] - p[1];
+      const t = (qpx * next.dy - qpy * next.dx) / denominator;
+      result = [p[0] + previous.dx * t, p[1] + previous.dy * t];
+    }
+    const miterLength = Math.hypot(result[0] - point[0], result[1] - point[1]);
+    if (!Number.isFinite(miterLength) || miterLength > distance * 8 + scale * 1e-8) {
+      return fail('Inset corner would require an excessive miter. Reduce the inset amount.');
+    }
+    if (!pointInPolygon2D(result, points, epsilon)) {
+      return fail('Inset offset leaves the selected region at a concave corner. Reduce the inset amount.');
+    }
+    inset.push(result);
+  }
+
+  if (polygonSelfIntersects(inset, epsilon)) return fail('Inset amount causes the inner boundary to self-intersect. Reduce the inset amount.');
+  const insetArea = signedArea2D(inset);
+  if (Math.sign(insetArea) !== winding || Math.abs(insetArea) <= epsilon || Math.abs(insetArea) >= Math.abs(sourceArea) - epsilon) {
+    return fail('Inset amount collapses or reverses the selected region. Reduce the inset amount.');
+  }
+  return { changed: true, points: inset, sourceArea, insetArea, winding };
+}
+
 function pointInTriangle2D(point, a, b, c, winding, epsilon) {
   const ab = cross2(a, b, point) * winding;
   const bc = cross2(b, c, point) * winding;
@@ -451,28 +528,137 @@ export class HalfEdgeMesh {
     return true;
   }
 
+  // Preserve the original public entry point while routing it through the
+  // validated constant-offset region operator.
   insetSelected(amount = 0.12) {
-    const selected = [...this.faceSelection];
-    if (!selected.length) return false;
-    const selectedSet = new Set(selected), replacement = [], innerFaceIds = [];
-    const kept = this.faces.filter((_, id) => !selectedSet.has(id));
-    for (const faceId of selected) {
-      const face = this.faces[faceId];
-      const center = [0, 0, 0];
-      face.forEach(v => this.positions[v].forEach((p, i) => center[i] += p / face.length));
-      const ring = face.map(v => {
-        const p = this.positions[v]; const id = this.positions.length;
-        this.positions.push(p.map((n, i) => n * (1 - amount) + center[i] * amount)); return id;
-      });
-      for (let i = 0; i < face.length; i++) replacement.push([face[i], face[(i + 1) % face.length], ring[(i + 1) % face.length], ring[i]]);
-      innerFaceIds.push(kept.length + replacement.length);
-      replacement.push(ring);
+    return this.insetSelectedRegion(amount).changed;
+  }
+
+  /**
+   * Inset one connected, coplanar face region by a constant boundary offset.
+   * Boundary vertices are duplicated and moved inward; the selected interior
+   * faces retain their topology, while one shared mitered ring face is added
+   * per boundary edge. The operation is built and validated on a private mesh.
+   * `amount` is a fraction of the shortest selected-region boundary edge.
+   */
+  insetSelectedRegion(amount = 0.12) {
+    const fail = reason => ({ changed: false, reason });
+    if (!Number.isFinite(amount) || amount < 0.005 || amount > 0.9) {
+      return fail('Inset amount must be between 0.005 and 0.9.');
     }
-    this.faces = [...kept, ...replacement];
+    const selected = [...this.faceSelection].filter(id => Number.isInteger(id) && this.faces[id]).sort((a, b) => a - b);
+    if (!selected.length) return fail('Select one connected face region before insetting.');
+    if (selected.length > 1 && !this.boundaryForRegion(selected)) {
+      return fail('Inset requires one connected planar face region with one simple boundary and no holes.');
+    }
+
+    const boundary = selected.length === 1 ? [...this.faces[selected[0]]] : this.boundaryForRegion(selected);
+    if (!boundary || boundary.length < 3 || new Set(boundary).size !== boundary.length) {
+      return fail('Inset requires one simple face-region boundary.');
+    }
+    const projection = projectedPolygon(this.positions, boundary);
+    if (!projection) return fail('Inset region boundary could not be projected to a stable plane.');
+    const tolerance = projection.scale * 1e-5;
+    if (projection.deviation > tolerance) return fail('Inset requires a planar region.');
+    if (selected.some(faceId => {
+      const faceProjection = projectedPolygon(this.positions, this.faces[faceId]);
+      if (!faceProjection || faceProjection.deviation > tolerance) return true;
+      const alignment = faceProjection.normal.reduce((sum, value, axis) => sum + value * projection.normal[axis], 0);
+      if (alignment < 0.999) return true;
+      const origin = this.positions[boundary[0]];
+      return this.faces[faceId].some(vertexId => Math.abs(projection.normal.reduce((sum, value, axis) =>
+        sum + value * (this.positions[vertexId][axis] - origin[axis]), 0)) > tolerance);
+    })) return fail('Inset requires consistently wound, coplanar selected faces.');
+
+    const origin = [...this.positions[boundary[0]]];
+    // Use an orthonormal in-plane basis rather than dropping a world axis.
+    // Dominant-axis projection is suitable for triangulation, but it distorts
+    // distances on rotated planes and would make the inset width inconsistent.
+    const normal = projection.normal;
+    const reference = Math.abs(normal[2]) < 0.9 ? [0, 0, 1] : [0, 1, 0];
+    const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+    const normalize = vector => {
+      const length = Math.hypot(...vector) || 1;
+      return vector.map(value => value / length);
+    };
+    const basisU = normalize(cross(reference, normal));
+    const basisV = normalize(cross(normal, basisU));
+    const regionPoints = boundary.map(vertexId => {
+      const delta = this.positions[vertexId].map((value, axis) => value - origin[axis]);
+      return [delta.reduce((sum, value, axis) => sum + value * basisU[axis], 0),
+        delta.reduce((sum, value, axis) => sum + value * basisV[axis], 0)];
+    });
+    const coordinateBounds = [0, 1].map(axis => [
+      Math.min(...regionPoints.map(point => point[axis])),
+      Math.max(...regionPoints.map(point => point[axis]))
+    ]);
+    const regionScale = Math.max(1, ...coordinateBounds.map(([min, max]) => max - min));
+    const sourceArea = signedArea2D(regionPoints);
+    const epsilon = regionScale * regionScale * 1e-10;
+    if (Math.abs(sourceArea) <= epsilon || polygonSelfIntersects(regionPoints, epsilon) || !triangulatePolygon(this.positions, boundary)) {
+      return fail('Inset requires a simple, non-degenerate region boundary.');
+    }
+    const edgeLengths = boundary.map((vertexId, index) => {
+      const a = this.positions[vertexId], b = this.positions[boundary[(index + 1) % boundary.length]];
+      return Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+    });
+    const shortestEdge = Math.min(...edgeLengths);
+    if (!Number.isFinite(shortestEdge) || shortestEdge <= 1e-10) return fail('Inset region contains a zero-length boundary edge.');
+    const distance = amount * shortestEdge;
+    const offset = offsetPolygonInward(regionPoints, distance, regionScale);
+    if (!offset.changed) return offset;
+
+    const newPositions = this.positions.map(point => [...point]);
+    const innerVertexByOuter = new Map();
+    for (let index = 0; index < boundary.length; index++) {
+      const inner2D = offset.points[index];
+      const point = origin.map((value, axis) => value + basisU[axis] * inner2D[0] + basisV[axis] * inner2D[1]);
+      if (!point.every(Number.isFinite)) return fail('Inset produced a non-finite offset vertex.');
+      const newId = newPositions.length;
+      newPositions.push(point);
+      innerVertexByOuter.set(boundary[index], newId);
+    }
+
+    const selectedSet = new Set(selected);
+    const nextFaces = this.faces.filter((_, faceId) => !selectedSet.has(faceId)).map(face => [...face]);
+    const innerFaceIds = [];
+    for (const faceId of selected) {
+      const innerFace = this.faces[faceId].map(vertexId => innerVertexByOuter.get(vertexId) ?? vertexId);
+      if (!triangulatePolygon(newPositions, innerFace)) return fail('Inset collapses or folds an inner selected face. Reduce the inset amount.');
+      innerFaceIds.push(nextFaces.length);
+      nextFaces.push(innerFace);
+    }
+    for (let index = 0; index < boundary.length; index++) {
+      const a = boundary[index], b = boundary[(index + 1) % boundary.length];
+      const ringFace = [a, b, innerVertexByOuter.get(b), innerVertexByOuter.get(a)];
+      if (!ringFace.every(Number.isInteger) || !triangulatePolygon(newPositions, ringFace)) {
+        return fail('Inset creates a degenerate boundary ring face. Reduce the inset amount.');
+      }
+      nextFaces.push(ringFace);
+    }
+
+    const candidate = new HalfEdgeMesh(newPositions, nextFaces);
+    const report = candidate.validateTopology();
+    if (!report.valid) return fail('Inset candidate failed topology validation; the source mesh was not changed.');
+    candidate.setSelectionMode('face');
+    candidate.faceSelection = new Set(innerFaceIds);
+
+    this.positions = candidate.positions.map(point => [...point]);
+    this.faces = candidate.faces.map(face => [...face]);
+    this.selectionMode = 'face';
     this.clearSelection();
     this.rebuild();
     this.faceSelection = new Set(innerFaceIds);
-    return true;
+    return {
+      changed: true,
+      amount,
+      distance,
+      selectedFaces: selected.length,
+      boundaryEdges: boundary.length,
+      insertedVertices: boundary.length,
+      createdFaces: boundary.length,
+      topology: report
+    };
   }
 
   deleteSelectedElements() {

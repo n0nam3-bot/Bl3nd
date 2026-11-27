@@ -6,7 +6,9 @@ export const MeshOperators = {
   },
   inset(document, amount = 0.12) {
     const hem = document.activeObject?.userData?.hem;
-    if (!hem || !hem.insetSelected(amount)) return false;
+    if (!hem) return false;
+    const result = hem.insetSelectedRegion(amount);
+    if (!result.changed) return false;
     document.updateMesh(); return true;
   },
   deleteSelected(document) {

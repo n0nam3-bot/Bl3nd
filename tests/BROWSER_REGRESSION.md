@@ -8,7 +8,7 @@ Open the deployed app only after the latest Pages workflow succeeds:
 
 `https://n0nam3-bot.github.io/Bl3nd/`
 
-Latest deployed baseline before v0.1.29: v0.1.28, `main` commit `ca867f1fc301479447b22575d5292519fd8d6f73`, Pages workflow run #36. After uploading v0.1.29, reload and allow the v26 service-worker cache to activate before testing.
+Latest deployed baseline before this package is v0.1.29, `main` commit `77c97d731a6930fc7f98feb9efdc908a074f817b`, Pages workflow run #37. After uploading v0.1.30, reload and allow the v27 service-worker cache to activate before testing.
 
 ## Desktop — Chrome or Edge
 
@@ -31,7 +31,7 @@ Record each step as Pass / Fail / Not tested. If a region-tool result is unexpec
 2. Use one finger to orbit. Use two fingers to pan/zoom. Confirm gestures do not become stuck after lifting either finger.
 3. Enter Edit Mode and switch to Edge Select. Open `Select ▾` and try each region tool. For Circle, a single tap centered on a visible corner should select nearby incident edges using the 25px brush radius. For Box or Lasso, draw one narrow region across a visible L-shaped pair or simple connected edge path; all visible edge segments intersecting that region should highlight, even when the region crosses between the old fixed sample positions. A selection of exactly two adjacent edges can start the supported corner miter. A longer selection must form one simple path. Three edges radiating from one vertex are a branch: the region tool may select them, but Bevel must reject them without changing the mesh. Vertex-only Bevel is not implemented.
 4. Switch to Face Select and tap one visible cube face. Start Extrude from the bottom action bar or Edit Mesh panel. Drag vertically, then enter an exact distance with the numeric pad. Confirm the mesh previews the new position; Cancel must restore the original. Start it again and Apply; Undo/Redo must restore both states.
-5. Start Inset on one face. Drag vertically or enter an amount between 0.005 and 0.9. Confirm the inner face and border preview update. Cancel once, then repeat and Apply. Undo/Redo must restore both states. A multi-face Inset selection is currently unsupported and must be rejected without mutation.
+5. Start Inset on one face. Drag vertically or enter an amount between 0.005 and 0.9. Confirm the inner face and border preview update. Cancel once, then repeat and Apply. Undo/Redo must restore both states. Also test a connected multi-face region: add a Plane, enter Edit Mode, subdivide it once, then select two adjacent faces with Box/Lasso or Shift-click on desktop. Start Inset and confirm the entire region gets one continuous offset border, the internal seam remains shared, and no cracks appear. Try a disconnected selection or a region with a hole and confirm it is rejected without changing the source. A concave L-shaped planar region should preview when the offset remains simple; a collapsing offset must reject non-destructively.
 6. Start Bevel. Drag horizontally to adjust width. Use the on-screen segment and profile `+` / `−` controls. Confirm the numeric pad/readout reflects the settings and the model preview updates.
 7. Cancel once with the on-screen Cancel/Escape control. Confirm the original mesh returns. Start Bevel again and apply it with the on-screen Apply/Enter control.
 8. Tap Undo, then Redo. Confirm the mesh returns to the expected pre- and post-Bevel states.
@@ -61,8 +61,9 @@ Record each step as Pass / Fail / Not tested. If a region-tool result is unexpec
 
 ## Face-operation regression — v0.1.29 (automated; device run pending)
 
-- Node tests cover modal Extrude and Inset preview, numeric input, negative Extrude, connected planar-region support, one-face Inset restriction, cancel restoration, one-step commit, safe rejection of invalid/disconnected selections, and drag anchoring on the actual pointer-down rather than the previous face-selection location.
-- Repeat these controls on Android Chrome after deployment. Desktop pointer behavior remains untested and is deferred until the user can access a PC; it does not block continued modeling work.
+- Node tests cover modal Extrude and Inset preview, numeric input, negative Extrude, connected planar-region Extrude, single-face inset, cancel restoration, one-step commit, safe rejection of invalid/disconnected selections, and drag anchoring on the actual pointer-down.
+- The v0.1.30 automated region tests cover constant-offset miters, connected two-face regions, concave L-shaped regions, rotated-plane world-distance consistency, reversed winding, disconnected regions, holes, collapsing offsets, excessive miters and non-planar faces. They do not replace real touch/browser validation.
+- After v0.1.30 deploys, repeat Inset on one face and on a connected subdivided Plane region on Android Chrome. Confirm the shared inner seam remains welded, the offset distance readout changes with the amount, Cancel restores the original, Apply commits once, and Undo/Redo restores both states. Desktop pointer behavior remains deferred until the user can access a PC; it does not block continued modeling work.
 
 ## Record results
 
