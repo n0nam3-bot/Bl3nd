@@ -8,7 +8,7 @@ Open the deployed app only after the latest Pages workflow succeeds:
 
 `https://n0nam3-bot.github.io/Bl3nd/`
 
-Latest deployed baseline before this package is v0.1.41, `main` commit `cef724abc2c10ea299626517cfd2bf60682a43b5`, Pages workflow run #49 (success). After uploading v0.1.42, reload and allow the v39 service-worker cache to activate before testing.
+Latest deployed baseline before this package is v0.1.43, `main` commit `7b03007246da36e6e1548c37cb4249d368253195`, Pages workflow run #51 (success). After applying v0.1.44, reload and allow the v41 service-worker cache to activate before testing.
 
 ## Desktop — Chrome or Edge
 
@@ -109,6 +109,14 @@ Record each step as Pass / Fail / Not tested. If a region-tool result is unexpec
 - Confirm free movement still follows the camera-facing view plane and free rotation still uses the camera-oriented trackball. Local axes must remain anchored to the object's orientation at modal start while pointer previews update; Cancel restores the original transform and Apply creates one undoable operation.
 - Object-mode Global axis scaling retains its documented TRS approximation; Local axis scaling follows the object's local scale components. This update does not add snapping, proportional editing or exact multi-object pivot aggregation.
 
+## Mobile transform Apply pointer isolation — v0.1.44 (browser acceptance pending)
+
+- Start Move (`G`) on Android, drag inside the 3D viewport until the preview reaches a clear position, then lift your finger. Tap the numeric-pad Apply/Enter button. The object must remain exactly at the last visible preview position; moving your finger to the keypad must not become another transform drag.
+- Repeat while selecting Global X/Y/Z, Local X/Y/Z, and the YZ/XZ/XY plane buttons. Axis/plane previews must still respond to drags inside the viewport, and changing orientation must not disturb the current preview.
+- Repeat once in Edit Mode with a selected vertex/edge/face region. Confirm Apply preserves the preview, Cancel restores the source, and one Undo/Redo step restores the pre-/post-transform states.
+- Move a finger over the numeric pad without pressing a key while a transform is active. The preview must not change. Then drag again inside the viewport and confirm it updates normally.
+- This regression specifically guards against the former window-wide pointer listener treating finger travel over the numeric pad as a new viewport drag. Desktop pointer behavior should remain unchanged.
+
 ## Curved-surface Face Bevel regression — v0.1.42 (automated; Android retest pending)
 
 - `tests/CurvedFaceBevel.test.js` covers a triangulated spherical-cap patch, welded raised top seams, triangulated transition strips at 1–8 segments and all profile endpoints, planar-path separation, sharp-crease rejection and modal fallback to Individual Faces, invalid controls, modal preview/commit, mode switching and Cancel restoration. v0.1.42 adds an intentionally intersecting detached triangle that must reject atomically and a distant disconnected triangle that must not block a valid patch.
@@ -136,6 +144,7 @@ For each device, record:
 - Whether Individual Faces mode allowed targeting each selected face and assigning different width, height, segment and profile values; whether curved groups auto-entered Continuous Surface or safely fell back to Individual Faces; and whether welded continuous patches / separate panels passed topology validation and restored correctly through Cancel/Apply/Undo/Redo.
 - Whether Click Select was restored after each modal operation and viewport orbit/pan worked immediately without switching Object/Edit Mode.
 - Any visible error text and the first app-owned console error, if available.
+- Whether mobile G/R/S preview remains fixed when the finger leaves the viewport to tap Apply/Cancel/numeric controls, for Global/Local axis and plane constraints.
 
 Mark each step as **Pass**, **Fail**, or **Not tested**. Do not interpret extension-injected console messages as Bl3nd errors without confirming their source. Do not change topology validation to make a failing geometry case appear to pass; unsupported or invalid candidates must leave the source mesh unchanged.
 

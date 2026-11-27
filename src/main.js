@@ -890,7 +890,10 @@ window.addEventListener('pointermove',event=>{
   if(faceOperationModal.active && (event.target===viewportCanvas || viewportCanvas.contains(event.target))){commandBus.dispatch('mesh.face_operation_pointer',{point:{x:event.clientX,y:event.clientY},fine:event.shiftKey});ui.refreshModal();return;}
   if(bevelModal.active && (event.target===viewportCanvas || viewportCanvas.contains(event.target))){commandBus.dispatch('mesh.bevel_pointer',{point:{x:event.clientX,y:event.clientY},fine:event.shiftKey});ui.refreshModal();return;}
   if(loopCutModal.active && (event.target===viewportCanvas || viewportCanvas.contains(event.target))){commandBus.dispatch('mesh.loop_cut_pointer',{point:{x:event.clientX,y:event.clientY},fine:event.shiftKey});ui.refreshModal();return;}
-  if(modalTransform.active){commandBus.dispatch('transform.modal_update',{point:{x:event.clientX,y:event.clientY}});ui.refreshModal();}
+  if(modalTransform.active && (event.target===viewportCanvas || viewportCanvas.contains(event.target))){
+    commandBus.dispatch('transform.modal_update',{point:{x:event.clientX,y:event.clientY}});
+    ui.refreshModal();
+  }
 });
 viewportCanvas.addEventListener('contextmenu',event=>{
   if(faceOperationModal.active){event.preventDefault();run('mesh.face_operation_cancel');return;}
