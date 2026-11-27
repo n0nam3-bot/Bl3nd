@@ -47,3 +47,42 @@ test('snapping remains numerically clean for decimal increments', () => {
   assert.equal(snapMoveAmount(-0.6, 0.2), -0.6);
   assert.equal(snapMoveAmount(0.0000001, 0.1), 0);
 });
+
+test('enabling snapping quantizes the same live pointer displacement without changing the default', () => {
+  const settings = normalizeMoveSnapSettings();
+  const rawPointerAmount = 0.62;
+  assert.equal(resolveMoveSnapAmount(rawPointerAmount, settings, 'global'), rawPointerAmount);
+  settings.enabled = true;
+  assert.equal(resolveMoveSnapAmount(rawPointerAmount, settings, 'global'), 1);
+});
+
+test('switching Global and Local orientation recomputes the same pointer displacement on each grid', () => {
+  const settings = { enabled: true, globalStep: 1, localStep: 0.25 };
+  const rawPointerAmount = 0.62;
+  assert.equal(resolveMoveSnapAmount(rawPointerAmount, settings, 'global'), 1);
+  assert.equal(resolveMoveSnapAmount(rawPointerAmount, settings, 'local'), 0.5);
+});
+
+test('editing the active grid increment immediately changes the snapped preview amount', () => {
+  const settings = { enabled: true, globalStep: 1, localStep: 0.25 };
+  const rawPointerAmount = 0.62;
+  assert.equal(resolveMoveSnapAmount(rawPointerAmount, settings, 'local'), 0.5);
+  settings.localStep = 0.125;
+  assert.equal(resolveMoveSnapAmount(rawPointerAmount, settings, 'local'), 0.625);
+});
+
+test('positive and negative pointer previews cross snap thresholds symmetrically', () => {
+  const settings = { enabled: true, globalStep: 0.5, localStep: 0.5 };
+  assert.equal(resolveMoveSnapAmount(0.249, settings, 'global'), 0);
+  assert.equal(resolveMoveSnapAmount(0.251, settings, 'global'), 0.5);
+  assert.equal(resolveMoveSnapAmount(-0.249, settings, 'global'), 0);
+  assert.equal(resolveMoveSnapAmount(-0.251, settings, 'global'), -0.5);
+});
+
+test('the active preview returns to continuous movement immediately when snapping is switched off', () => {
+  const settings = { enabled: true, globalStep: 1, localStep: 0.25 };
+  const rawPointerAmount = 0.62;
+  assert.equal(resolveMoveSnapAmount(rawPointerAmount, settings, 'local'), 0.5);
+  settings.enabled = false;
+  assert.equal(resolveMoveSnapAmount(rawPointerAmount, settings, 'local'), rawPointerAmount);
+});
