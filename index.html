@@ -89,6 +89,7 @@
           <div class="numeric-pad" id="numeric-pad" hidden>
             <div class="pad-title">TRANSFORM VALUE</div>
             <button type="button" class="pad-dimension-toggle" id="pad-transform-orientation" hidden>GLOBAL AXES · SWITCH TO LOCAL</button>
+            <button type="button" class="pad-dimension-toggle" id="pad-move-snap-toggle" hidden>SNAP OFF · TAP TO ENABLE</button>
             <div class="pad-value" id="pad-value">0</div>
             <div class="pad-detail" id="pad-detail" hidden aria-live="polite">
               <div class="pad-detail-row"><span class="pad-detail-label">Δ</span><span id="pad-delta-x">X +0.000</span><span id="pad-delta-y">Y +0.000</span><span id="pad-delta-z">Z +0.000</span></div>
@@ -165,6 +166,13 @@
             <label>Y<input data-transform="scale" data-axis="y" type="number" step="0.1"></label>
             <label>Z<input data-transform="scale" data-axis="z" type="number" step="0.1"></label>
           </div>
+          <div class="panel-heading section-gap">MOVE SNAPPING</div>
+          <label class="move-snap-enable"><input id="move-snap-enabled" type="checkbox"> Enable axis-constrained Move snapping</label>
+          <div class="move-snap-steps">
+            <label>GLOBAL STEP<input id="move-snap-global-step" type="number" min="0.000001" max="1000000" step="0.1" value="1"></label>
+            <label>LOCAL STEP<input id="move-snap-local-step" type="number" min="0.000001" max="1000000" step="0.1" value="1"></label>
+          </div>
+          <p class="panel-note">Snaps pointer-driven X/Y/Z Move to the chosen increment. Numeric entry stays exact; free and plane movement are unchanged.</p>
           <div class="panel-heading section-gap">EDIT MESH</div>
           <div class="button-grid">
             <button id="extrude-panel-btn">Extrude <kbd>E</kbd></button>

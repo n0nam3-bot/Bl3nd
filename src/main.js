@@ -3,6 +3,7 @@ import { detectCapabilities } from './core/DeviceCapabilities.js';
 import { CommandBus } from './core/CommandBus.js';
 import { SceneDocument } from './core/SceneDocument.js';
 import { buildMoveReadout } from './core/TransformReadout.js';
+import { normalizeMoveSnapSettings } from './core/TransformSnap.js';
 import { UndoManager } from './core/UndoManager.js';
 import { MeshOperators } from './operators/MeshOperators.js';
 import { SelectionOperators } from './operators/SelectionOperators.js';
@@ -23,6 +24,16 @@ const statusEl = $('#status-message');
 const toastRegion = $('#toast-region');
 const loading = window.Bl3ndLoading;
 function loadingProgress(value, message) { loading?.update(value, message); }
+
+const MOVE_SNAP_STORAGE_KEY = 'bl3nd-move-snap-v1';
+function loadMoveSnapSettings() {
+  try { return normalizeMoveSnapSettings(JSON.parse(localStorage.getItem(MOVE_SNAP_STORAGE_KEY) || '{}')); }
+  catch { return normalizeMoveSnapSettings(); }
+}
+function persistMoveSnapSettings(settings) {
+  try { localStorage.setItem(MOVE_SNAP_STORAGE_KEY, JSON.stringify(settings)); }
+  catch { /* Browser storage may be unavailable; in-memory settings still work. */ }
+}
 
 loadingProgress(6, 'Checking device and graphics capabilities…');
 const capabilities = await detectCapabilities();
@@ -63,7 +74,7 @@ const undoManager = new UndoManager({
   status,
   onRestore: async snapshot => { await sceneDocument.restore(snapshot); await reapplyModifiers(); refresh(); }
 });
-const modalTransform = new ModalTransform({ document: sceneDocument, undoManager, viewport, status, onChange: () => ui?.refreshModal() });
+const modalTransform = new ModalTransform({ document: sceneDocument, undoManager, viewport, status, moveSnapSettings: loadMoveSnapSettings(), onChange: () => ui?.refreshModal() });
 const loopCutModal = new LoopCutModal({ document: sceneDocument, undoManager, viewport, status, onChange: () => { refresh(); ui?.refreshModal(); } });
 const bevelModal = new BevelModal({ document: sceneDocument, undoManager, viewport, status, onChange: () => { refresh(); ui?.refreshModal(); } });
 const faceOperationModal = new FaceOperationModal({ document: sceneDocument, undoManager, viewport, status, onChange: () => { refresh(); ui?.refreshModal(); } });
@@ -535,6 +546,11 @@ function registerCommands() {
   commandBus.register('transform.modal_axis', ({ axis, plane = false }) => { modalTransform.setAxis(axis, plane); ui.refreshModal(); }, { recordUndo: false });
   commandBus.register('transform.modal_orientation_toggle', () => modalTransform.toggleOrientation(), { recordUndo: false });
   commandBus.register('transform.modal_input', ({ value }) => { modalTransform.appendNumeric(value); ui.refreshModal(); }, { recordUndo: false });
+  commandBus.register('transform.snap_settings', ({ settings }) => {
+    const next = modalTransform.setMoveSnapSettings(settings);
+    persistMoveSnapSettings(next);
+    return next;
+  }, { recordUndo: false });
   commandBus.register('cursor.set', ({ point }) => { sceneDocument.cursor.fromArray(point); refreshCursor(); return true; }, { recordUndo: false });
   commandBus.register('pivot.set', ({ pivot }) => { sceneDocument.pivot = pivot; refresh(); }, { recordUndo: false });
   commandBus.register('modifier.add', async ({ type }) => {
@@ -669,6 +685,19 @@ ui = {
     const readout=$('#modal-readout'),pad=$('#numeric-pad'),padTitle=pad.querySelector('.pad-title');
     const axisButtons=pad.querySelectorAll('[data-axis]');
     const orientationButton=$('#pad-transform-orientation');
+    const snapButton=$('#pad-move-snap-toggle');
+    const snapSettings=modalTransform.moveSnapSettings;
+    const snapEnabledInput=$('#move-snap-enabled');
+    const globalStepInput=$('#move-snap-global-step');
+    const localStepInput=$('#move-snap-local-step');
+    if(document.activeElement!==snapEnabledInput) snapEnabledInput.checked=snapSettings.enabled;
+    if(document.activeElement!==globalStepInput) globalStepInput.value=String(snapSettings.globalStep);
+    if(document.activeElement!==localStepInput) localStepInput.value=String(snapSettings.localStep);
+    snapButton.hidden=!(modalTransform.active && modalTransform.type==='move' && Boolean(modalTransform.axis));
+    snapButton.textContent=snapSettings.enabled
+      ? `SNAP ON · ${modalTransform.orientation.toUpperCase()} ${modalTransform.orientation==='local'?snapSettings.localStep:snapSettings.globalStep}`
+      : 'SNAP OFF · TAP TO ENABLE';
+    snapButton.setAttribute('aria-pressed',String(snapSettings.enabled));
     const padDetail=$('#pad-detail');
     orientationButton.hidden=true;
     padDetail.hidden=true;
@@ -767,7 +796,7 @@ ui = {
     padTitle.textContent='TRANSFORM VALUE';
     axisButtons.forEach(button=>button.hidden=false);
     negativeKey.hidden=false;
-    if(!modalTransform.active){readout.hidden=true;pad.hidden=true;return;}
+    if(!modalTransform.active){readout.hidden=true;pad.hidden=true;snapButton.hidden=true;return;}
     const axis=modalTransform.axis?` · ${modalTransform.orientation.toUpperCase()} ${modalTransform.axis.toUpperCase()} axis`:modalTransform.planeNormal?` · ${modalTransform.orientation.toUpperCase()} ${modalTransform.planeNormal.toUpperCase()} plane`:` · ${modalTransform.orientation.toUpperCase()} orientation`;
     let moveReadout=null;
     if(modalTransform.type==='move'){
@@ -849,6 +878,20 @@ $('#validate-topology-btn').addEventListener('click',()=>run('mesh.validate_topo
 $('#repair-topology-btn').addEventListener('click',()=>run('mesh.repair_topology')); $('#loop-cut-btn').addEventListener('click',()=>run('mesh.loop_cut'));
 $('#frame-btn').addEventListener('click',()=>run('view.frame'));
 $('#pivot-select').addEventListener('change',event=>run('pivot.set',{pivot:event.target.value}));
+$('#move-snap-enabled').addEventListener('change',event=>run('transform.snap_settings',{settings:{enabled:event.target.checked}}));
+for (const [id,key] of [['move-snap-global-step','globalStep'],['move-snap-local-step','localStep']]) {
+  $(`#${id}`).addEventListener('change',event=>{
+    const value=Number(event.target.value);
+    if(!Number.isFinite(value) || value<=0){
+      event.target.value=String(modalTransform.moveSnapSettings[key]);
+      notify('Snap step must be a number greater than zero.','error');
+      return;
+    }
+    const normalized=normalizeMoveSnapSettings({[key]:value},modalTransform.moveSnapSettings);
+    event.target.value=String(normalized[key]);
+    run('transform.snap_settings',{settings:{[key]:normalized[key]}});
+  });
+}
 $$('[data-view]').forEach(button=>button.addEventListener('click',()=>run('view.set',{view:button.dataset.view})));
 $$('[data-modifier]').forEach(button=>button.addEventListener('click',()=>run('modifier.add',{type:button.dataset.modifier})));
 $$('[data-panel]').forEach(button=>button.addEventListener('click',()=>{
@@ -876,6 +919,10 @@ $('#pie-menu').addEventListener('click',async event=>{
 });
 $('#shading-btn').addEventListener('click',()=>ui.togglePie('shading'));
 $('#numeric-pad').addEventListener('click',async event=>{
+  if(modalTransform.active && event.target.closest('#pad-move-snap-toggle')){
+    await run('transform.snap_settings',{settings:{enabled:!modalTransform.moveSnapSettings.enabled}});
+    return;
+  }
   if(modalTransform.active && event.target.closest('#pad-transform-orientation')){await run('transform.modal_orientation_toggle');return;}
   if(faceOperationModal.active){
     const faceKeyButton=event.target.closest('button[data-key]');if(!faceKeyButton)return;const faceKey=faceKeyButton.dataset.key;

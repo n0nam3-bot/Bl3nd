@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { resolveTransformAxis } from '../core/TransformOrientation.js';
+import { normalizeMoveSnapSettings, resolveMoveSnapAmount } from '../core/TransformSnap.js';
 
 const AXES = {
   x: new THREE.Vector3(1, 0, 0),
@@ -16,7 +17,7 @@ function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
  * a virtual trackball expressed in the camera's orientation.
  */
 export class ModalTransform {
-  constructor({ document, undoManager, viewport, onChange, status }) {
+  constructor({ document, undoManager, viewport, onChange, status, moveSnapSettings = {} }) {
     this.document = document;
     this.undoManager = undoManager;
     this.viewport = viewport;
@@ -40,6 +41,7 @@ export class ModalTransform {
     this.arcballStart = null;
     this.orientation = 'global';
     this.startWorldQuaternion = new THREE.Quaternion();
+    this.moveSnapSettings = normalizeMoveSnapSettings(moveSnapSettings);
   }
 
   async begin(type, pointer = null) {
@@ -187,7 +189,11 @@ export class ModalTransform {
     }
 
     const delta = this.screenDelta;
-    if (this.axis) return this.axisVector(this.axis).multiplyScalar(this.axisMouseAmount(this.axis));
+    if (this.axis) {
+      const rawAmount = this.axisMouseAmount(this.axis);
+      const amount = resolveMoveSnapAmount(rawAmount, this.moveSnapSettings, this.orientation, false);
+      return this.axisVector(this.axis).multiplyScalar(amount);
+    }
     if (this.planeNormal) {
       const { u, v } = this.planeBasis(this.planeNormal);
       return u.multiplyScalar(delta.x * this.viewFrame.unitsPerPixel)
@@ -333,6 +339,17 @@ export class ModalTransform {
     this.apply();
     this.status?.(`${this.type.toUpperCase()} · ${this.orientation.toUpperCase()} ${plane ? `${axis.toUpperCase()} plane` : `${axis.toUpperCase()} axis`} · Enter apply / Esc cancel`);
     this.onChange?.();
+  }
+
+  setMoveSnapSettings(settings = {}) {
+    this.moveSnapSettings = normalizeMoveSnapSettings(settings, this.moveSnapSettings);
+    if (this.active && this.type === 'move') this.apply();
+    this.onChange?.();
+    return { ...this.moveSnapSettings };
+  }
+
+  toggleMoveSnap() {
+    return this.setMoveSnapSettings({ enabled: !this.moveSnapSettings.enabled });
   }
 
   toggleOrientation() {
