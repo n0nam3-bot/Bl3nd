@@ -61,9 +61,6 @@ const loopCutModal = new LoopCutModal({ document: sceneDocument, undoManager, vi
 const bevelModal = new BevelModal({ document: sceneDocument, undoManager, viewport, status, onChange: () => { refresh(); ui?.refreshModal(); } });
 const faceOperationModal = new FaceOperationModal({ document: sceneDocument, undoManager, viewport, status, onChange: () => { refresh(); ui?.refreshModal(); } });
 viewport.onModalPointerStart = event => faceOperationModal.setPointerAnchor({ x: event.clientX, y: event.clientY });
-let loopCutPreviousSelectionTool = 'tap';
-let bevelPreviousSelectionTool = 'tap';
-let faceOperationPreviousSelectionTool = 'tap';
 const commandBus = new CommandBus({ undoManager, status });
 const modifierStack = new ModifierStack({ onStatus: status });
 const modelIO = new ModelIO(sceneDocument, notify);
@@ -95,7 +92,6 @@ async function startFaceOperation(operation) {
     return false;
   }
   viewport.controls.enabled = false;
-  faceOperationPreviousSelectionTool = viewport.selectionTool || 'tap';
   viewport.selectionTool = 'tap';
   viewport.modalOperationActive = true;
   ui.refreshSelectionTool();
@@ -228,7 +224,8 @@ function registerCommands() {
     const result = await faceOperationModal.confirm();
     viewport.controls.enabled = true;
     viewport.modalOperationActive = false;
-    viewport.selectionTool = faceOperationPreviousSelectionTool;
+    // Modal completion returns to click selection so touch drags immediately orbit.
+    viewport.selectionTool = 'tap';
     ui.refreshSelectionTool();
     document.body.classList.remove('face-operation-modal-active');
     if (result) {
@@ -244,7 +241,8 @@ function registerCommands() {
     const result = await faceOperationModal.cancel();
     viewport.controls.enabled = true;
     viewport.modalOperationActive = false;
-    viewport.selectionTool = faceOperationPreviousSelectionTool;
+    // Modal completion returns to click selection so touch drags immediately orbit.
+    viewport.selectionTool = 'tap';
     ui.refreshSelectionTool();
     document.body.classList.remove('face-operation-modal-active');
     if (result) await reapplyModifiers();
@@ -330,7 +328,6 @@ function registerCommands() {
     const started = await bevelModal.begin();
     if (!started) { notify(`Bevel skipped · ${bevelModal.lastError || 'Unable to start Bevel.'}`, 'error'); return false; }
     viewport.controls.enabled = false;
-    bevelPreviousSelectionTool = viewport.selectionTool || 'tap';
     viewport.selectionTool = 'tap';
     viewport.modalOperationActive = true;
     ui.refreshSelectionTool();
@@ -369,7 +366,9 @@ function registerCommands() {
     const result = await bevelModal.confirm();
     viewport.controls.enabled = true;
     viewport.modalOperationActive = false;
-    viewport.selectionTool = bevelPreviousSelectionTool;
+    // Return to click selection so the next touch drag is camera navigation,
+    // not the previously armed Box/Circle/Lasso selection gesture.
+    viewport.selectionTool = 'tap';
     ui.refreshSelectionTool();
     document.body.classList.remove('bevel-modal-active');
     if (result) {
@@ -387,7 +386,9 @@ function registerCommands() {
     const result = await bevelModal.cancel();
     viewport.controls.enabled = true;
     viewport.modalOperationActive = false;
-    viewport.selectionTool = bevelPreviousSelectionTool;
+    // Return to click selection so the next touch drag is camera navigation,
+    // not the previously armed Box/Circle/Lasso selection gesture.
+    viewport.selectionTool = 'tap';
     ui.refreshSelectionTool();
     document.body.classList.remove('bevel-modal-active');
     if (result) await reapplyModifiers();
@@ -399,7 +400,6 @@ function registerCommands() {
     const started = await loopCutModal.begin();
     if (!started) { notify(`Loop Cut skipped · ${loopCutModal.lastError || 'Unable to start the cut.'}`, 'error'); return false; }
     viewport.controls.enabled = false;
-    loopCutPreviousSelectionTool = viewport.selectionTool || 'tap';
     viewport.selectionTool = 'tap';
     viewport.modalOperationActive = true;
     ui.refreshSelectionTool();
@@ -433,7 +433,8 @@ function registerCommands() {
     const result = await loopCutModal.confirm();
     viewport.controls.enabled = true;
     viewport.modalOperationActive = false;
-    viewport.selectionTool = loopCutPreviousSelectionTool;
+    // Modal completion returns to click selection so touch drags immediately orbit.
+    viewport.selectionTool = 'tap';
     ui.refreshSelectionTool();
     document.body.classList.remove('loop-cut-modal-active');
     if (result) {
@@ -447,7 +448,8 @@ function registerCommands() {
     const result = await loopCutModal.cancel();
     viewport.controls.enabled = true;
     viewport.modalOperationActive = false;
-    viewport.selectionTool = loopCutPreviousSelectionTool;
+    // Modal completion returns to click selection so touch drags immediately orbit.
+    viewport.selectionTool = 'tap';
     ui.refreshSelectionTool();
     document.body.classList.remove('loop-cut-modal-active');
     if (result) await reapplyModifiers();
@@ -625,7 +627,7 @@ ui = {
       const faceRegion = bevelModal.mode === 'face-region';
       readout.hidden=false;
       readout.textContent=faceRegion
-        ? `FACE BEVEL · ${bevelModal.lastResult?.selectedFaces || bevelModal.seedFaceIds.length} face(s) · ${bevelModal.lastResult?.reflexCorners || 0} reflex · Width ${bevelModal.lastResult?.width?.toFixed(3) || '—'} · Amount ${bevelModal.amount.toFixed(2)} · Drag / arrows · Enter apply / Esc cancel`
+        ? `FACE BEVEL · ${bevelModal.lastResult?.selectedFaces || bevelModal.seedFaceIds.length} face(s) · ${bevelModal.lastResult?.reflexCorners || 0} reflex · ${bevelModal.segments} segment(s) · Profile ${bevelModal.profile.toFixed(2)} · Width ${bevelModal.lastResult?.width?.toFixed(3) || '—'} · Amount ${bevelModal.amount.toFixed(2)} · +/- segments · [ ] profile · Enter apply / Esc cancel`
         : `BEVEL · ${bevelModal.seedEdgeIds.length} edge(s) · ${bevelModal.segments} segment(s) · Profile ${bevelModal.profile.toFixed(2)} · Amount ${bevelModal.amount.toFixed(2)} · Drag / arrows: width · +/-: segments · [ ]: profile · Enter apply / Esc cancel`;
       pad.hidden=!capabilities.tier.includes('Mobile');
       pad.classList.remove('loop-cut-mode','bevel-mode');
@@ -634,8 +636,8 @@ ui = {
       axisButtons.forEach(button=>button.hidden=true);
       $('#pad-value').textContent=bevelModal.numeric || bevelModal.amount.toFixed(2);
       $('#pad-count-row').hidden=true;
-      $('#pad-bevel-segments-row').hidden=faceRegion;
-      $('#pad-bevel-profile-row').hidden=faceRegion;
+      $('#pad-bevel-segments-row').hidden=false;
+      $('#pad-bevel-profile-row').hidden=false;
       $('#pad-bevel-segments').textContent=String(bevelModal.segments);
       $('#pad-bevel-profile').textContent=bevelModal.profile.toFixed(2);
       return;
@@ -747,6 +749,7 @@ $('#numeric-pad').addEventListener('click',async event=>{
     const bevelKey=event.target.closest('button[data-key]');if(!bevelKey)return;const key=bevelKey.dataset.key;
     if(key==='enter'){await run('mesh.bevel_confirm');return;}
     if(key==='escape'){await run('mesh.bevel_cancel');return;}
+    if(key==='-'){await run('mesh.bevel_segments',{delta:-1});return;}
     await run('mesh.bevel_input',{value:key});return;
   }
   if(loopCutModal.active){

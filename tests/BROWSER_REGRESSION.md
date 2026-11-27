@@ -8,7 +8,7 @@ Open the deployed app only after the latest Pages workflow succeeds:
 
 `https://n0nam3-bot.github.io/Bl3nd/`
 
-Latest deployed baseline before this package is v0.1.33, `main` commit `b12c14eca2ad0054a86a1b1a439fef8e92c35291`, Pages workflow run #41 (success). After uploading v0.1.34, reload and allow the v31 service-worker cache to activate before testing.
+Latest deployed baseline before this package is v0.1.34, `main` commit `7dba192191717f646ae09160b6c236e5eb9e5ccf`, Pages workflow run #42 (success). After uploading v0.1.35, reload and allow the v32 service-worker cache to activate before testing.
 
 ## Desktop — Chrome or Edge
 
@@ -25,6 +25,8 @@ Latest deployed baseline before this package is v0.1.33, `main` commit `b12c14ec
 11. Switch to Face Select (`3`), select one cube face, and press `Ctrl+B`. Confirm the FACE BEVEL readout appears and the selected patch rises with one continuous perimeter transition. Drag horizontally and type a value; the reported width and mesh must update together. Segment/profile controls must be absent/ignored in this mode.
 12. Cancel and confirm the original positions, faces and selection return with no undo entry. Start again and apply; confirm one Face Bevel undo entry and exact Undo/Redo restoration.
 13. Select a connected two-face planar region and confirm the shared internal seam remains welded after Face Bevel. Then select a concave L-shaped region and a U-shaped region with two reflex corners; use a small amount and confirm each produces a continuous, valid transition when the inner boundary remains simple. An acute reflex notch that requires an excessive miter, a hole/multiple-loop region, disconnected selection or non-planar region must reject before source mutation; no rejected case may leave a partial preview.
+14. While Face Bevel is active, test 1, 2, 4 and 8 segments and profile values 0, 0.50 and 1. Confirm the row count, readout and geometry update; Undo/Redo must still treat the final result as one operation.
+15. Before starting a modal, choose Box, Circle or Lasso selection. After Apply and after Cancel, confirm Bl3nd automatically returns to Click Select and viewport orbit/pan/zoom work immediately without switching Object/Edit Mode or manually changing the selection tool.
 
 Record each step as Pass / Fail / Not tested. If a region-tool result is unexpected, note the tool, drag direction, shape, viewport orientation and whether the missed edge was visible.
 
@@ -38,10 +40,19 @@ Record each step as Pass / Fail / Not tested. If a region-tool result is unexpec
 6. Start Bevel. Drag horizontally to adjust width. Use the on-screen segment and profile `+` / `−` controls. Confirm the numeric pad/readout reflects the settings and the model preview updates.
 7. Cancel once with the on-screen Cancel/Escape control. Confirm the original mesh returns. Start Bevel again and apply it with the on-screen Apply/Enter control.
 8. Tap Undo, then Redo. Confirm the mesh returns to the expected pre- and post-Bevel states.
-9. Switch to Face Select and tap one cube face. Open **Bevel** from the Edit Mesh panel. Confirm Face Bevel starts, its amount/width readout is visible, and horizontal drag plus numeric-pad entry update the same preview. The segment/profile rows must be hidden in Face Bevel mode.
-10. Cancel and verify the exact original mesh returns without an undo entry. Start again and Apply; verify one undo step, then Undo/Redo.
-11. Select two adjacent coplanar faces and repeat. Confirm the common inner seam stays welded and the transition walls form one continuous perimeter. Try a concave connected region if one is available; it must reject without changing the source in this first increment.
-12. Repeat one-finger orbit and two-finger pan/zoom after each modal operation has ended. Confirm viewport controls are re-enabled.
+9. Switch to Face Select and tap one cube face. Open **Bevel** from the Edit Mesh panel. Confirm Face Bevel starts, its amount/width readout is visible, and horizontal drag plus numeric-pad entry update the same preview. The 1–8 segment and profile rows must both be visible.
+10. Try 1, 2, 4 and 8 segments. Try profile 0, 0.50 and 1. Confirm the model, count readout and profile readout update without cracks or invalid geometry.
+11. Cancel and verify the exact original mesh returns without an undo entry. Start again, set multiple segments/profile, and Apply; verify one undo step, then Undo/Redo.
+12. Select two adjacent coplanar faces and repeat. Confirm the common inner seam stays welded and the transition walls form one continuous perimeter. Repeat with a concave L region and confirm the transition remains valid.
+13. Before launching Face Bevel, set Box/Circle/Lasso selection. After Apply or Cancel, verify Click Select is restored automatically and orbit/pan work immediately without changing Object/Edit Mode or manually selecting Click Select.
+14. Repeat one-finger orbit and two-finger pan/zoom after Extrude, Inset and Face Bevel have ended. Confirm viewport controls are re-enabled.
+
+## Owner-reported Android acceptance — v0.1.31 / v0.1.33 / v0.1.34 (2026-11-27)
+
+- The owner reports Pass for connected-region Extrude, concave L-region Extrude, single-face Inset, connected-face Inset, convex Face Bevel, concave Face Bevel, Cancel restoration, Apply and Undo/Redo.
+- Post-operation viewport gestures were recoverable, but did not work immediately: the owner had to switch to Object Mode or choose Edit Mode → Click Select. This is recorded as a UX defect, not a clean pass.
+- v0.1.35 changes all mesh modal completion/cancel paths to restore Click Select automatically instead of restoring a persistent Box/Circle/Lasso tool. The automatic reset requires a fresh Android browser retest; no retest is claimed in this package.
+- Device model, Android version and Chrome version were not supplied.
 
 ## Recorded mobile run — v0.1.26 (user-reported, 2026-11-26)
 
@@ -75,8 +86,8 @@ Record each step as Pass / Fail / Not tested. If a region-tool result is unexpec
 
 - v0.1.33 automated tests cover convex single-face and connected multi-face regions, welded internal seams, rotated-plane normals, reversed winding, miter limits, numeric bounds, modal amount updates, Cancel and one-step commit/undo metadata.
 - v0.1.34 adds concave L-shaped and two-reflex U-shaped regions, rotated and reversed concave regions, retained internal seams, modal preview/Cancel/Apply and an acute reflex notch that must reject for excessive miter without source mutation. Holes, multiple loops, disconnected islands, non-planar input and invalid amounts remain rejected.
-- Face Bevel still accepts only one connected, consistently wound planar region with one simple boundary. Supported reflex/concave corners are accepted only when the inward offset remains inside and simple and every miter and transition wall passes candidate validation. It still uses one transition segment; profile shaping and independently adjustable height are not implemented.
-- Android Chrome acceptance is pending. Verify startup, Face Select, panel Bevel launch, visible reflex-corner/width readout, touch drag/numeric amount update, hidden segment/profile controls, a concave L-region preview, Cancel, Apply, Undo/Redo and restored viewport gestures. Confirm an acute reflex notch and holes/disconnected/non-planar regions reject without mutation. Desktop Chrome/Edge remains deferred until the owner can access a PC.
+- Face Bevel accepts one connected, consistently wound planar region with one simple boundary. Supported reflex/concave corners are accepted only when the inward offset remains inside and simple and every miter and transition wall passes candidate validation. v0.1.35 adds 1–8 transition segments and a 0–1 concave/rounded/convex profile. Height remains coupled to width.
+- The owner reports the v0.1.31–v0.1.34 geometry/modal acceptance checks passed, with a post-operation navigation workaround recorded above. On v0.1.35 Android Chrome, verify startup, Face Select, panel Bevel launch, drag/numeric amount, 1–8 segment controls, profile 0/0.50/1, concave L preview, Cancel, Apply, Undo/Redo and immediate orbit/pan after the new automatic Click Select reset. Confirm acute excessive-miter, hole/disconnected and non-planar regions reject without mutation. Desktop Chrome/Edge remains deferred until the owner can access a PC.
 
 ## Record results
 
@@ -86,10 +97,11 @@ For each device, record:
 - Browser name and exact version.
 - Whether cold startup completed and the 3D canvas appeared.
 - Whether orbit, pan, zoom and selection behaved as expected.
-- Whether Edge Bevel width, segment and profile controls updated the preview; for Face Bevel, whether amount/width updated and segment/profile controls remained hidden.
+- Whether Edge Bevel and Face Bevel amount/width, 1–8 segment count and profile 0–1 controls updated the previews; Face Bevel uses the same segment/profile controls as Edge Bevel.
 - Whether Cancel restored the original mesh without an undo entry.
 - Whether Face-region Inset and concave multi-face Extrude previewed correctly, Cancel restored the original, Confirm created one undoable operation and Undo/Redo restored both states.
-- Whether Face Bevel previewed/applied for supported convex and concave planar regions, Cancel restored the source, one undo operation was recorded, Undo/Redo restored both states, and excessive-miter/hole/disconnected/non-planar regions rejected safely.
+- Whether Face Bevel previewed/applied for supported convex and concave planar regions, segment/profile changes updated geometry, Cancel restored the source, one undo operation was recorded, Undo/Redo restored both states, and excessive-miter/hole/disconnected/non-planar regions rejected safely.
+- Whether Click Select was restored after each modal operation and viewport orbit/pan worked immediately without switching Object/Edit Mode.
 - Any visible error text and the first app-owned console error, if available.
 
 Mark each step as **Pass**, **Fail**, or **Not tested**. Do not interpret extension-injected console messages as Bl3nd errors without confirming their source. Do not change topology validation to make a failing geometry case appear to pass; unsupported or invalid candidates must leave the source mesh unchanged.

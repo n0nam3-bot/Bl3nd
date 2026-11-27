@@ -3,8 +3,8 @@ import { HalfEdgeMesh } from '../core/HalfEdgeMesh.js';
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
 /**
- * Interactive, transactional preview for supported edge Bevel and the first
- * conservative planar face-region Bevel. Every update is rebuilt from the
+ * Interactive, transactional preview for supported edge and planar face-region
+ * Bevel. Every update is rebuilt from the
  * immutable source mesh; cancel restores the complete document snapshot and
  * confirm records one undo transaction.
  */
@@ -26,7 +26,15 @@ export class BevelModal {
   }
 
   profileSafetyNote() {
-    return this.segments > 1 && this.lastResult?.profileScale < 1 ? ' · high-valence profile limited to 25%' : '';
+    return this.mode === 'edge' && this.segments > 1 && this.lastResult?.profileScale < 1
+      ? ' · high-valence profile limited to 25%' : '';
+  }
+
+  previewStatus() {
+    if (this.mode === 'face-region') {
+      return `Face Bevel · ${this.lastResult?.selectedFaces || this.seedFaceIds.length} face(s) · ${this.lastResult?.reflexCorners || 0} reflex · ${this.segments} segment(s) · profile ${this.profile.toFixed(2)} · amount ${this.amount.toFixed(2)} · width ${this.lastResult?.width?.toFixed(3) || '—'} · Enter apply / Esc cancel`;
+    }
+    return `Bevel · ${this.segments} segment(s) · profile ${this.profile.toFixed(2)}${this.profileSafetyNote()} · amount ${this.amount.toFixed(2)} · width ${this.lastResult?.width?.toFixed(3) || '—'} · Enter apply / Esc cancel`;
   }
 
   async begin() {
@@ -74,7 +82,7 @@ export class BevelModal {
     this.applyPreview(preview.hem);
     this.active = true;
     this.status?.(this.mode === 'face-region'
-      ? `FACE BEVEL · ${this.lastResult.selectedFaces} face(s) · ${this.lastResult.reflexCorners || 0} reflex corner(s) · width ${this.lastResult.width.toFixed(3)} · drag / type amount · Enter apply · Esc cancel`
+      ? `FACE BEVEL · ${this.lastResult.selectedFaces} face(s) · ${this.lastResult.reflexCorners || 0} reflex · ${this.segments} segment(s) · profile ${this.profile.toFixed(2)} · width ${this.lastResult.width.toFixed(3)} · drag / type amount · +/- segments · [ ] profile · Enter apply · Esc cancel`
       : `BEVEL · ${this.segments} segment(s) · profile ${this.profile.toFixed(2)}${this.profileSafetyNote()} · drag width · +/- segments · [ ] profile · Enter apply · Esc cancel`);
     this.onChange?.();
     return true;
@@ -85,7 +93,7 @@ export class BevelModal {
     if (this.mode === 'face-region') {
       hem.setSelectionMode('face');
       hem.faceSelection = new Set(this.seedFaceIds);
-      return { hem, result: hem.bevelSelectedFaceRegion({ amount }) };
+      return { hem, result: hem.bevelSelectedFaceRegion({ amount, segments, profile }) };
     }
     hem.setSelectionMode('edge');
     hem.edgeSelection = new Set(this.seedEdgeIds);
@@ -112,20 +120,13 @@ export class BevelModal {
     this.lastResult = preview.result;
     this.lastError = '';
     this.applyPreview(preview.hem);
-    this.status?.(this.mode === 'face-region'
-      ? `Face Bevel · ${preview.result.selectedFaces} face(s) · ${preview.result.reflexCorners || 0} reflex corner(s) · amount ${this.amount.toFixed(2)} · width ${preview.result.width.toFixed(3)} · Enter apply / Esc cancel`
-      : `Bevel · ${this.segments} segment(s) · profile ${this.profile.toFixed(2)}${this.profileSafetyNote()} · amount ${this.amount.toFixed(2)} · width ${preview.result.width.toFixed(3)} · Enter apply / Esc cancel`);
+    this.status?.(this.previewStatus());
     this.onChange?.();
     return true;
   }
 
   setSegments(value) {
     if (!this.active || !Number.isFinite(value)) return false;
-    if (this.mode === 'face-region') {
-      this.lastError = 'Face-region Bevel currently uses one validated transition segment.';
-      this.status?.(this.lastError);
-      return false;
-    }
     const next = Math.round(clamp(value, 1, 8));
     const preview = this.buildPreview(this.amount, next, this.profile);
     if (!preview.result?.changed) {
@@ -137,7 +138,7 @@ export class BevelModal {
     this.lastResult = preview.result;
     this.lastError = '';
     this.applyPreview(preview.hem);
-    this.status?.(`Bevel · ${this.segments} segment(s) · profile ${this.profile.toFixed(2)}${this.profileSafetyNote()} · amount ${this.amount.toFixed(2)} · Enter apply / Esc cancel`);
+    this.status?.(this.previewStatus());
     this.onChange?.();
     return true;
   }
@@ -149,11 +150,6 @@ export class BevelModal {
 
   setProfile(value) {
     if (!this.active || !Number.isFinite(value)) return false;
-    if (this.mode === 'face-region') {
-      this.lastError = 'Face-region Bevel profile shaping is not implemented yet.';
-      this.status?.(this.lastError);
-      return false;
-    }
     const next = Math.round(clamp(value, 0, 1) * 100) / 100;
     const preview = this.buildPreview(this.amount, this.segments, next);
     if (!preview.result?.changed) {
@@ -165,7 +161,7 @@ export class BevelModal {
     this.lastResult = preview.result;
     this.lastError = '';
     this.applyPreview(preview.hem);
-    this.status?.(`Bevel · ${this.segments} segment(s) · profile ${this.profile.toFixed(2)}${this.profileSafetyNote()} · amount ${this.amount.toFixed(2)} · Enter apply / Esc cancel`);
+    this.status?.(this.previewStatus());
     this.onChange?.();
     return true;
   }
@@ -214,7 +210,12 @@ export class BevelModal {
     const after = await this.document.serialize();
     const label = this.mode === 'face-region' ? 'Face Bevel' : 'Bevel';
     await this.undoManager?.record(label, this.before, after);
-    const result = this.lastResult ? { ...this.lastResult, amount: this.amount } : null;
+    const result = this.lastResult ? {
+      ...this.lastResult,
+      amount: this.amount,
+      segments: this.segments,
+      profile: this.profile
+    } : null;
     this.clear();
     this.status?.(`${label} applied`);
     this.onChange?.();

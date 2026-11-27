@@ -758,10 +758,16 @@ export class HalfEdgeMesh {
    * inward offset remains inside/simple and every miter and wall validates.
    * Excessive miters, folded walls, holes and unsupported topology reject.
    */
-  bevelSelectedFaceRegion({ amount = 0.25 } = {}) {
+  bevelSelectedFaceRegion({ amount = 0.25, segments = 1, profile = 0.5 } = {}) {
     const fail = reason => ({ changed: false, reason });
     if (!Number.isFinite(amount) || amount < 0.01 || amount > 0.95) {
       return fail('Face Bevel amount must be between 0.01 and 0.95.');
+    }
+    if (!Number.isInteger(segments) || segments < 1 || segments > 8) {
+      return fail('Face Bevel supports between one and eight segments.');
+    }
+    if (!Number.isFinite(profile) || profile < 0 || profile > 1) {
+      return fail('Face Bevel profile must be between 0 and 1.');
     }
     if (this.selectionMode !== 'face') return fail('Face Bevel requires Face Select mode.');
 
@@ -877,16 +883,56 @@ export class HalfEdgeMesh {
       nextPositions.push(raised);
     }
 
+    const boundaryOffsetVectors = boundary.map((_, index) => {
+      const point2D = offset.points[index];
+      const sourcePoint = regionPoints[index];
+      const dx = point2D[0] - sourcePoint[0];
+      const dy = point2D[1] - sourcePoint[1];
+      return basisU.map((value, axis) => value * dx + basisV[axis] * dy);
+    });
+
+    // Each profile row follows one monotonic cubic-Bezier cross-section from
+    // the original boundary to the raised inset boundary. The control value
+    // maps 0=concave, 0.5=rounded and 1=convex; endpoints are invariant.
+    const profileControl = 0.25 + profile * 0.6045694996615875;
+    const profileFactors = t => {
+      const inverse = 1 - t;
+      const inward = 3 * inverse * t * t * (1 - profileControl) + t * t * t;
+      const rise = 3 * inverse * inverse * t * profileControl + 3 * inverse * t * t + t * t * t;
+      return { inward, rise };
+    };
+
+    const boundaryRows = [boundary.map(vertexId => vertexId)];
+    for (let step = 1; step < segments; step++) {
+      const t = step / segments;
+      const factors = profileFactors(t);
+      const row = [];
+      for (let index = 0; index < boundary.length; index++) {
+        const source = this.positions[boundary[index]];
+        const inward = boundaryOffsetVectors[index];
+        const point = source.map((value, axis) => value + inward[axis] * factors.inward +
+          normal[axis] * height * factors.rise);
+        if (!point.every(Number.isFinite)) return fail('Face Bevel profile produced a non-finite intermediate vertex.');
+        row.push(nextPositions.length);
+        nextPositions.push(point);
+      }
+      boundaryRows.push(row);
+    }
+    boundaryRows.push(boundary.map(vertexId => remap.get(vertexId)));
+
     const nextFaces = this.faces.map((face, faceId) => selectedSet.has(faceId)
       ? face.map(vertexId => remap.get(vertexId))
       : [...face]);
     const bevelFaceStart = nextFaces.length;
-    for (let index = 0; index < boundary.length; index++) {
-      const a = boundary[index];
-      const b = boundary[(index + 1) % boundary.length];
-      const wall = [a, b, remap.get(b), remap.get(a)];
-      if (!wall.every(Number.isInteger)) return fail('Face Bevel could not construct a complete perimeter wall.');
-      nextFaces.push(wall);
+    for (let step = 0; step < segments; step++) {
+      const lower = boundaryRows[step];
+      const upper = boundaryRows[step + 1];
+      for (let index = 0; index < boundary.length; index++) {
+        const next = (index + 1) % boundary.length;
+        const wall = [lower[index], lower[next], upper[next], upper[index]];
+        if (!wall.every(Number.isInteger)) return fail('Face Bevel could not construct a complete segmented perimeter wall.');
+        nextFaces.push(wall);
+      }
     }
 
     const candidate = new HalfEdgeMesh(nextPositions, nextFaces);
@@ -936,8 +982,10 @@ export class HalfEdgeMesh {
       convexCorners: loop.convexVertexIds.length,
       reflexCorners: loop.concaveVertexIds.length,
       collinearCorners: loop.collinearVertexIds.length,
-      insertedVertices: used.length,
-      createdFaces: boundary.length,
+      insertedVertices: used.length + boundary.length * (segments - 1),
+      createdFaces: boundary.length * segments,
+      segments,
+      profile,
       topology: report
     };
   }

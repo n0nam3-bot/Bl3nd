@@ -286,17 +286,84 @@ test('near-parallel acute corners reject excessive miter candidates without muta
   assert.equal(snapshot(mesh), before);
 });
 
-test('invalid amount and wrong selection mode reject without mutation', () => {
+test('invalid amount, segment/profile controls and wrong selection mode reject without mutation', () => {
   const mesh = selectedMesh(cubePositions, cubeFaces, [1]);
   const before = snapshot(mesh);
   for (const amount of [0, -0.1, 1, 2, NaN, Infinity]) {
     assert.equal(mesh.bevelSelectedFaceRegion({ amount }).changed, false);
     assert.equal(snapshot(mesh), before);
   }
+  for (const segments of [0, -1, 1.5, 9, NaN]) {
+    assert.equal(mesh.bevelSelectedFaceRegion({ amount: 0.25, segments }).changed, false);
+    assert.equal(snapshot(mesh), before);
+  }
+  for (const profile of [-0.1, 1.1, NaN, Infinity]) {
+    assert.equal(mesh.bevelSelectedFaceRegion({ amount: 0.25, segments: 3, profile }).changed, false);
+    assert.equal(snapshot(mesh), before);
+  }
   mesh.setSelectionMode('edge');
   const edgeMode = snapshot(mesh);
   assert.equal(mesh.bevelSelectedFaceRegion({ amount: 0.25 }).changed, false);
   assert.equal(snapshot(mesh), edgeMode);
+});
+
+test('Face Bevel supports one through eight segments with valid profile candidates', () => {
+  for (const segments of [1, 2, 3, 4, 6, 8]) {
+    for (const profile of [0, 0.5, 1]) {
+      const mesh = selectedMesh(cubePositions, cubeFaces, [1]);
+      const result = mesh.bevelSelectedFaceRegion({ amount: 0.25, segments, profile });
+      assert.equal(result.changed, true, `segments=${segments}, profile=${profile}: ${result.reason}`);
+      assert.equal(result.segments, segments);
+      assert.equal(result.profile, profile);
+      assert.equal(result.createdFaces, 4 * segments);
+      assert.equal(result.insertedVertices, 4 * segments);
+      assert.equal(mesh.validateTopology().valid, true);
+      assert.ok(mesh.faces.every((_, faceId) => mesh.triangulateFace(faceId).length > 0));
+    }
+  }
+});
+
+test('Face Bevel profile creates distinct concave, rounded and convex cross-sections', () => {
+  const profiles = [0, 0.5, 1].map(profile => {
+    const mesh = selectedMesh(cubePositions, cubeFaces, [1]);
+    const result = mesh.bevelSelectedFaceRegion({ amount: 0.25, segments: 2, profile });
+    assert.equal(result.changed, true, result.reason);
+    return mesh.positions.slice(12).map(point => point.map(value => Number(value.toFixed(8))));
+  });
+  assert.notDeepEqual(profiles[0], profiles[1]);
+  assert.notDeepEqual(profiles[1], profiles[2]);
+  assert.notDeepEqual(profiles[0], profiles[2]);
+});
+
+test('segmented concave L/U Face Bevel preserves reflex corners and welded internal seams', () => {
+  for (const [cells, reflexCorners] of [[lRegionCells, 1], [uRegionCells, 2]]) {
+    for (const segments of [2, 4, 8]) {
+      for (const profile of [0, 0.5, 1]) {
+        const mesh = gridRegion(cells);
+        const result = mesh.bevelSelectedFaceRegion({ amount: 0.1, segments, profile });
+        assert.equal(result.changed, true, `segments=${segments}, profile=${profile}: ${result.reason}`);
+        assert.equal(result.reflexCorners, reflexCorners);
+        assert.equal(result.createdFaces, result.boundaryEdges * segments);
+        assert.equal(mesh.validateTopology().valid, true);
+        assert.ok(mesh.faces.every((_, faceId) => mesh.triangulateFace(faceId).length > 0));
+        const selected = new Set(mesh.faceSelection);
+        const internalSeams = mesh.edges.filter(edge => edge.halfEdges.length === 2 &&
+          edge.halfEdges.every(halfEdge => selected.has(halfEdge.face.id)));
+        assert.equal(internalSeams.length, cells.length - 1);
+      }
+    }
+  }
+});
+
+test('segmented concave Face Bevel supports rotated and reversed winding', () => {
+  for (const options of [{ rotated: true }, { reverse: true }]) {
+    const mesh = gridRegion(lRegionCells, options);
+    const result = mesh.bevelSelectedFaceRegion({ amount: 0.1, segments: 5, profile: 0.35 });
+    assert.equal(result.changed, true, result.reason);
+    assert.equal(result.segments, 5);
+    assert.equal(result.reflexCorners, 1);
+    assert.equal(mesh.validateTopology().valid, true);
+  }
 });
 
 test('Face Bevel modal previews from immutable source and applies amount updates', async () => {
@@ -311,10 +378,17 @@ test('Face Bevel modal previews from immutable source and applies amount updates
   assert.equal(modal.setAmount(0.4), true, modal.lastError);
   assert.ok(Math.abs(modal.lastResult.width - 0.36) < 1e-10);
   assert.equal(session.mesh.userData.hem.validateTopology().valid, true);
-  assert.equal(modal.setSegments(2), false);
+  assert.equal(modal.setSegments(4), true, modal.lastError);
+  assert.equal(modal.lastResult.segments, 4);
+  assert.equal(modal.lastResult.createdFaces, 16);
+  assert.equal(modal.lastResult.insertedVertices, 16);
+  assert.equal(modal.setProfile(0.8), true, modal.lastError);
+  assert.equal(modal.lastResult.profile, 0.8);
   const result = await modal.confirm();
   assert.equal(result.operation, 'face-region');
   assert.equal(result.amount, 0.4);
+  assert.equal(result.segments, 4);
+  assert.equal(result.profile, 0.8);
   assert.equal(modal.active, false);
   assert.equal(session.commits.length, 1);
   assert.equal(session.commits[0].label, 'Face Bevel');
@@ -339,6 +413,19 @@ test('Face Bevel modal cancel restores the complete source snapshot without an u
   const modal = new BevelModal(session);
   assert.equal(await modal.begin(), true, modal.lastError);
   assert.equal(modal.setAmount(0.5), true, modal.lastError);
+  assert.notDeepEqual(await session.document.serialize(), before);
+  assert.equal(await modal.cancel(), true);
+  assert.deepEqual(await session.document.serialize(), before);
+  assert.equal(session.commits.length, 0);
+});
+
+test('Face Bevel modal Cancel restores the source after segment and profile changes', async () => {
+  const session = makeSession(selectedMesh(cubePositions, cubeFaces, [1]));
+  const before = await session.document.serialize();
+  const modal = new BevelModal(session);
+  assert.equal(await modal.begin(), true, modal.lastError);
+  assert.equal(modal.setSegments(6), true, modal.lastError);
+  assert.equal(modal.setProfile(0.1), true, modal.lastError);
   assert.notDeepEqual(await session.document.serialize(), before);
   assert.equal(await modal.cancel(), true);
   assert.deepEqual(await session.document.serialize(), before);
