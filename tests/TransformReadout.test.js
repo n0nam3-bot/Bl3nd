@@ -10,6 +10,8 @@ test('axis-constrained movement reports a signed distance and resulting world po
   });
   assert.equal(result.value, '+2.500');
   assert.equal(result.amount, 2.5);
+  assert.equal(result.positionAxis, 'Y');
+  assert.equal(result.positionValue, '−1.500');
   assert.deepEqual(result.target, [4, -1.5, -3]);
   assert.match(result.deltaText, /Δ X \+0\.000  Y −2\.500  Z \+0\.000/);
   assert.match(result.targetText, /TO X \+4\.000  Y −1\.500  Z −3\.000/);
@@ -36,4 +38,29 @@ test('invalid vectors safely fall back to zero vectors', () => {
   const result = buildMoveReadout({ delta: [NaN, 1, 2], startPosition: [1, 2, 3] });
   assert.equal(result.value, '+0.000');
   assert.deepEqual(result.target, [1, 2, 3]);
+});
+
+
+test('global Z primary readout is the resulting world Z coordinate, not the movement distance', () => {
+  const result = buildMoveReadout({
+    delta: [0, 0, 1.25],
+    startPosition: [4, -2, 3.5],
+    axisVector: [0, 0, 1]
+  });
+  assert.equal(result.value, '+1.250');
+  assert.equal(result.positionAxis, 'Z');
+  assert.equal(result.positionValue, '+4.750');
+  assert.deepEqual(result.target, [4, -2, 4.75]);
+  assert.match(result.targetText, /TO X \+4\.000  Y −2\.000  Z \+4\.750/);
+});
+
+test('rotated local axes identify the dominant world coordinate while retaining the full destination', () => {
+  const result = buildMoveReadout({
+    delta: [0.6, 0, 0.8],
+    startPosition: [5, 2, 3],
+    axisVector: [0.6, 0, 0.8]
+  });
+  assert.equal(result.positionAxis, 'Z');
+  assert.equal(result.positionValue, '+3.800');
+  assert.deepEqual(result.target, [5.6, 2, 3.8]);
 });

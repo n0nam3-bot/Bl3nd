@@ -31,11 +31,17 @@ export function buildMoveReadout({
   const magnitude = Math.hypot(...movement);
 
   let amount = magnitude;
+  let positionAxis = null;
+  let positionValue = null;
   if (axisVector) {
     const axis = safeVector(axisVector);
     const axisLength = Math.hypot(...axis);
     if (axisLength > 1e-12) {
       amount = movement.reduce((sum, value, index) => sum + value * axis[index] / axisLength, 0);
+      const dominantComponent = axis.reduce((best, value, index) =>
+        Math.abs(value) > Math.abs(axis[best]) ? index : best, 0);
+      positionAxis = 'XYZ'[dominantComponent];
+      positionValue = signed(target[dominantComponent], precision);
     }
   }
 
@@ -44,6 +50,8 @@ export function buildMoveReadout({
     amount,
     magnitude,
     value: signed(amount, precision),
+    positionAxis,
+    positionValue,
     delta: movement,
     target,
     deltaText: formatVector('Δ', movement),

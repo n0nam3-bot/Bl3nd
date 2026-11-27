@@ -772,18 +772,28 @@ ui = {
     let moveReadout=null;
     if(modalTransform.type==='move'){
       const numeric=modalTransform.numeric.trim()!=='' && Number.isFinite(Number(modalTransform.numeric));
-      const delta=modalTransform.getMoveWorldDelta(numeric);
+      const previewDelta=modalTransform.getMoveWorldDelta(numeric);
       const startPosition=sceneDocument.mode==='edit'
         ? modalTransform.worldPivot.toArray()
         : modalTransform.original?.worldPosition?.toArray() || [0,0,0];
+      const previewTarget=sceneDocument.mode==='edit'
+        ? startPosition.map((value,index)=>value+previewDelta.getComponent(index))
+        : modalTransform.object?.getWorldPosition(new THREE.Vector3()).toArray()
+          || startPosition.map((value,index)=>value+previewDelta.getComponent(index));
+      const liveDelta=previewTarget.map((value,index)=>value-startPosition[index]);
       moveReadout=buildMoveReadout({
-        delta:delta.toArray(),
+        delta:liveDelta,
         startPosition,
         axisVector:modalTransform.axis ? modalTransform.axisVector(modalTransform.axis).toArray() : null,
         targetLabel:sceneDocument.mode==='edit'?'PIVOT':'TO'
       });
-      readout.textContent=`MOVE${axis} · ${numeric?`VALUE ${modalTransform.numeric}`:`DIST ${moveReadout.value}`} · Enter apply / Esc cancel`;
-      padTitle.textContent='MOVE DISTANCE · WORLD UNITS';
+      const positionKind=sceneDocument.mode==='edit'?'PIVOT':'WORLD';
+      const primaryPosition=moveReadout.positionAxis ? `${moveReadout.positionAxis} ${moveReadout.positionValue}` : null;
+      const primaryLabel=primaryPosition ? `${positionKind} ${primaryPosition}` : `DIST ${moveReadout.value}`;
+      readout.textContent=`MOVE${axis} · ${numeric?`VALUE ${modalTransform.numeric}`:primaryLabel} · ${moveReadout.targetText} · Enter apply / Esc cancel`;
+      padTitle.textContent=!numeric && primaryPosition
+        ? `${positionKind} ${moveReadout.positionAxis} POSITION`
+        : numeric ? 'MOVE INPUT · WORLD UNITS' : 'MOVE DISTANCE · WORLD UNITS';
       padDetail.hidden=false;
       const [dx,dy,dz]=moveReadout.delta;
       const [tx,ty,tz]=moveReadout.target;
@@ -799,7 +809,7 @@ ui = {
       readout.textContent=`${modalTransform.type.toUpperCase()}${axis} · ${modalTransform.numeric || 'mouse'} · , switches Global/Local · Enter apply / Esc cancel`;
       padTitle.textContent=modalTransform.type==='rotate'?'ROTATION · DEGREES':'SCALE FACTOR';
     }
-    pad.hidden=!capabilities.tier.includes('Mobile'); orientationButton.hidden=false; orientationButton.textContent=`${modalTransform.orientation.toUpperCase()} AXES · SWITCH TO ${modalTransform.orientation==='global'?'LOCAL':'GLOBAL'}`; orientationButton.setAttribute('aria-label',`Current orientation: ${modalTransform.orientation}. Switch to ${modalTransform.orientation==='global'?'Local':'Global'}.`); orientationButton.setAttribute('aria-pressed',String(modalTransform.orientation==='local')); $('#pad-value').textContent=modalTransform.numeric || (moveReadout?.value || '0');
+    pad.hidden=!capabilities.tier.includes('Mobile'); orientationButton.hidden=false; orientationButton.textContent=`${modalTransform.orientation.toUpperCase()} AXES · SWITCH TO ${modalTransform.orientation==='global'?'LOCAL':'GLOBAL'}`; orientationButton.setAttribute('aria-label',`Current orientation: ${modalTransform.orientation}. Switch to ${modalTransform.orientation==='global'?'Local':'Global'}.`); orientationButton.setAttribute('aria-pressed',String(modalTransform.orientation==='local')); $('#pad-value').textContent=modalTransform.numeric || (moveReadout?.positionValue || moveReadout?.value || '0');
   }
 };
 loadingProgress(73, 'Building the workspace panels and editing controls…');
