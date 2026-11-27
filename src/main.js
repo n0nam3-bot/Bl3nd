@@ -33,6 +33,12 @@ function notify(message, type = '') {
   toastRegion.appendChild(toast); setTimeout(() => toast.remove(), 3000);
 }
 
+function minimizeMobilePropertiesPanel() {
+  if (window.matchMedia('(max-width: 650px)').matches) {
+    $('.properties-panel')?.classList.remove('mobile-open');
+  }
+}
+
 $('#device-tier').textContent = `${capabilities.tier} Tier`;
 $('#renderer-profile').textContent = capabilities.rendererPreference;
 $('#memory-profile').textContent = capabilities.memory ? `${capabilities.memory} GB hint` : 'Not exposed';
@@ -91,6 +97,7 @@ async function startFaceOperation(operation) {
     notify(`${operation === 'extrude' ? 'Extrude' : 'Inset'} skipped · ${faceOperationModal.lastError || 'Unable to start the face operation.'}`, 'error');
     return false;
   }
+  minimizeMobilePropertiesPanel();
   viewport.controls.enabled = false;
   viewport.selectionTool = 'tap';
   viewport.modalOperationActive = true;
@@ -327,6 +334,7 @@ function registerCommands() {
     if (modalTransform.active || loopCutModal.active || faceOperationModal.active) { notify('Confirm or cancel the current operation before starting Bevel.'); return false; }
     const started = await bevelModal.begin();
     if (!started) { notify(`Bevel skipped · ${bevelModal.lastError || 'Unable to start Bevel.'}`, 'error'); return false; }
+    minimizeMobilePropertiesPanel();
     viewport.controls.enabled = false;
     viewport.selectionTool = 'tap';
     viewport.modalOperationActive = true;
@@ -419,6 +427,7 @@ function registerCommands() {
     if (modalTransform.active || bevelModal.active || faceOperationModal.active) { notify('Confirm or cancel the current operation before starting Loop Cut.'); return false; }
     const started = await loopCutModal.begin();
     if (!started) { notify(`Loop Cut skipped · ${loopCutModal.lastError || 'Unable to start the cut.'}`, 'error'); return false; }
+    minimizeMobilePropertiesPanel();
     viewport.controls.enabled = false;
     viewport.selectionTool = 'tap';
     viewport.modalOperationActive = true;
@@ -480,6 +489,7 @@ function registerCommands() {
     if (loopCutModal.active || bevelModal.active) { notify('Apply or cancel the current mesh operation before starting a transform.'); return false; }
     const started = await modalTransform.begin(type, pointer || ui.pointerOrigin());
     if (!started) notify('Select an object before transforming.');
+    else minimizeMobilePropertiesPanel();
     viewport.controls.enabled = !started; ui.refreshModal(); return started;
   }, { recordUndo: false });
   commandBus.register('transform.modal_confirm', async () => { const result = await modalTransform.commit(); viewport.controls.enabled = true; await reapplyActiveModifiers(); refresh(); return result; }, { recordUndo: false });

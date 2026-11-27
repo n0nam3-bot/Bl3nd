@@ -8,7 +8,7 @@ Open the deployed app only after the latest Pages workflow succeeds:
 
 `https://n0nam3-bot.github.io/Bl3nd/`
 
-Latest deployed baseline before this package is v0.1.36, `main` commit `33d88cd846eecdc477617bb78ae43488a2a03e16`, Pages workflow run #44 (success). After uploading v0.1.37, reload and allow the v34 service-worker cache to activate before testing.
+Latest deployed baseline before this package is v0.1.37, `main` commit `f2f6befcb6b6935aa1f2f02b43b504e8d0fd2224`, Pages workflow run #45 (success). After uploading v0.1.38, reload and allow the v35 service-worker cache to activate before testing.
 
 ## Desktop — Chrome or Edge
 
@@ -47,6 +47,8 @@ Record each step as Pass / Fail / Not tested. If a region-tool result is unexpec
 13. On a sphere, select a connected group of faces that span different face planes. It must reject non-destructively as non-planar; one individual face should remain bevelable.
 14. Before launching Face Bevel, set Box/Circle/Lasso selection. After Apply or Cancel, verify Click Select is restored automatically and orbit/pan work immediately without changing Object/Edit Mode or manually selecting Click Select.
 15. Repeat one-finger orbit and two-finger pan/zoom after Extrude, Inset and Face Bevel have ended. Confirm viewport controls are re-enabled.
+
+16. Open the **More** properties drawer from the bottom action bar. While it is open, start Face Bevel from Edit Mesh. Confirm the drawer slides closed as soon as the modal starts and does not cover the viewport adjustment controls/numeric pad. Apply or Cancel; the drawer must stay minimized. Tap **More** to reopen it. Repeat with Extrude, Inset, Loop Cut and a G/R/S transform. A modal that fails to start must not close the drawer.
 
 ## Owner-reported Android acceptance — v0.1.31 through v0.1.36 (2026-11-27)
 
