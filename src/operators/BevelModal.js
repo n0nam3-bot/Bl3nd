@@ -3,10 +3,10 @@ import { HalfEdgeMesh } from '../core/HalfEdgeMesh.js';
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
 /**
- * Interactive, transactional preview for supported edge and planar face-region
- * Bevel. Every update is rebuilt from the
- * immutable source mesh; cancel restores the complete document snapshot and
- * confirm records one undo transaction.
+ * Interactive, transactional preview for supported edge Bevel, connected planar
+ * Face Bevel and per-face Face Bevel. Every update is rebuilt from immutable
+ * source topology; cancel restores the full snapshot and confirm records one
+ * undo transaction.
  */
 export class BevelModal {
   constructor({ document, undoManager, viewport, status, onChange }) {
@@ -20,6 +20,9 @@ export class BevelModal {
     this.amount = 0.25;
     this.heightAmount = 0.25;
     this.activeDimension = 'width';
+    this.faceBevelMode = 'region';
+    this.faceSettings = new Map();
+    this.activeFaceIndex = 0;
     this.segments = 1;
     this.profile = 0.5;
     this.numeric = '';
@@ -48,6 +51,14 @@ export class BevelModal {
       this.mode = 'face-region';
       this.seedFaceIds = [...source.faceSelection].sort((a, b) => a - b);
       this.seedEdgeIds = [];
+      this.faceBevelMode = 'region';
+      this.activeFaceIndex = 0;
+      if (this.seedFaceIds.length > 1) {
+        const analysis = source.analyzeFaceRegion(this.seedFaceIds);
+        if (analysis.valid && (!analysis.connected || !analysis.planar || analysis.loopCount !== 1)) {
+          this.faceBevelMode = 'individual';
+        }
+      }
     } else if (selectionMode === 'edge' && source.selectionMode === 'edge' && source.edgeSelection.size >= 1 && source.edgeSelection.size <= 8) {
       this.mode = 'edge';
       this.seedEdgeIds = [...source.edgeSelection];
@@ -73,6 +84,9 @@ export class BevelModal {
     this.profile = 0.5;
     this.numeric = '';
     this.lastError = '';
+    this.faceSettings = new Map(this.seedFaceIds.map(faceId => [faceId, {
+      amount: this.amount, heightAmount: this.heightAmount, segments: this.segments, profile: this.profile
+    }]));
 
     const preview = this.buildPreview(this.amount, this.segments, this.profile, this.heightAmount);
     if (!preview.result?.changed) {
@@ -90,22 +104,125 @@ export class BevelModal {
     return true;
   }
 
-  faceStatusText() {
-    const result = this.lastResult || {};
-    return `FACE BEVEL · ${result.selectedFaces || this.seedFaceIds.length} face(s) · ${result.reflexCorners || 0} reflex · ${this.segments} segment(s) · profile ${this.profile.toFixed(2)} · width ${Number(result.width || 0).toFixed(3)} · height ${Number(result.height || 0).toFixed(3)} · H switches width/height · Enter apply / Esc cancel`;
+  currentFaceSettings() {
+    const faceId = this.seedFaceIds?.[this.activeFaceIndex];
+    return this.faceSettings?.get(faceId) || {
+      amount: this.amount, heightAmount: this.heightAmount, segments: this.segments, profile: this.profile
+    };
   }
 
-  buildPreview(amount, segments = this.segments, profile = this.profile, heightAmount = this.heightAmount) {
+  syncActiveFaceSettings() {
+    if (this.mode !== 'face-region' || this.faceBevelMode !== 'individual') return;
+    const settings = this.currentFaceSettings();
+    this.amount = settings.amount;
+    this.heightAmount = settings.heightAmount;
+    this.segments = settings.segments;
+    this.profile = settings.profile;
+  }
+
+  cloneFaceSettings() {
+    return new Map([...this.faceSettings.entries()].map(([faceId, settings]) => [faceId, { ...settings }]));
+  }
+
+  faceStatusText() {
+    const result = this.lastResult || {};
+    const individual = this.faceBevelMode === 'individual';
+    const activeFaceId = individual ? this.seedFaceIds[this.activeFaceIndex] : null;
+    const activeResult = individual ? result.perFace?.find(item => item.faceId === activeFaceId) : result;
+    const target = individual ? `INDIVIDUAL · FACE ${this.activeFaceIndex + 1}/${this.seedFaceIds.length}` : 'CONNECTED REGION';
+    const modeHint = this.seedFaceIds.length > 1 ? ' · I toggles mode' : '';
+    const faceHint = individual ? ' · PageUp/PageDown changes face' : '';
+    return `FACE BEVEL · ${target} · ${result.reflexCorners || 0} reflex · ${this.segments} segment(s) · profile ${this.profile.toFixed(2)} · width ${Number(activeResult?.width || 0).toFixed(3)} · height ${Number(activeResult?.height || 0).toFixed(3)} · H switches width/height${modeHint}${faceHint} · Enter apply / Esc cancel`;
+  }
+
+  buildPreview(amount = this.amount, segments = this.segments, profile = this.profile, heightAmount = this.heightAmount,
+    faceSettings = this.faceSettings, faceBevelMode = this.faceBevelMode) {
     const hem = new HalfEdgeMesh(this.basePositions, this.baseFaces);
     if (this.mode === 'face-region') {
       hem.setSelectionMode('face');
       hem.faceSelection = new Set(this.seedFaceIds);
-      return { hem, result: hem.bevelSelectedFaceRegion({ amount, heightAmount, segments, profile }) };
+      const result = faceBevelMode === 'individual'
+        ? hem.bevelSelectedFacesIndividually({ faceSettings })
+        : hem.bevelSelectedFaceRegion({ amount, heightAmount, segments, profile });
+      return { hem, result };
     }
     hem.setSelectionMode('edge');
     hem.edgeSelection = new Set(this.seedEdgeIds);
     const result = hem.bevelSelectedEdges({ amount, segments, profile });
     return { hem, result };
+  }
+
+  setFaceBevelMode(mode) {
+    if (!this.active || this.mode !== 'face-region' || !['region', 'individual'].includes(mode)) return false;
+    if (mode === this.faceBevelMode) return true;
+    if (mode === 'individual' && this.seedFaceIds.length < 2) {
+      this.lastError = 'Select at least two faces to use Individual Faces mode.';
+      this.status?.(this.lastError);
+      return false;
+    }
+
+    let nextSettings = this.cloneFaceSettings();
+    let nextAmount = this.amount, nextHeight = this.heightAmount;
+    let nextSegments = this.segments, nextProfile = this.profile;
+    if (mode === 'individual') {
+      nextSettings = new Map(this.seedFaceIds.map(faceId => [faceId, {
+        amount: this.amount, heightAmount: this.heightAmount, segments: this.segments, profile: this.profile
+      }]));
+    } else {
+      const active = this.currentFaceSettings();
+      const values = this.seedFaceIds.map(faceId => nextSettings.get(faceId)).filter(Boolean);
+      const first = values[0] || active;
+      const same = values.every(item => item.amount === first.amount && item.heightAmount === first.heightAmount &&
+        item.segments === first.segments && item.profile === first.profile);
+      if (!same) {
+        this.lastError = 'Match the selected faces settings before switching back to Region mode.';
+        this.status?.(this.lastError);
+        return false;
+      }
+      nextAmount = first.amount;
+      nextHeight = first.heightAmount;
+      nextSegments = first.segments;
+      nextProfile = first.profile;
+    }
+
+    const preview = this.buildPreview(nextAmount, nextSegments, nextProfile, nextHeight, nextSettings, mode);
+    if (!preview.result?.changed) {
+      this.lastError = preview.result?.reason || `Unable to use ${mode} Face Bevel mode.`;
+      this.status?.(this.lastError);
+      return false;
+    }
+    this.faceBevelMode = mode;
+    this.faceSettings = nextSettings;
+    this.amount = nextAmount;
+    this.heightAmount = nextHeight;
+    this.segments = nextSegments;
+    this.profile = nextProfile;
+    this.activeFaceIndex = 0;
+    this.syncActiveFaceSettings();
+    this.lastResult = preview.result;
+    this.lastError = '';
+    this.numeric = '';
+    this.startPointer = null;
+    this.applyPreview(preview.hem);
+    this.status?.(this.faceStatusText());
+    this.onChange?.();
+    return true;
+  }
+
+  toggleFaceBevelMode() {
+    return this.setFaceBevelMode(this.faceBevelMode === 'individual' ? 'region' : 'individual');
+  }
+
+  selectFaceTarget(delta) {
+    if (!this.active || this.mode !== 'face-region' || this.faceBevelMode !== 'individual' || !this.seedFaceIds.length) return false;
+    const count = this.seedFaceIds.length;
+    this.activeFaceIndex = (this.activeFaceIndex + Math.sign(delta) + count) % count;
+    this.syncActiveFaceSettings();
+    this.numeric = '';
+    this.startPointer = null;
+    this.onChange?.();
+    this.status?.(this.faceStatusText());
+    return true;
   }
 
   applyPreview(hem) {
@@ -116,13 +233,18 @@ export class BevelModal {
   setAmount(value, { preserveNumeric = false } = {}) {
     if (!this.active || !Number.isFinite(value)) return false;
     const next = clamp(value, 0.01, 0.95);
-    const preview = this.buildPreview(next, this.segments, this.profile, this.heightAmount);
+    const faceSettings = this.faceBevelMode === 'individual' ? this.cloneFaceSettings() : this.faceSettings;
+    if (this.mode === 'face-region' && this.faceBevelMode === 'individual') {
+      faceSettings.get(this.seedFaceIds[this.activeFaceIndex]).amount = next;
+    }
+    const preview = this.buildPreview(next, this.segments, this.profile, this.heightAmount, faceSettings);
     if (!preview.result?.changed) {
       this.lastError = preview.result?.reason || 'This bevel amount is not supported.';
       this.status?.(`Bevel amount rejected · ${this.lastError}`);
       return false;
     }
     this.amount = next;
+    if (this.faceBevelMode === 'individual') this.faceSettings = faceSettings;
     if (!preserveNumeric) this.numeric = '';
     this.lastResult = preview.result;
     this.lastError = '';
@@ -135,13 +257,16 @@ export class BevelModal {
   setHeightAmount(value, { preserveNumeric = false } = {}) {
     if (!this.active || this.mode !== 'face-region' || !Number.isFinite(value)) return false;
     const next = clamp(value, 0.01, 0.95);
-    const preview = this.buildPreview(this.amount, this.segments, this.profile, next);
+    const faceSettings = this.faceBevelMode === 'individual' ? this.cloneFaceSettings() : this.faceSettings;
+    if (this.faceBevelMode === 'individual') faceSettings.get(this.seedFaceIds[this.activeFaceIndex]).heightAmount = next;
+    const preview = this.buildPreview(this.amount, this.segments, this.profile, next, faceSettings);
     if (!preview.result?.changed) {
       this.lastError = preview.result?.reason || 'This bevel height is not supported.';
       this.status?.(`Face Bevel height rejected · ${this.lastError}`);
       return false;
     }
     this.heightAmount = next;
+    if (this.faceBevelMode === 'individual') this.faceSettings = faceSettings;
     if (!preserveNumeric) this.numeric = '';
     this.lastResult = preview.result;
     this.lastError = '';
@@ -170,13 +295,16 @@ export class BevelModal {
   setSegments(value) {
     if (!this.active || !Number.isFinite(value)) return false;
     const next = Math.round(clamp(value, 1, 8));
-    const preview = this.buildPreview(this.amount, next, this.profile, this.heightAmount);
+    const faceSettings = this.faceBevelMode === 'individual' ? this.cloneFaceSettings() : this.faceSettings;
+    if (this.faceBevelMode === 'individual') faceSettings.get(this.seedFaceIds[this.activeFaceIndex]).segments = next;
+    const preview = this.buildPreview(this.amount, next, this.profile, this.heightAmount, faceSettings);
     if (!preview.result?.changed) {
       this.lastError = preview.result?.reason || 'This segment count is not supported.';
       this.status?.(`Bevel segments rejected · ${this.lastError}`);
       return false;
     }
     this.segments = next;
+    if (this.faceBevelMode === 'individual') this.faceSettings = faceSettings;
     this.lastResult = preview.result;
     this.lastError = '';
     this.applyPreview(preview.hem);
@@ -193,13 +321,16 @@ export class BevelModal {
   setProfile(value) {
     if (!this.active || !Number.isFinite(value)) return false;
     const next = Math.round(clamp(value, 0, 1) * 100) / 100;
-    const preview = this.buildPreview(this.amount, this.segments, next, this.heightAmount);
+    const faceSettings = this.faceBevelMode === 'individual' ? this.cloneFaceSettings() : this.faceSettings;
+    if (this.faceBevelMode === 'individual') faceSettings.get(this.seedFaceIds[this.activeFaceIndex]).profile = next;
+    const preview = this.buildPreview(this.amount, this.segments, next, this.heightAmount, faceSettings);
     if (!preview.result?.changed) {
       this.lastError = preview.result?.reason || 'This profile is not supported.';
       this.status?.(`Bevel profile rejected · ${this.lastError}`);
       return false;
     }
     this.profile = next;
+    if (this.faceBevelMode === 'individual') this.faceSettings = faceSettings;
     this.lastResult = preview.result;
     this.lastError = '';
     this.applyPreview(preview.hem);
@@ -295,6 +426,9 @@ export class BevelModal {
     this.amount = 0.25;
     this.heightAmount = 0.25;
     this.activeDimension = 'width';
+    this.faceBevelMode = 'region';
+    this.faceSettings = new Map();
+    this.activeFaceIndex = 0;
     this.startAmount = 0.25;
     this.segments = 1;
     this.profile = 0.5;

@@ -1002,6 +1002,79 @@ export class HalfEdgeMesh {
     };
   }
 
+
+  /**
+   * Bevel every selected polygon as its own panel. Each face is processed on
+   * one private candidate using the validated single-face region path, so a
+   * curved selection can still work when every individual polygon is planar.
+   * Per-face settings let the modal preserve different width/height/profile
+   * values while the selected faces remain one selection set.
+   */
+  bevelSelectedFacesIndividually({ faceSettings = {}, amount = 0.25, heightAmount = amount, segments = 1, profile = 0.5 } = {}) {
+    const fail = reason => ({ changed: false, reason });
+    if (this.selectionMode !== 'face') return fail('Individual Face Bevel requires Face Select mode.');
+    const selected = [...this.faceSelection]
+      .filter(id => Number.isInteger(id) && this.faces[id])
+      .sort((a, b) => a - b);
+    if (!selected.length || selected.length !== this.faceSelection.size) {
+      return fail('Select one or more valid faces before using Individual Face Bevel.');
+    }
+    if (selected.length < 2) {
+      return fail('Individual Face mode requires at least two selected faces. Use Region mode for one face.');
+    }
+
+    const candidate = new HalfEdgeMesh(this.positions, this.faces);
+    const perFace = [];
+    for (const faceId of selected) {
+      const settings = faceSettings instanceof Map ? faceSettings.get(faceId) : faceSettings?.[faceId];
+      const options = {
+        amount: settings?.amount ?? amount,
+        heightAmount: settings?.heightAmount ?? heightAmount,
+        segments: settings?.segments ?? segments,
+        profile: settings?.profile ?? profile
+      };
+      candidate.setSelectionMode('face');
+      candidate.faceSelection = new Set([faceId]);
+      const result = candidate.bevelSelectedFaceRegion(options);
+      if (!result.changed) {
+        return fail(`Face ${faceId + 1} could not be beveled individually: ${result.reason || 'unsupported face geometry.'}`);
+      }
+      perFace.push({ faceId, ...options, width: result.width, height: result.height,
+        boundaryEdges: result.boundaryEdges, insertedVertices: result.insertedVertices,
+        createdFaces: result.createdFaces, reflexCorners: result.reflexCorners || 0,
+        normal: result.normal });
+    }
+
+    const mean = key => perFace.reduce((sum, item) => sum + item[key], 0) / perFace.length;
+    const topology = candidate.validateTopology();
+    if (!topology.valid) {
+      return fail('Individual Face Bevel failed final topology validation; the source mesh was not changed.');
+    }
+    candidate.setSelectionMode('face');
+    candidate.clearSelection();
+    candidate.rebuild();
+    candidate.faceSelection = new Set(selected);
+    this.positions = candidate.positions.map(point => [...point]);
+    this.faces = candidate.faces.map(face => [...face]);
+    this.selectionMode = 'face';
+    this.clearSelection();
+    this.rebuild();
+    this.faceSelection = new Set(selected);
+    return {
+      changed: true,
+      operation: 'face-individual',
+      selectedFaces: selected.length,
+      width: mean('width'),
+      height: mean('height'),
+      boundaryEdges: perFace.reduce((sum, item) => sum + item.boundaryEdges, 0),
+      insertedVertices: perFace.reduce((sum, item) => sum + item.insertedVertices, 0),
+      createdFaces: perFace.reduce((sum, item) => sum + item.createdFaces, 0),
+      reflexCorners: perFace.reduce((sum, item) => sum + item.reflexCorners, 0),
+      perFace,
+      topology
+    };
+  }
+
   deleteSelectedElements() {
     const removedFaces = new Set();
     if (this.selectionMode === 'face') {

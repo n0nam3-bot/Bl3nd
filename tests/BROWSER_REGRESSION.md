@@ -8,7 +8,7 @@ Open the deployed app only after the latest Pages workflow succeeds:
 
 `https://n0nam3-bot.github.io/Bl3nd/`
 
-Latest deployed baseline before this package is v0.1.35, `main` commit `8b78b7eb4b9cd0bbee42ee372064f41bb5dabc3b`, Pages workflow run #43 (success). After uploading v0.1.36, reload and allow the v33 service-worker cache to activate before testing.
+Latest deployed baseline before this package is v0.1.36, `main` commit `33d88cd846eecdc477617bb78ae43488a2a03e16`, Pages workflow run #44 (success). After uploading v0.1.37, reload and allow the v34 service-worker cache to activate before testing.
 
 ## Desktop — Chrome or Edge
 
@@ -48,11 +48,12 @@ Record each step as Pass / Fail / Not tested. If a region-tool result is unexpec
 14. Before launching Face Bevel, set Box/Circle/Lasso selection. After Apply or Cancel, verify Click Select is restored automatically and orbit/pan work immediately without changing Object/Edit Mode or manually selecting Click Select.
 15. Repeat one-finger orbit and two-finger pan/zoom after Extrude, Inset and Face Bevel have ended. Confirm viewport controls are re-enabled.
 
-## Owner-reported Android acceptance — v0.1.31 through v0.1.35 (2026-11-27)
+## Owner-reported Android acceptance — v0.1.31 through v0.1.36 (2026-11-27)
 
 - The owner reports Pass for connected-region Extrude, concave L-region Extrude, single-face Inset, connected-face Inset, convex Face Bevel, concave Face Bevel, Cancel restoration, Apply and Undo/Redo.
 - Before the v0.1.35 input-recovery fix, post-operation viewport gestures were recoverable only after switching to Object Mode or choosing Edit Mode → Click Select. This earlier build behavior was a UX defect; the owner later confirmed the v0.1.35 automatic recovery passes.
 - The owner confirms Pass for the v0.1.35 1–8 segment control, profile 0/0.50/1 controls and immediate post-modal Click Select/orbit recovery on Android.
+- The owner confirms that the v0.1.36 multi-row/multi-column planar Face Bevel fix works. The owner asked how to adjust multiple selected faces individually; v0.1.37 adds an explicit Individual Faces mode with per-face settings. Android verification of that new mode remains pending.
 - Device model, Android version and Chrome version were not supplied.
 
 ## Recorded mobile run — v0.1.26 (user-reported, 2026-11-26)
@@ -83,12 +84,13 @@ Record each step as Pass / Fail / Not tested. If a region-tool result is unexpec
 - The v0.1.30 Inset regressions cover constant-offset miters, connected two-face regions, concave L-shaped regions, rotated-plane world-distance consistency, reversed winding, disconnected regions, holes, collapsing offsets, excessive miters and non-planar faces. The v0.1.31 Extrude regressions cover concave L regions, tilted-plane world normals, reversed winding, shared interior seams, invalid distance/mode, holes and disconnected selections. v0.1.32 adds ten read-only boundary-analysis regressions for convex/concave loops, annular holes, disconnected and nested-independent islands, non-planar regions, inconsistent winding and non-manifold edges. These automated tests do not replace real touch/browser validation.
 - On Android Chrome, verify connected-region Inset on a subdivided Plane and concave L-region Extrude. Confirm shared internal seams stay welded, previews update, Cancel restores the original, Apply creates one undoable operation, and Undo/Redo restores both states. This is still pending owner/device acceptance; automated boundary analysis is not evidence of browser interaction correctness. Desktop pointer behavior remains deferred until the user can access a PC; it does not block continued modeling work.
 
-## Face-region Bevel regression — v0.1.33–v0.1.36 (automated; latest browser run pending)
+## Face-region Bevel regression — v0.1.33–v0.1.37 (automated; latest browser run pending)
 
 - v0.1.33 automated tests cover convex single-face and connected multi-face regions, welded internal seams, rotated-plane normals, reversed winding, miter limits, numeric bounds, modal amount updates, Cancel and one-step commit/undo metadata.
 - v0.1.34 adds concave L-shaped and two-reflex U-shaped regions, rotated and reversed concave regions, retained internal seams, modal preview/Cancel/Apply and an acute reflex notch that must reject for excessive miter without source mutation. Holes, multiple loops, disconnected islands, non-planar input and invalid amounts remain rejected.
-- Face Bevel accepts one connected, consistently wound planar region with one simple boundary. Supported reflex/concave corners are accepted only when the inward offset remains inside/simple and every miter and transition wall passes candidate validation. v0.1.35 adds 1–8 segments/profile shaping; the owner confirms these and automatic post-modal Click Select/orbit recovery pass on Android.
-- v0.1.36 fixes orphaned interior source vertices in multi-row/multi-column planar face grids and decouples width from height. Automated coverage includes 2×2, 3×2 and 3×3 grids, shared seams, 1–8 segments/profile geometry and independent height controls. On Android Chrome, verify a 2×2 and 3×3 planar face grid, independent width/height using H and numeric-pad controls, 1/2/4/8 segments, profiles 0/0.50/1, preview, Cancel, Apply, Undo/Redo and immediate orbit/pan. Confirm acute excessive-miter, hole/disconnected and non-planar selections reject without mutation. Connected sphere patches spanning different face planes are expected to reject as non-planar; one polygon face remains supported. Desktop Chrome/Edge remains deferred until the owner can access a PC.
+- Face Bevel Region mode accepts one connected, consistently wound planar region with one simple boundary. Supported reflex/concave corners are accepted only when the inward offset remains inside/simple and every miter and transition wall passes candidate validation. v0.1.35 adds 1–8 segments/profile shaping; the owner confirms these and automatic post-modal Click Select/orbit recovery pass on Android.
+- v0.1.36 fixes orphaned interior source vertices in multi-row/multi-column planar face grids and decouples width from height. Automated coverage includes 2×2, 3×2 and 3×3 grids, shared seams, 1–8 segments/profile geometry and independent height controls. The owner confirms the planar grid case works on Android.
+- v0.1.37 adds Individual Faces mode with per-face width, height, segments and profile. It rebuilds one private candidate by applying the validated single-face path to each selected face; adjacent selected faces become separate raised panels with grooves at shared base edges. Connected non-planar groups auto-select this mode if all individual polygons pass. On Android Chrome, verify `I` / the mobile mode button, previous/next face navigation, deliberately different settings across two faces, automatic selection for a curved sphere patch, topology validity, Cancel and one-step Apply/Undo/Redo. Unsupported individual polygons and invalid candidates must reject atomically. Desktop Chrome/Edge remains deferred until the owner can access a PC.
 
 ## Record results
 
@@ -101,7 +103,8 @@ For each device, record:
 - Whether Edge Bevel and Face Bevel width, independent height, 1–8 segment count and profile 0–1 controls updated the previews; Face Bevel height can be selected with `H` or the mobile Edit Width/Height toggle.
 - Whether Cancel restored the original mesh without an undo entry.
 - Whether Face-region Inset and concave multi-face Extrude previewed correctly, Cancel restored the original, Confirm created one undoable operation and Undo/Redo restored both states.
-- Whether Face Bevel previewed/applied for supported convex and concave planar regions and multi-row/multi-column grids; internal seams stayed welded, width and height changed independently, segment/profile changes updated geometry, Cancel restored the source, one undo operation was recorded, Undo/Redo restored both states, and excessive-miter/hole/disconnected/non-planar regions rejected safely.
+- Whether Face Bevel Region mode previewed/applied for supported convex and concave planar regions and multi-row/multi-column grids; internal seams stayed welded, width and height changed independently, segment/profile changes updated geometry, Cancel restored the source, one undo operation was recorded, and Undo/Redo restored both states.
+- Whether Individual Faces mode allowed targeting each selected face and assigning different width, height, segment and profile values; whether curved groups auto-entered this mode; and whether the separate panel/groove geometry passed topology validation and restored correctly through Cancel/Apply/Undo/Redo.
 - Whether Click Select was restored after each modal operation and viewport orbit/pan worked immediately without switching Object/Edit Mode.
 - Any visible error text and the first app-owned console error, if available.
 

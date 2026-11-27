@@ -53,3 +53,7 @@ body.bevel-modal-active .topbar,body.bevel-modal-active .tool-rail,body.bevel-mo
 
 /* Transactional face-operation previews share the mobile numeric pad. */
 body.face-operation-modal-active .topbar,body.face-operation-modal-active .tool-rail,body.face-operation-modal-active .properties-panel,body.face-operation-modal-active .viewport-toolbar,body.face-operation-modal-active .viewport-footer,body.face-operation-modal-active .mobile-actionbar{pointer-events:none;opacity:.55}body.face-operation-modal-active #numeric-pad{pointer-events:auto;opacity:1}body.face-operation-modal-active .modal-readout,body.face-operation-modal-active .axis-gizmo,body.face-operation-modal-active .pie-menu{pointer-events:none;opacity:.55}
+
+/* Individual Face Bevel adds face navigation; keep the mobile control pad reachable on short screens. */
+.numeric-pad{max-height:min(88vh,720px);overflow-y:auto;overscroll-behavior:contain}
+.modal-readout{max-width:min(90vw,720px);white-space:normal;text-align:center;line-height:1.4}

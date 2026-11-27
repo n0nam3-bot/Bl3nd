@@ -362,6 +362,16 @@ function registerCommands() {
     ui.refreshModal();
     return changed;
   }, { recordUndo: false });
+  commandBus.register('mesh.bevel_face_mode_toggle', () => {
+    const changed = bevelModal.toggleFaceBevelMode();
+    ui.refreshModal();
+    return changed;
+  }, { recordUndo: false });
+  commandBus.register('mesh.bevel_face_target', ({ delta }) => {
+    const changed = bevelModal.selectFaceTarget(delta);
+    ui.refreshModal();
+    return changed;
+  }, { recordUndo: false });
   commandBus.register('mesh.bevel_segments', ({ delta }) => {
     const changed = bevelModal.changeSegments(delta);
     ui.refreshModal();
@@ -383,7 +393,7 @@ function registerCommands() {
     document.body.classList.remove('bevel-modal-active');
     if (result) {
       await reapplyActiveModifiers();
-      if (result.operation === 'face-region') {
+      if (String(result.operation || '').startsWith('face-')) {
         notify(`Face Bevel applied · ${result.selectedFaces} face(s) · ${result.reflexCorners || 0} reflex corner(s) · ${result.boundaryEdges} boundary edges · ${result.insertedVertices} vertices · width ${result.width.toFixed(3)} · height ${result.height.toFixed(3)}.`, 'success');
       } else {
         notify(`Bevel applied · ${result.bevelCount || 1} edge(s) · ${result.insertedVertices} vertices · ${result.createdFaces} faces · avg width ${result.width.toFixed(3)}.`, 'success');
@@ -632,14 +642,21 @@ ui = {
       $('#pad-bevel-profile-row').hidden=true;
       $('#pad-bevel-height-row').hidden=true;
       $('#pad-bevel-dimension-toggle').hidden=true;
+      $('#pad-bevel-face-target-row').hidden=true;
+      $('#pad-bevel-mode-toggle').hidden=true;
       return;
     }
     if(bevelModal.active){
       negativeKey.hidden=true;
       const faceRegion = bevelModal.mode === 'face-region';
       readout.hidden=false;
+      const individualFace = faceRegion && bevelModal.faceBevelMode === 'individual';
+      const activeFaceId = individualFace ? bevelModal.seedFaceIds[bevelModal.activeFaceIndex] : null;
+      const activeFaceResult = individualFace
+        ? bevelModal.lastResult?.perFace?.find(item => item.faceId === activeFaceId)
+        : bevelModal.lastResult;
       readout.textContent=faceRegion
-        ? `FACE BEVEL · ${bevelModal.lastResult?.selectedFaces || bevelModal.seedFaceIds.length} face(s) · ${bevelModal.lastResult?.reflexCorners || 0} reflex · ${bevelModal.segments} segment(s) · Profile ${bevelModal.profile.toFixed(2)} · Width ${bevelModal.lastResult?.width?.toFixed(3) || '—'} · Height ${bevelModal.lastResult?.height?.toFixed(3) || '—'} · Drag / arrows / type: ${bevelModal.activeDimension} · H switches · Enter apply / Esc cancel`
+        ? `FACE BEVEL · ${individualFace ? `INDIVIDUAL ${bevelModal.activeFaceIndex + 1}/${bevelModal.seedFaceIds.length}` : 'CONNECTED REGION'} · ${bevelModal.lastResult?.selectedFaces || bevelModal.seedFaceIds.length} face(s) · ${bevelModal.segments} segment(s) · Profile ${bevelModal.profile.toFixed(2)} · Width ${activeFaceResult?.width?.toFixed(3) || '—'} · Height ${activeFaceResult?.height?.toFixed(3) || '—'} · Drag / arrows / type: ${bevelModal.activeDimension} · H switches · I changes mode${individualFace ? ' · PageUp/Down changes face' : ''} · Enter apply / Esc cancel`
         : `BEVEL · ${bevelModal.seedEdgeIds.length} edge(s) · ${bevelModal.segments} segment(s) · Profile ${bevelModal.profile.toFixed(2)} · Amount ${bevelModal.amount.toFixed(2)} · Drag / arrows: width · +/-: segments · [ ]: profile · Enter apply / Esc cancel`;
       pad.hidden=!capabilities.tier.includes('Mobile');
       pad.classList.remove('loop-cut-mode','bevel-mode');
@@ -654,6 +671,11 @@ ui = {
       $('#pad-bevel-dimension-toggle').hidden=!faceRegion;
       $('#pad-bevel-height').textContent=bevelModal.heightAmount.toFixed(2);
       $('#pad-bevel-dimension-toggle').textContent=`EDIT ${bevelModal.activeDimension==='width'?'HEIGHT':'WIDTH'}`;
+      $('#pad-bevel-face-target-row').hidden=!individualFace || bevelModal.seedFaceIds.length < 2;
+      $('#pad-bevel-face-index').textContent=String(bevelModal.activeFaceIndex + 1);
+      $('#pad-bevel-face-count').textContent=String(bevelModal.seedFaceIds.length);
+      $('#pad-bevel-mode-toggle').hidden=!faceRegion || bevelModal.seedFaceIds.length < 2;
+      $('#pad-bevel-mode-toggle').textContent=individualFace?'USE REGION MODE':'INDIVIDUAL FACES';
       $('#pad-bevel-segments').textContent=String(bevelModal.segments);
       $('#pad-bevel-profile').textContent=bevelModal.profile.toFixed(2);
       return;
@@ -674,6 +696,8 @@ ui = {
       $('#pad-bevel-profile-row').hidden=true;
       $('#pad-bevel-height-row').hidden=true;
       $('#pad-bevel-dimension-toggle').hidden=true;
+      $('#pad-bevel-face-target-row').hidden=true;
+      $('#pad-bevel-mode-toggle').hidden=true;
       return;
     }
     pad.classList.remove('loop-cut-mode','bevel-mode','face-operation-mode');
@@ -682,6 +706,8 @@ ui = {
     $('#pad-bevel-profile-row').hidden=true;
     $('#pad-bevel-height-row').hidden=true;
     $('#pad-bevel-dimension-toggle').hidden=true;
+    $('#pad-bevel-face-target-row').hidden=true;
+    $('#pad-bevel-mode-toggle').hidden=true;
     padTitle.textContent='TRANSFORM VALUE';
     axisButtons.forEach(button=>button.hidden=false);
     negativeKey.hidden=false;
@@ -768,7 +794,10 @@ $('#numeric-pad').addEventListener('click',async event=>{
     if(profileButton){await run('mesh.bevel_profile',{delta:Number(profileButton.dataset.bevelProfile)});return;}
     const heightButton=event.target.closest('button[data-bevel-height]');
     if(heightButton){await run('mesh.bevel_height',{delta:Number(heightButton.dataset.bevelHeight)});return;}
+    const faceTargetButton=event.target.closest('button[data-bevel-face-target]');
+    if(faceTargetButton){await run('mesh.bevel_face_target',{delta:Number(faceTargetButton.dataset.bevelFaceTarget)});return;}
     if(event.target.closest('#pad-bevel-dimension-toggle')){await run('mesh.bevel_dimension_toggle');return;}
+    if(event.target.closest('#pad-bevel-mode-toggle')){await run('mesh.bevel_face_mode_toggle');return;}
     const bevelKey=event.target.closest('button[data-key]');if(!bevelKey)return;const key=bevelKey.dataset.key;
     if(key==='enter'){await run('mesh.bevel_confirm');return;}
     if(key==='escape'){await run('mesh.bevel_cancel');return;}

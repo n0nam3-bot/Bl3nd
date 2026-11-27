@@ -543,3 +543,115 @@ test('Face Bevel modal previews, cancels and commits a supported concave region 
   assert.equal(session.commits[0].label, 'Face Bevel');
   assert.equal(session.mesh.userData.hem.validateTopology().valid, true);
 });
+
+test('Individual Face Bevel keeps separate settings for adjacent faces with different normals', () => {
+  const mesh = selectedMesh(cubePositions, cubeFaces, [1, 2]);
+  const result = mesh.bevelSelectedFacesIndividually({ faceSettings: {
+    1: { amount: 0.15, heightAmount: 0.3, segments: 2, profile: 0.2 },
+    2: { amount: 0.45, heightAmount: 0.7, segments: 4, profile: 0.85 }
+  } });
+
+  assert.equal(result.changed, true, result.reason);
+  assert.equal(result.operation, 'face-individual');
+  assert.deepEqual(result.perFace.map(item => item.faceId), [1, 2]);
+  assert.deepEqual(result.perFace.map(item => item.amount), [0.15, 0.45]);
+  assert.deepEqual(result.perFace.map(item => item.heightAmount), [0.3, 0.7]);
+  assert.deepEqual(result.perFace.map(item => item.segments), [2, 4]);
+  assert.deepEqual(result.perFace.map(item => item.profile), [0.2, 0.85]);
+  assert.ok(result.perFace[0].width < result.perFace[1].width);
+  assert.ok(result.perFace[0].height < result.perFace[1].height);
+  assert.deepEqual([...mesh.faceSelection].sort((a, b) => a - b), [1, 2]);
+  assert.equal(mesh.validateTopology().valid, true);
+  const selected = new Set(mesh.faceSelection);
+  const sharedTopSeams = mesh.edges.filter(edge => edge.halfEdges.length === 2 &&
+    edge.halfEdges.every(halfEdge => selected.has(halfEdge.face.id)));
+  assert.equal(sharedTopSeams.length, 0, 'individual panels should not share raised top seams');
+});
+
+test('Individual Face Bevel rejects one invalid face atomically after earlier candidates preview', () => {
+  const mesh = selectedMesh(cubePositions, cubeFaces, [1, 2]);
+  const before = snapshot(mesh);
+  const result = mesh.bevelSelectedFacesIndividually({ faceSettings: {
+    1: { amount: 0.25, heightAmount: 0.35, segments: 2, profile: 0.5 },
+    2: { amount: 0.001, heightAmount: 0.25, segments: 2, profile: 0.5 }
+  } });
+  assert.equal(result.changed, false);
+  assert.match(result.reason, /Face 3 could not be beveled individually/);
+  assert.equal(snapshot(mesh), before);
+});
+
+test('Face Bevel modal automatically uses Individual Faces for a connected non-planar selection', async () => {
+  const session = makeSession(selectedMesh(cubePositions, cubeFaces, [1, 2]));
+  const before = await session.document.serialize();
+  const modal = new BevelModal(session);
+  assert.equal(await modal.begin(), true, modal.lastError);
+  assert.equal(modal.faceBevelMode, 'individual');
+  assert.equal(modal.lastResult.operation, 'face-individual');
+
+  assert.equal(modal.setAmount(0.15), true, modal.lastError);
+  assert.equal(modal.setHeightAmount(0.3), true, modal.lastError);
+  assert.equal(modal.setSegments(2), true, modal.lastError);
+  assert.equal(modal.setProfile(0.2), true, modal.lastError);
+  assert.equal(modal.selectFaceTarget(1), true);
+  assert.equal(modal.setAmount(0.45), true, modal.lastError);
+  assert.equal(modal.setHeightAmount(0.7), true, modal.lastError);
+  assert.equal(modal.setSegments(4), true, modal.lastError);
+  assert.equal(modal.setProfile(0.85), true, modal.lastError);
+
+  // Changing targets restores that face's own values without touching the other.
+  assert.equal(modal.selectFaceTarget(-1), true);
+  assert.equal(modal.amount, 0.15);
+  assert.equal(modal.heightAmount, 0.3);
+  assert.equal(modal.segments, 2);
+  assert.equal(modal.profile, 0.2);
+  assert.equal(modal.selectFaceTarget(1), true);
+  assert.equal(modal.amount, 0.45);
+  assert.equal(modal.heightAmount, 0.7);
+  assert.equal(modal.segments, 4);
+  assert.equal(modal.profile, 0.85);
+
+  const committed = await modal.confirm();
+  assert.equal(committed.operation, 'face-individual');
+  assert.deepEqual(committed.perFace.map(item => item.amount), [0.15, 0.45]);
+  assert.deepEqual(committed.perFace.map(item => item.heightAmount), [0.3, 0.7]);
+  assert.deepEqual(committed.perFace.map(item => item.segments), [2, 4]);
+  assert.deepEqual(committed.perFace.map(item => item.profile), [0.2, 0.85]);
+  assert.equal(session.commits.length, 1);
+  assert.equal(session.mesh.userData.hem.validateTopology().valid, true);
+  assert.notDeepEqual(await session.document.serialize(), before);
+});
+
+test('Individual Face Bevel can be enabled on a planar grid and Cancel restores every face setting', async () => {
+  const session = makeSession(gridRegion([[0, 0], [1, 0]]));
+  const before = await session.document.serialize();
+  const modal = new BevelModal(session);
+  assert.equal(await modal.begin(), true, modal.lastError);
+  assert.equal(modal.faceBevelMode, 'region');
+  assert.equal(modal.toggleFaceBevelMode(), true, modal.lastError);
+  assert.equal(modal.faceBevelMode, 'individual');
+  assert.equal(modal.setAmount(0.4), true, modal.lastError);
+  assert.equal(modal.selectFaceTarget(1), true);
+  assert.equal(modal.setAmount(0.1), true, modal.lastError);
+  assert.equal(modal.setHeightAmount(0.65), true, modal.lastError);
+  assert.equal(modal.setSegments(5), true, modal.lastError);
+  assert.equal(modal.setProfile(0.9), true, modal.lastError);
+  assert.equal(modal.setFaceBevelMode('region'), false, 'different per-face values cannot be silently merged');
+  assert.match(modal.lastError, /Match the selected faces settings/);
+  assert.equal(await modal.cancel(), true);
+  assert.deepEqual(await session.document.serialize(), before);
+  assert.equal(session.commits.length, 0);
+});
+
+
+test('Individual Face Bevel can return to Region mode while every selected face retains matching settings', async () => {
+  const session = makeSession(gridRegion([[0, 0], [1, 0]]));
+  const modal = new BevelModal(session);
+  assert.equal(await modal.begin(), true, modal.lastError);
+  assert.equal(modal.faceBevelMode, 'region');
+  assert.equal(modal.toggleFaceBevelMode(), true, modal.lastError);
+  assert.equal(modal.faceBevelMode, 'individual');
+  assert.equal(modal.toggleFaceBevelMode(), true, modal.lastError);
+  assert.equal(modal.faceBevelMode, 'region');
+  assert.equal(await modal.cancel(), true);
+  assert.equal(session.commits.length, 0);
+});
