@@ -173,6 +173,190 @@ function pointInTriangle2D(point, a, b, c, winding, epsilon) {
   return ab >= -epsilon && bc >= -epsilon && ca >= -epsilon;
 }
 
+function pointStrictlyInTriangle2D(point, a, b, c, winding, epsilon) {
+  return cross2(a, b, point) * winding > epsilon &&
+    cross2(b, c, point) * winding > epsilon &&
+    cross2(c, a, point) * winding > epsilon;
+}
+
+function properSegmentsIntersect2D(a, b, c, d, epsilon) {
+  const abC = cross2(a, b, c), abD = cross2(a, b, d);
+  const cdA = cross2(c, d, a), cdB = cross2(c, d, b);
+  return ((abC > epsilon && abD < -epsilon) || (abC < -epsilon && abD > epsilon)) &&
+    ((cdA > epsilon && cdB < -epsilon) || (cdA < -epsilon && cdB > epsilon));
+}
+
+function pointInTriangle3D(point, triangle, normal, epsilon) {
+  const a = triangle[0], b = triangle[1], c = triangle[2];
+  const v0 = b.map((value, axis) => value - a[axis]);
+  const v1 = c.map((value, axis) => value - a[axis]);
+  const v2 = point.map((value, axis) => value - a[axis]);
+  const dot = (x, y) => x[0] * y[0] + x[1] * y[1] + x[2] * y[2];
+  const d00 = dot(v0, v0), d01 = dot(v0, v1), d11 = dot(v1, v1);
+  const d20 = dot(v2, v0), d21 = dot(v2, v1);
+  const denominator = d00 * d11 - d01 * d01;
+  if (!Number.isFinite(denominator) || denominator <= epsilon * epsilon) return false;
+  const v = (d11 * d20 - d01 * d21) / denominator;
+  const w = (d00 * d21 - d01 * d20) / denominator;
+  const edgeScale = Math.max(Math.sqrt(d00), Math.sqrt(d11), 1e-12);
+  const barycentricEpsilon = epsilon / edgeScale;
+  return v >= -barycentricEpsilon && w >= -barycentricEpsilon &&
+    v + w <= 1 + barycentricEpsilon && Math.abs(normal.reduce((sum, value, axis) =>
+      sum + value * v2[axis], 0)) <= epsilon * 2;
+}
+
+/**
+ * Tests two non-degenerate triangles for a geometric intersection beyond the
+ * vertex/edge contacts that their editable topology explicitly shares.
+ * Coplanar overlap is handled in 2D; non-coplanar intersections are found by
+ * testing vertices and edge/plane crossings in both directions.
+ */
+function trianglesIntersectBeyondSharedTopology(positions, idsA, idsB, epsilon) {
+  if (idsA.length !== 3 || idsB.length !== 3) return false;
+  const sharedIds = idsA.filter(id => idsB.includes(id));
+  if (sharedIds.length === 3) return false;
+  const a = idsA.map(id => positions[id]);
+  const b = idsB.map(id => positions[id]);
+  if (a.some(point => !point) || b.some(point => !point)) return false;
+
+  const cross = (u, v) => [
+    u[1] * v[2] - u[2] * v[1],
+    u[2] * v[0] - u[0] * v[2],
+    u[0] * v[1] - u[1] * v[0]
+  ];
+  const subtract = (u, v) => u.map((value, axis) => value - v[axis]);
+  const dot = (u, v) => u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
+  const length = vector => Math.hypot(...vector);
+  const normalA = cross(subtract(a[1], a[0]), subtract(a[2], a[0]));
+  const normalB = cross(subtract(b[1], b[0]), subtract(b[2], b[0]));
+  const magnitudeA = length(normalA), magnitudeB = length(normalB);
+  if (magnitudeA <= epsilon * epsilon || magnitudeB <= epsilon * epsilon) return false;
+  const nA = normalA.map(value => value / magnitudeA);
+  const nB = normalB.map(value => value / magnitudeB);
+  const planeA = dot(nA, a[0]), planeB = dot(nB, b[0]);
+  const distancesAtoB = a.map(point => dot(nB, point) - planeB);
+  const distancesBtoA = b.map(point => dot(nA, point) - planeA);
+  if (distancesAtoB.every(value => value > epsilon) || distancesAtoB.every(value => value < -epsilon) ||
+      distancesBtoA.every(value => value > epsilon) || distancesBtoA.every(value => value < -epsilon)) return false;
+
+  const sharedPoints = sharedIds.map(id => positions[id]);
+  const pointOnSegment = (point, start, end) => {
+    const direction = subtract(end, start);
+    const denominator = dot(direction, direction);
+    if (denominator <= epsilon * epsilon) return length(subtract(point, start)) <= epsilon;
+    const t = dot(subtract(point, start), direction) / denominator;
+    if (t < -epsilon || t > 1 + epsilon) return false;
+    const projected = start.map((value, axis) => value + direction[axis] * t);
+    return length(subtract(point, projected)) <= epsilon;
+  };
+  const isExpectedSharedContact = point => {
+    if (sharedPoints.some(shared => length(subtract(point, shared)) <= epsilon * 2)) return true;
+    return sharedPoints.length >= 2 && pointOnSegment(point, sharedPoints[0], sharedPoints[1]);
+  };
+
+  const coplanar = distancesAtoB.every(value => Math.abs(value) <= epsilon) &&
+    distancesBtoA.every(value => Math.abs(value) <= epsilon);
+  if (coplanar) {
+    const dropAxis = nA.reduce((best, value, axis) => Math.abs(value) > Math.abs(nA[best]) ? axis : best, 0);
+    const project = point => dropAxis === 0 ? [point[1], point[2]] :
+      dropAxis === 1 ? [point[0], point[2]] : [point[0], point[1]];
+    const projectedA = a.map(project), projectedB = b.map(project);
+    const projectionOrigin = projectedA[0];
+    const a2 = projectedA.map(point => point.map((value, axis) => value - projectionOrigin[axis]));
+    const b2 = projectedB.map(point => point.map((value, axis) => value - projectionOrigin[axis]));
+    const areaA = cross2(a2[0], a2[1], a2[2]);
+    const areaB = cross2(b2[0], b2[1], b2[2]);
+    if (Math.abs(areaA) <= epsilon * epsilon || Math.abs(areaB) <= epsilon * epsilon) return false;
+    const windingA = Math.sign(areaA), windingB = Math.sign(areaB);
+    const edgeScale = Math.max(
+      Math.hypot(a2[1][0] - a2[0][0], a2[1][1] - a2[0][1]),
+      Math.hypot(a2[2][0] - a2[1][0], a2[2][1] - a2[1][1]),
+      Math.hypot(b2[1][0] - b2[0][0], b2[1][1] - b2[0][1]),
+      Math.hypot(b2[2][0] - b2[1][0], b2[2][1] - b2[1][1]), epsilon
+    );
+    const areaEpsilon = epsilon * edgeScale;
+    for (let index = 0; index < 3; index++) {
+      if (!isExpectedSharedContact(a[index]) &&
+          pointStrictlyInTriangle2D(a2[index], b2[0], b2[1], b2[2], windingB, areaEpsilon)) return true;
+      if (!isExpectedSharedContact(b[index]) &&
+          pointStrictlyInTriangle2D(b2[index], a2[0], a2[1], a2[2], windingA, areaEpsilon)) return true;
+    }
+    const centroid = points => [0, 1].map(axis => (points[0][axis] + points[1][axis] + points[2][axis]) / 3);
+    if (pointStrictlyInTriangle2D(centroid(a2), b2[0], b2[1], b2[2], windingB, areaEpsilon) ||
+        pointStrictlyInTriangle2D(centroid(b2), a2[0], a2[1], a2[2], windingA, areaEpsilon)) return true;
+    for (let i = 0; i < 3; i++) {
+      for (let j = 0; j < 3; j++) {
+        if (properSegmentsIntersect2D(a2[i], a2[(i + 1) % 3], b2[j], b2[(j + 1) % 3], areaEpsilon)) return true;
+      }
+    }
+    return false;
+  }
+
+  const edgePlaneCrossesTriangle = (source, target, targetNormal, targetPlane) => {
+    const distances = source.map(point => dot(targetNormal, point) - targetPlane);
+    for (let index = 0; index < 3; index++) {
+      if (Math.abs(distances[index]) <= epsilon && pointInTriangle3D(source[index], target, targetNormal, epsilon) &&
+          !isExpectedSharedContact(source[index])) return true;
+    }
+    for (let index = 0; index < 3; index++) {
+      const next = (index + 1) % 3;
+      const d0 = distances[index], d1 = distances[next];
+      if (Math.abs(d0) <= epsilon && Math.abs(d1) <= epsilon) {
+        const dropAxis = targetNormal.reduce((best, value, axis) =>
+          Math.abs(value) > Math.abs(targetNormal[best]) ? axis : best, 0);
+        const project = point => dropAxis === 0 ? [point[1], point[2]] :
+          dropAxis === 1 ? [point[0], point[2]] : [point[0], point[1]];
+        const target2D = target.map(project);
+        const start2D = project(source[index]), end2D = project(source[next]);
+        const area = cross2(target2D[0], target2D[1], target2D[2]);
+        const winding = Math.sign(area);
+        if (Math.abs(area) <= epsilon * epsilon) continue;
+        const edgeScale = Math.max(
+          Math.hypot(target2D[1][0] - target2D[0][0], target2D[1][1] - target2D[0][1]),
+          Math.hypot(target2D[2][0] - target2D[1][0], target2D[2][1] - target2D[1][1]),
+          Math.hypot(target2D[0][0] - target2D[2][0], target2D[0][1] - target2D[2][1]), epsilon
+        );
+        const areaTolerance = epsilon * edgeScale;
+        let startT = 0, endT = 1, intersects = true;
+        for (let edge = 0; edge < 3; edge++) {
+          const edgeA = target2D[edge], edgeB = target2D[(edge + 1) % 3];
+          const f0 = cross2(edgeA, edgeB, start2D) * winding;
+          const f1 = cross2(edgeA, edgeB, end2D) * winding;
+          if (f0 < -areaTolerance && f1 < -areaTolerance) {
+            intersects = false;
+            break;
+          }
+          if (f0 < -areaTolerance && f1 >= -areaTolerance) {
+            startT = Math.max(startT, (-areaTolerance - f0) / (f1 - f0));
+          } else if (f0 >= -areaTolerance && f1 < -areaTolerance) {
+            endT = Math.min(endT, (-areaTolerance - f0) / (f1 - f0));
+          }
+          if (startT > endT + 1e-10) {
+            intersects = false;
+            break;
+          }
+        }
+        if (intersects && startT <= endT + 1e-10) {
+          const t = (startT + endT) * 0.5;
+          const point = source[index].map((value, axis) => value + (source[next][axis] - value) * t);
+          if (!isExpectedSharedContact(point)) return true;
+        }
+        continue;
+      }
+      if ((d0 > epsilon && d1 > epsilon) || (d0 < -epsilon && d1 < -epsilon)) continue;
+      const denominator = d0 - d1;
+      if (Math.abs(denominator) <= 1e-20) continue;
+      const t = d0 / denominator;
+      if (t < -epsilon || t > 1 + epsilon) continue;
+      const point = source[index].map((value, axis) => value + (source[next][axis] - value) * t);
+      if (pointInTriangle3D(point, target, targetNormal, epsilon) && !isExpectedSharedContact(point)) return true;
+    }
+    return false;
+  };
+
+  return edgePlaneCrossesTriangle(a, b, nB, planeB) || edgePlaneCrossesTriangle(b, a, nA, planeA);
+}
+
 /** Ear-clips a simple polygon while preserving the source winding and vertex IDs. */
 function triangulatePolygon(positions, face) {
   const projection = projectedPolygon(positions, face);
@@ -1323,6 +1507,81 @@ export class HalfEdgeMesh {
       }
     }
 
+    // Check only geometry changed by this operation against the complete
+    // candidate surface. A spatial hash keeps distant scene triangles out of
+    // the exact triangle/triangle tests; exceptionally large triangles use a
+    // small overflow list rather than occupying an unbounded number of cells.
+    const collisionRecords = [];
+    const affectedFace = faceId => selectedOutputFaceIds.has(faceId) || faceId >= transitionFaceStart;
+    for (let faceId = 0; faceId < candidate.faces.length; faceId++) {
+      const affected = affectedFace(faceId);
+      for (const triangle of candidate.triangulateFace(faceId)) {
+        const points = triangle.map(vertexId => candidate.positions[vertexId]);
+        const min = [0, 1, 2].map(axis => Math.min(...points.map(point => point[axis])));
+        const max = [0, 1, 2].map(axis => Math.max(...points.map(point => point[axis])));
+        collisionRecords.push({ ids: triangle, points, min, max, affected, index: collisionRecords.length, faceId });
+      }
+    }
+    const affectedRecords = collisionRecords.filter(record => record.affected);
+    const affectedMinimum = [0, 1, 2].map(axis => Math.min(...affectedRecords.map(record => record.min[axis])));
+    const affectedMaximum = [0, 1, 2].map(axis => Math.max(...affectedRecords.map(record => record.max[axis])));
+    const affectedExtent = Math.max(...[0, 1, 2].map(axis => affectedMaximum[axis] - affectedMinimum[axis]));
+    const collisionTolerance = Math.max(1e-10, affectedExtent * 1e-8);
+    const cellSize = Math.max(1e-6, affectedExtent / 8, collisionTolerance * 4);
+    const cells = new Map();
+    const overflow = [];
+    const cellRangeFor = record => {
+      const low = record.min.map(value => Math.floor((value - collisionTolerance) / cellSize));
+      const high = record.max.map(value => Math.floor((value + collisionTolerance) / cellSize));
+      const count = (high[0] - low[0] + 1) * (high[1] - low[1] + 1) * (high[2] - low[2] + 1);
+      return count > 256 ? null : { low, high, count };
+    };
+    const cellKey = (x, y, z) => `${x},${y},${z}`;
+    for (const record of collisionRecords) {
+      const range = cellRangeFor(record);
+      if (!range) {
+        overflow.push(record.index);
+        continue;
+      }
+      for (let x = range.low[0]; x <= range.high[0]; x++) {
+        for (let y = range.low[1]; y <= range.high[1]; y++) {
+          for (let z = range.low[2]; z <= range.high[2]; z++) {
+            const key = cellKey(x, y, z);
+            if (!cells.has(key)) cells.set(key, []);
+            cells.get(key).push(record.index);
+          }
+        }
+      }
+    }
+    const boundsOverlap = (a, b) => [0, 1, 2].every(axis =>
+      a.min[axis] <= b.max[axis] + collisionTolerance && b.min[axis] <= a.max[axis] + collisionTolerance
+    );
+    let collisionPairsChecked = 0;
+    for (const record of affectedRecords) {
+      const range = cellRangeFor(record);
+      const nearby = new Set(overflow);
+      if (!range) {
+        for (const candidateRecord of collisionRecords) nearby.add(candidateRecord.index);
+      } else {
+        for (let x = range.low[0]; x <= range.high[0]; x++) {
+          for (let y = range.low[1]; y <= range.high[1]; y++) {
+            for (let z = range.low[2]; z <= range.high[2]; z++) {
+              for (const index of cells.get(cellKey(x, y, z)) || []) nearby.add(index);
+            }
+          }
+        }
+      }
+      for (const otherIndex of nearby) {
+        if (otherIndex === record.index || (collisionRecords[otherIndex].affected && otherIndex < record.index)) continue;
+        const other = collisionRecords[otherIndex];
+        if (!boundsOverlap(record, other)) continue;
+        collisionPairsChecked++;
+        if (trianglesIntersectBeyondSharedTopology(candidate.positions, record.ids, other.ids, collisionTolerance)) {
+          return fail(`Curved Face Bevel would intersect existing or newly created geometry near face ${other.faceId + 1}. Reduce the width/height or use Individual Faces mode.`);
+        }
+      }
+    }
+
     this.positions = candidate.positions.map(point => [...point]);
     this.faces = candidate.faces.map(face => [...face]);
     this.selectionMode = 'face';
@@ -1345,6 +1604,7 @@ export class HalfEdgeMesh {
       segments,
       profile,
       maximumAdjacentNormalAngle: 55,
+      collisionPairsChecked,
       topology: report
     };
   }

@@ -110,6 +110,65 @@ test('a small curved surface patch bevels as one welded region with triangulated
   assert.equal(sharedRaisedSeams.length, 8);
 });
 
+test('curved Face Bevel rejects a transition wall that intersects nearby geometry without mutating the source', () => {
+  const reference = makeCurvedPatch().mesh;
+  const referenceResult = reference.bevelSelectedCurvedFaceRegion({ amount: 0.25, heightAmount: 0.35, segments: 3, profile: 0.5 });
+  assert.equal(referenceResult.changed, true, referenceResult.reason);
+  const firstTransitionFace = reference.faces.length - referenceResult.createdFaces;
+  const wallTriangle = reference.faces[firstTransitionFace].map(vertexId => reference.positions[vertexId]);
+  const subtract = (a, b) => a.map((value, axis) => value - b[axis]);
+  const cross = (a, b) => [
+    a[1] * b[2] - a[2] * b[1],
+    a[2] * b[0] - a[0] * b[2],
+    a[0] * b[1] - a[1] * b[0]
+  ];
+  const normalize = vector => {
+    const length = Math.hypot(...vector);
+    return vector.map(value => value / length);
+  };
+  const centroid = [0, 1, 2].map(axis => wallTriangle.reduce((sum, point) => sum + point[axis], 0) / 3);
+  const wallNormal = normalize(cross(subtract(wallTriangle[1], wallTriangle[0]), subtract(wallTriangle[2], wallTriangle[0])));
+  const tangent = normalize(subtract(wallTriangle[1], wallTriangle[0]));
+  const radius = Math.min(...wallTriangle.map((point, index) => Math.hypot(...subtract(point, wallTriangle[(index + 1) % 3])))) * 0.18;
+  const addScaled = (point, direction, scale) => point.map((value, axis) => value + direction[axis] * scale);
+  // This independent triangle crosses the interior of one generated wall.
+  const obstacle = [
+    addScaled(centroid, tangent, radius),
+    addScaled(centroid, wallNormal, radius),
+    addScaled(addScaled(centroid, tangent, -radius), wallNormal, -radius)
+  ];
+
+  const source = makeCurvedPatch().mesh;
+  const obstacleStart = source.positions.length;
+  const obstructed = new HalfEdgeMesh(
+    [...source.positions.map(point => [...point]), ...obstacle],
+    [...source.faces.map(face => [...face]), [obstacleStart, obstacleStart + 1, obstacleStart + 2]]
+  );
+  obstructed.setSelectionMode('face');
+  obstructed.faceSelection = new Set(source.faceSelection);
+  assert.equal(obstructed.validateTopology().valid, true);
+  const before = snapshot(obstructed);
+  const result = obstructed.bevelSelectedCurvedFaceRegion({ amount: 0.25, heightAmount: 0.35, segments: 3, profile: 0.5 });
+  assert.equal(result.changed, false);
+  assert.match(result.reason, /intersect existing or newly created geometry/i);
+  assert.equal(snapshot(obstructed), before);
+});
+
+test('curved Face Bevel does not reject a distant disconnected triangle', () => {
+  const source = makeCurvedPatch().mesh;
+  const obstacleStart = source.positions.length;
+  const mesh = new HalfEdgeMesh(
+    [...source.positions.map(point => [...point]), [5, 5, 5], [5.1, 5, 5], [5, 5.1, 5]],
+    [...source.faces.map(face => [...face]), [obstacleStart, obstacleStart + 1, obstacleStart + 2]]
+  );
+  mesh.setSelectionMode('face');
+  mesh.faceSelection = new Set(source.faceSelection);
+  const result = mesh.bevelSelectedCurvedFaceRegion({ amount: 0.25, heightAmount: 0.35, segments: 3, profile: 0.5 });
+  assert.equal(result.changed, true, result.reason);
+  assert.ok(result.collisionPairsChecked > 0);
+  assert.equal(mesh.validateTopology().valid, true);
+});
+
 test('curved Face Bevel preserves valid topology across segment and profile extremes', () => {
   for (const segments of [1, 2, 4, 8]) {
     for (const profile of [0, 0.5, 1]) {
