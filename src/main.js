@@ -352,6 +352,16 @@ function registerCommands() {
     ui.refreshModal();
     return changed;
   }, { recordUndo: false });
+  commandBus.register('mesh.bevel_height', ({ delta }) => {
+    const changed = bevelModal.setHeightAmount(bevelModal.heightAmount + Number(delta || 0));
+    ui.refreshModal();
+    return changed;
+  }, { recordUndo: false });
+  commandBus.register('mesh.bevel_dimension_toggle', () => {
+    const changed = bevelModal.toggleActiveDimension();
+    ui.refreshModal();
+    return changed;
+  }, { recordUndo: false });
   commandBus.register('mesh.bevel_segments', ({ delta }) => {
     const changed = bevelModal.changeSegments(delta);
     ui.refreshModal();
@@ -374,7 +384,7 @@ function registerCommands() {
     if (result) {
       await reapplyActiveModifiers();
       if (result.operation === 'face-region') {
-        notify(`Face Bevel applied · ${result.selectedFaces} face(s) · ${result.reflexCorners || 0} reflex corner(s) · ${result.boundaryEdges} boundary edges · ${result.insertedVertices} vertices · width ${result.width.toFixed(3)}.`, 'success');
+        notify(`Face Bevel applied · ${result.selectedFaces} face(s) · ${result.reflexCorners || 0} reflex corner(s) · ${result.boundaryEdges} boundary edges · ${result.insertedVertices} vertices · width ${result.width.toFixed(3)} · height ${result.height.toFixed(3)}.`, 'success');
       } else {
         notify(`Bevel applied · ${result.bevelCount || 1} edge(s) · ${result.insertedVertices} vertices · ${result.createdFaces} faces · avg width ${result.width.toFixed(3)}.`, 'success');
       }
@@ -620,6 +630,8 @@ ui = {
       $('#pad-count-row').hidden=true;
       $('#pad-bevel-segments-row').hidden=true;
       $('#pad-bevel-profile-row').hidden=true;
+      $('#pad-bevel-height-row').hidden=true;
+      $('#pad-bevel-dimension-toggle').hidden=true;
       return;
     }
     if(bevelModal.active){
@@ -627,17 +639,21 @@ ui = {
       const faceRegion = bevelModal.mode === 'face-region';
       readout.hidden=false;
       readout.textContent=faceRegion
-        ? `FACE BEVEL · ${bevelModal.lastResult?.selectedFaces || bevelModal.seedFaceIds.length} face(s) · ${bevelModal.lastResult?.reflexCorners || 0} reflex · ${bevelModal.segments} segment(s) · Profile ${bevelModal.profile.toFixed(2)} · Width ${bevelModal.lastResult?.width?.toFixed(3) || '—'} · Amount ${bevelModal.amount.toFixed(2)} · +/- segments · [ ] profile · Enter apply / Esc cancel`
+        ? `FACE BEVEL · ${bevelModal.lastResult?.selectedFaces || bevelModal.seedFaceIds.length} face(s) · ${bevelModal.lastResult?.reflexCorners || 0} reflex · ${bevelModal.segments} segment(s) · Profile ${bevelModal.profile.toFixed(2)} · Width ${bevelModal.lastResult?.width?.toFixed(3) || '—'} · Height ${bevelModal.lastResult?.height?.toFixed(3) || '—'} · Drag / arrows / type: ${bevelModal.activeDimension} · H switches · Enter apply / Esc cancel`
         : `BEVEL · ${bevelModal.seedEdgeIds.length} edge(s) · ${bevelModal.segments} segment(s) · Profile ${bevelModal.profile.toFixed(2)} · Amount ${bevelModal.amount.toFixed(2)} · Drag / arrows: width · +/-: segments · [ ]: profile · Enter apply / Esc cancel`;
       pad.hidden=!capabilities.tier.includes('Mobile');
       pad.classList.remove('loop-cut-mode','bevel-mode');
       pad.classList.add('bevel-mode');
-      padTitle.textContent=faceRegion?'FACE BEVEL AMOUNT · 0.01–0.95':'BEVEL AMOUNT · 0–0.95';
+      padTitle.textContent=faceRegion?`FACE BEVEL ${bevelModal.activeDimension.toUpperCase()} · 0.01–0.95`:'BEVEL WIDTH · 0.01–0.95';
       axisButtons.forEach(button=>button.hidden=true);
-      $('#pad-value').textContent=bevelModal.numeric || bevelModal.amount.toFixed(2);
+      $('#pad-value').textContent=bevelModal.numeric || (faceRegion && bevelModal.activeDimension==='height' ? bevelModal.heightAmount : bevelModal.amount).toFixed(2);
       $('#pad-count-row').hidden=true;
       $('#pad-bevel-segments-row').hidden=false;
       $('#pad-bevel-profile-row').hidden=false;
+      $('#pad-bevel-height-row').hidden=!faceRegion;
+      $('#pad-bevel-dimension-toggle').hidden=!faceRegion;
+      $('#pad-bevel-height').textContent=bevelModal.heightAmount.toFixed(2);
+      $('#pad-bevel-dimension-toggle').textContent=`EDIT ${bevelModal.activeDimension==='width'?'HEIGHT':'WIDTH'}`;
       $('#pad-bevel-segments').textContent=String(bevelModal.segments);
       $('#pad-bevel-profile').textContent=bevelModal.profile.toFixed(2);
       return;
@@ -656,12 +672,16 @@ ui = {
       $('#pad-cuts').textContent=String(loopCutModal.cuts);
       $('#pad-bevel-segments-row').hidden=true;
       $('#pad-bevel-profile-row').hidden=true;
+      $('#pad-bevel-height-row').hidden=true;
+      $('#pad-bevel-dimension-toggle').hidden=true;
       return;
     }
     pad.classList.remove('loop-cut-mode','bevel-mode','face-operation-mode');
     $('#pad-count-row').hidden=true;
     $('#pad-bevel-segments-row').hidden=true;
     $('#pad-bevel-profile-row').hidden=true;
+    $('#pad-bevel-height-row').hidden=true;
+    $('#pad-bevel-dimension-toggle').hidden=true;
     padTitle.textContent='TRANSFORM VALUE';
     axisButtons.forEach(button=>button.hidden=false);
     negativeKey.hidden=false;
@@ -746,6 +766,9 @@ $('#numeric-pad').addEventListener('click',async event=>{
     if(segmentButton){await run('mesh.bevel_segments',{delta:Number(segmentButton.dataset.bevelSegments)});return;}
     const profileButton=event.target.closest('button[data-bevel-profile]');
     if(profileButton){await run('mesh.bevel_profile',{delta:Number(profileButton.dataset.bevelProfile)});return;}
+    const heightButton=event.target.closest('button[data-bevel-height]');
+    if(heightButton){await run('mesh.bevel_height',{delta:Number(heightButton.dataset.bevelHeight)});return;}
+    if(event.target.closest('#pad-bevel-dimension-toggle')){await run('mesh.bevel_dimension_toggle');return;}
     const bevelKey=event.target.closest('button[data-key]');if(!bevelKey)return;const key=bevelKey.dataset.key;
     if(key==='enter'){await run('mesh.bevel_confirm');return;}
     if(key==='escape'){await run('mesh.bevel_cancel');return;}

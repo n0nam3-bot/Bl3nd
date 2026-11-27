@@ -18,6 +18,8 @@ export class BevelModal {
     this.active = false;
     this.mode = 'edge';
     this.amount = 0.25;
+    this.heightAmount = 0.25;
+    this.activeDimension = 'width';
     this.segments = 1;
     this.profile = 0.5;
     this.numeric = '';
@@ -31,9 +33,7 @@ export class BevelModal {
   }
 
   previewStatus() {
-    if (this.mode === 'face-region') {
-      return `Face Bevel · ${this.lastResult?.selectedFaces || this.seedFaceIds.length} face(s) · ${this.lastResult?.reflexCorners || 0} reflex · ${this.segments} segment(s) · profile ${this.profile.toFixed(2)} · amount ${this.amount.toFixed(2)} · width ${this.lastResult?.width?.toFixed(3) || '—'} · Enter apply / Esc cancel`;
-    }
+    if (this.mode === 'face-region') return this.faceStatusText();
     return `Bevel · ${this.segments} segment(s) · profile ${this.profile.toFixed(2)}${this.profileSafetyNote()} · amount ${this.amount.toFixed(2)} · width ${this.lastResult?.width?.toFixed(3) || '—'} · Enter apply / Esc cancel`;
   }
 
@@ -67,12 +67,14 @@ export class BevelModal {
       ? { x: pointer.x, y: pointer.y } : null;
     this.startAmount = 0.25;
     this.amount = this.startAmount;
+    this.heightAmount = this.startAmount;
+    this.activeDimension = 'width';
     this.segments = 1;
     this.profile = 0.5;
     this.numeric = '';
     this.lastError = '';
 
-    const preview = this.buildPreview(this.amount, this.segments, this.profile);
+    const preview = this.buildPreview(this.amount, this.segments, this.profile, this.heightAmount);
     if (!preview.result?.changed) {
       this.lastError = preview.result?.reason || 'This edge neighborhood is not supported.';
       this.clear();
@@ -82,18 +84,23 @@ export class BevelModal {
     this.applyPreview(preview.hem);
     this.active = true;
     this.status?.(this.mode === 'face-region'
-      ? `FACE BEVEL · ${this.lastResult.selectedFaces} face(s) · ${this.lastResult.reflexCorners || 0} reflex · ${this.segments} segment(s) · profile ${this.profile.toFixed(2)} · width ${this.lastResult.width.toFixed(3)} · drag / type amount · +/- segments · [ ] profile · Enter apply · Esc cancel`
+      ? this.faceStatusText()
       : `BEVEL · ${this.segments} segment(s) · profile ${this.profile.toFixed(2)}${this.profileSafetyNote()} · drag width · +/- segments · [ ] profile · Enter apply · Esc cancel`);
     this.onChange?.();
     return true;
   }
 
-  buildPreview(amount, segments = this.segments, profile = this.profile) {
+  faceStatusText() {
+    const result = this.lastResult || {};
+    return `FACE BEVEL · ${result.selectedFaces || this.seedFaceIds.length} face(s) · ${result.reflexCorners || 0} reflex · ${this.segments} segment(s) · profile ${this.profile.toFixed(2)} · width ${Number(result.width || 0).toFixed(3)} · height ${Number(result.height || 0).toFixed(3)} · H switches width/height · Enter apply / Esc cancel`;
+  }
+
+  buildPreview(amount, segments = this.segments, profile = this.profile, heightAmount = this.heightAmount) {
     const hem = new HalfEdgeMesh(this.basePositions, this.baseFaces);
     if (this.mode === 'face-region') {
       hem.setSelectionMode('face');
       hem.faceSelection = new Set(this.seedFaceIds);
-      return { hem, result: hem.bevelSelectedFaceRegion({ amount, segments, profile }) };
+      return { hem, result: hem.bevelSelectedFaceRegion({ amount, heightAmount, segments, profile }) };
     }
     hem.setSelectionMode('edge');
     hem.edgeSelection = new Set(this.seedEdgeIds);
@@ -109,7 +116,7 @@ export class BevelModal {
   setAmount(value, { preserveNumeric = false } = {}) {
     if (!this.active || !Number.isFinite(value)) return false;
     const next = clamp(value, 0.01, 0.95);
-    const preview = this.buildPreview(next, this.segments, this.profile);
+    const preview = this.buildPreview(next, this.segments, this.profile, this.heightAmount);
     if (!preview.result?.changed) {
       this.lastError = preview.result?.reason || 'This bevel amount is not supported.';
       this.status?.(`Bevel amount rejected · ${this.lastError}`);
@@ -125,10 +132,45 @@ export class BevelModal {
     return true;
   }
 
+  setHeightAmount(value, { preserveNumeric = false } = {}) {
+    if (!this.active || this.mode !== 'face-region' || !Number.isFinite(value)) return false;
+    const next = clamp(value, 0.01, 0.95);
+    const preview = this.buildPreview(this.amount, this.segments, this.profile, next);
+    if (!preview.result?.changed) {
+      this.lastError = preview.result?.reason || 'This bevel height is not supported.';
+      this.status?.(`Face Bevel height rejected · ${this.lastError}`);
+      return false;
+    }
+    this.heightAmount = next;
+    if (!preserveNumeric) this.numeric = '';
+    this.lastResult = preview.result;
+    this.lastError = '';
+    this.applyPreview(preview.hem);
+    this.status?.(this.faceStatusText());
+    this.onChange?.();
+    return true;
+  }
+
+  setActiveDimension(dimension) {
+    if (!this.active || this.mode !== 'face-region' || !['width', 'height'].includes(dimension)) return false;
+    if (this.activeDimension === dimension) return true;
+    this.activeDimension = dimension;
+    this.numeric = '';
+    // Start a fresh pointer anchor when the drag target changes.
+    this.startPointer = null;
+    this.onChange?.();
+    this.status?.(this.faceStatusText());
+    return true;
+  }
+
+  toggleActiveDimension() {
+    return this.setActiveDimension(this.activeDimension === 'width' ? 'height' : 'width');
+  }
+
   setSegments(value) {
     if (!this.active || !Number.isFinite(value)) return false;
     const next = Math.round(clamp(value, 1, 8));
-    const preview = this.buildPreview(this.amount, next, this.profile);
+    const preview = this.buildPreview(this.amount, next, this.profile, this.heightAmount);
     if (!preview.result?.changed) {
       this.lastError = preview.result?.reason || 'This segment count is not supported.';
       this.status?.(`Bevel segments rejected · ${this.lastError}`);
@@ -151,7 +193,7 @@ export class BevelModal {
   setProfile(value) {
     if (!this.active || !Number.isFinite(value)) return false;
     const next = Math.round(clamp(value, 0, 1) * 100) / 100;
-    const preview = this.buildPreview(this.amount, this.segments, next);
+    const preview = this.buildPreview(this.amount, this.segments, next, this.heightAmount);
     if (!preview.result?.changed) {
       this.lastError = preview.result?.reason || 'This profile is not supported.';
       this.status?.(`Bevel profile rejected · ${this.lastError}`);
@@ -175,17 +217,23 @@ export class BevelModal {
     if (!this.active || !point) return;
     if (!this.startPointer) {
       this.startPointer = { x: Number(point.x) || 0, y: Number(point.y) || 0 };
-      this.startAmount = this.amount;
+      this.startAmount = this.mode === 'face-region' && this.activeDimension === 'height'
+        ? this.heightAmount : this.amount;
       return;
     }
     const rect = this.viewport?.renderer?.domElement?.getBoundingClientRect?.();
     const width = Math.max(1, rect?.width || 1);
     const delta = (Number(point.x) - this.startPointer.x) / width;
-    this.setAmount(this.startAmount + delta * (fine ? 0.12 : 0.8));
+    const next = this.startAmount + delta * (fine ? 0.12 : 0.8);
+    if (this.mode === 'face-region' && this.activeDimension === 'height') this.setHeightAmount(next);
+    else this.setAmount(next);
   }
 
   nudge(direction, fine = false) {
     if (!this.active) return false;
+    if (this.mode === 'face-region' && this.activeDimension === 'height') {
+      return this.setHeightAmount(this.heightAmount + Math.sign(direction) * (fine ? 0.001 : 0.01));
+    }
     return this.setAmount(this.amount + Math.sign(direction) * (fine ? 0.001 : 0.01));
   }
 
@@ -197,9 +245,17 @@ export class BevelModal {
     else return false;
     if (!this.numeric || this.numeric === '.') return true;
     const parsed = Number(this.numeric);
-    if (parsed >= 0.01 && parsed <= 0.95) return this.setAmount(parsed, { preserveNumeric: true });
-    if (parsed > 0.95 || (parsed > 0 && parsed < 0.01)) this.numeric = this.amount.toFixed(2);
-    this.lastError = 'Bevel amount must be between 0.01 and 0.95.';
+    if (parsed >= 0.01 && parsed <= 0.95) {
+      return this.mode === 'face-region' && this.activeDimension === 'height'
+        ? this.setHeightAmount(parsed, { preserveNumeric: true })
+        : this.setAmount(parsed, { preserveNumeric: true });
+    }
+    if (parsed > 0.95 || (parsed > 0 && parsed < 0.01)) {
+      this.numeric = (this.mode === 'face-region' && this.activeDimension === 'height' ? this.heightAmount : this.amount).toFixed(2);
+    }
+    this.lastError = this.mode === 'face-region' && this.activeDimension === 'height'
+      ? 'Face Bevel height must be between 0.01 and 0.95.'
+      : 'Bevel amount must be between 0.01 and 0.95.';
     this.status?.(this.lastError);
     this.onChange?.();
     return false;
@@ -213,6 +269,7 @@ export class BevelModal {
     const result = this.lastResult ? {
       ...this.lastResult,
       amount: this.amount,
+      heightAmount: this.heightAmount,
       segments: this.segments,
       profile: this.profile
     } : null;
@@ -236,6 +293,8 @@ export class BevelModal {
     this.active = false;
     this.mode = 'edge';
     this.amount = 0.25;
+    this.heightAmount = 0.25;
+    this.activeDimension = 'width';
     this.startAmount = 0.25;
     this.segments = 1;
     this.profile = 0.5;

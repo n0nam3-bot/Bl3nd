@@ -758,10 +758,13 @@ export class HalfEdgeMesh {
    * inward offset remains inside/simple and every miter and wall validates.
    * Excessive miters, folded walls, holes and unsupported topology reject.
    */
-  bevelSelectedFaceRegion({ amount = 0.25, segments = 1, profile = 0.5 } = {}) {
+  bevelSelectedFaceRegion({ amount = 0.25, heightAmount = amount, segments = 1, profile = 0.5 } = {}) {
     const fail = reason => ({ changed: false, reason });
     if (!Number.isFinite(amount) || amount < 0.01 || amount > 0.95) {
       return fail('Face Bevel amount must be between 0.01 and 0.95.');
+    }
+    if (!Number.isFinite(heightAmount) || heightAmount < 0.01 || heightAmount > 0.95) {
+      return fail('Face Bevel height must be between 0.01 and 0.95.');
     }
     if (!Number.isInteger(segments) || segments < 1 || segments > 8) {
       return fail('Face Bevel supports between one and eight segments.');
@@ -861,7 +864,7 @@ export class HalfEdgeMesh {
       }
     }
 
-    const height = width;
+    const height = heightAmount * shortestEdge * 0.45;
     const selectedSet = new Set(selected);
     const used = [...new Set(selected.flatMap(faceId => this.faces[faceId]))].sort((a, b) => a - b);
     const boundaryIndexByVertex = new Map(boundary.map((vertexId, index) => [vertexId, index]));
@@ -936,7 +939,15 @@ export class HalfEdgeMesh {
     }
 
     const candidate = new HalfEdgeMesh(nextPositions, nextFaces);
-    const report = candidate.validateTopology();
+    // Selected-region interior source vertices are replaced by their raised
+    // copies. Compact only when those old interior points are now orphaned;
+    // this fixes multi-row/multi-column grids without reordering an ordinary
+    // single-face candidate that already has no isolated vertices.
+    let report = candidate.validateTopology();
+    if (report.counts.isolatedVertices) {
+      candidate.compact();
+      report = candidate.validateTopology();
+    }
     if (!report.valid) {
       return fail(`Face Bevel candidate failed topology validation (${report.issueCount} issue(s)); the source mesh was not changed.`);
     }
@@ -974,6 +985,7 @@ export class HalfEdgeMesh {
       changed: true,
       operation: 'face-region',
       amount,
+      heightAmount,
       width,
       height,
       normal,

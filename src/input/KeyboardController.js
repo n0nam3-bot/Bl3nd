@@ -21,6 +21,7 @@ export class KeyboardController {
     if (this.bevelModal?.active) {
       if (key==='escape') { event.preventDefault(); await this.dispatch('mesh.bevel_cancel'); return; }
       if (key==='enter') { event.preventDefault(); await this.dispatch('mesh.bevel_confirm'); return; }
+      if (key==='h' && this.bevelModal.mode==='face-region') { event.preventDefault(); await this.dispatch('mesh.bevel_dimension_toggle'); return; }
       if (key==='arrowleft' || key==='arrowdown') { event.preventDefault(); await this.dispatch('mesh.bevel_nudge',{direction:-1,fine:event.shiftKey}); return; }
       if (key==='arrowright' || key==='arrowup') { event.preventDefault(); await this.dispatch('mesh.bevel_nudge',{direction:1,fine:event.shiftKey}); return; }
       if (key==='+' || key==='=') { event.preventDefault(); await this.dispatch('mesh.bevel_segments',{delta:1}); return; }
