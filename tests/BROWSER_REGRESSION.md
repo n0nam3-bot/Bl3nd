@@ -8,19 +8,22 @@ Open the deployed app only after the latest Pages workflow succeeds:
 
 `https://n0nam3-bot.github.io/Bl3nd/`
 
-The last verified baseline before this update was `main` commit `a9de6fb0ce52d94e1c45f606840d386f5944e63f`, v0.1.26, Pages workflow run #34. After uploading this v0.1.27 package, reload the app and confirm the v25 service-worker cache is active before retesting.
+Build under desktop test: v0.1.27, `main` commit `34388f2edf4c243aacdc4bd7a934ca3775aa6bde`, Pages workflow run #35. Reload the app and allow the v25 service-worker cache to activate before testing.
 
 ## Desktop — Chrome or Edge
 
 1. Open the app in a normal browser window. Wait for the startup overlay to disappear. Confirm the 3D canvas is visible, the footer says `Ready` (or an appropriate object status), and no startup error overlay remains.
 2. Drag with the left mouse button to orbit. Right-drag to pan. Scroll to zoom. Confirm the camera responds in the direction of the pointer and a stationary click still selects rather than orbiting.
-3. Press `Tab` to enter Edit Mode and `2` for Edge Select. Select a connected three-edge path on the starter cube. Confirm selected edges are visibly highlighted and the Bevel action is available.
-4. Press `Ctrl+B`. Drag horizontally and confirm the preview width changes continuously. Confirm camera orbit is paused while the modal Bevel operation is active.
-5. Press `+` and `-` to change segment count. Press `]` and `[` to change profile. Confirm the readout reflects the current values and the preview updates without leaving gaps or losing the miter joins.
-6. Press `Esc`. Confirm the exact original cube topology and selection return. Confirm no Bevel undo step was created.
-7. Start Bevel again, adjust width/segments/profile, and press `Enter`. Confirm the preview becomes the committed mesh and the status reports Bevel applied.
-8. Press the visible Undo control or `Ctrl+Z`. Confirm the mesh returns to its pre-Bevel state. Redo with the visible control or `Ctrl+Shift+Z` and confirm the committed result returns.
-9. Repeat the modal adjustment with a numeric width and arrow-key nudges. Confirm invalid/unsupported values do not mutate the source mesh.
+3. Press `Tab` to enter Edit Mode and `2` for Edge Select. Click one edge, then use Shift-click to add a neighboring edge. Confirm the overlay and selection count update.
+4. Open `Select ▾` and test all three region tools: (a) Circle click/short drag centered on a visible corner, (b) a narrow Box crossing an edge at a point between the old fixed samples, and (c) a Lasso around an L-shaped two-edge corner. Both visible incident edges should highlight when they intersect the region. Repeat Box in the reverse drag direction. Confirm hidden back-side edges are not selected.
+5. Select exactly two adjacent edges at one supported corner and press `Ctrl+B`. Confirm the corner miter preview opens. Drag horizontally and confirm width changes continuously while camera orbit stays paused.
+6. Press `+` and `-` to change segment count. Press `]` and `[` to change profile. Confirm the readout and mesh preview update without gaps or lost miter joins.
+7. Press `Esc`. Confirm the exact original cube topology and selection return, with no Bevel undo entry. Start Bevel again, adjust width/segments/profile and press `Enter`; confirm one committed operation.
+8. Undo and redo with the visible controls or `Ctrl+Z` / `Ctrl+Shift+Z`. Confirm both mesh states restore correctly.
+9. Create a three-edge branch around a single vertex using a region gesture. Bevel must reject it and leave source positions/faces unchanged. Also confirm a cycle or unsupported selection rejects safely.
+10. Repeat Bevel using numeric width and arrow-key nudges. Confirm invalid/unsupported values do not mutate the source mesh.
+
+Record each step as Pass / Fail / Not tested. If a region-tool result is unexpected, note the tool, drag direction, shape, viewport orientation and whether the missed edge was visible.
 
 ## Android — Chrome
 
@@ -38,7 +41,13 @@ The last verified baseline before this update was `main` commit `a9de6fb0ce52d94
 - Step 2 one-finger orbit and two-finger pan/zoom: **Pass**.
 - Step 3 region selection: **Partial**. A straight edge could be selected; corner-dot and multi-edge region selection did not work as expected.
 - Steps 4–7 Bevel controls, cancel, apply, undo/redo and restored viewport navigation: **Pass**.
-- Device model, OS and exact browser/version were not supplied. Retest Step 3 after the v0.1.27 deployment; desktop browser regression is still untested.
+
+## Mobile retest — deployed v0.1.27 (user-reported)
+
+- Region selection correction: **Pass**. The user confirmed corner and multi-edge selection now work on mobile after the v0.1.27 deployment.
+- The earlier v0.1.26 startup, navigation, Bevel controls, cancel, apply and undo/redo passes were not changed by this selection-only update and remain the recorded results.
+- Three-edge branch rejection was requested as an additional safety check but was not explicitly confirmed in the user's report; keep it **Not tested** until checked.
+- Device model, OS and exact browser/version were not supplied. Desktop Chrome/Edge regression remains untested.
 
 ## Record results
 
