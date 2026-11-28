@@ -480,3 +480,20 @@ Full Blender keymap parity is not claimed by this build. Android touch acceptanc
 
 ### Desktop — Chrome / Edge (deferred)
 - Repeat each Move/Scale plane square with a mouse and compare with Shift+X/Y/Z keyboard plane constraints. Verify plane hit targets do not steal neighboring axis/ring/center handle clicks and verify numeric entry, snapping, Enter/Esc, Undo/Redo and viewport navigation.
+
+## v0.1.75 — Scene Explorer object and face selection
+
+### Android — Chrome / Samsung Internet
+- Tap **List** on the bottom actionbar. Confirm the side panel opens on the List tab and shows the current scene object(s), active/selected highlight and face count.
+- Add a second mesh. Expand each object row and confirm its **Faces** group lists numbered faces. Tap the second object name and confirm the active object changes without entering Edit Mode.
+- Tap a face row while in Object Mode. Confirm the selected object becomes active, Edit Mode opens, Face selection is active and only the tapped face is selected.
+- With Add to Selection enabled in **Select ▾**, tap another face row and confirm it adds/toggles that face without clearing the previous selected face. Disable Add to Selection and confirm a face tap replaces the selection.
+- Search an object by name, then search `Face 003` (or another face number). Confirm matching faces remain nested under their object and no unrelated face IDs are shown. Clear search and confirm the full list returns.
+- While in Edit Mode, select a face under a different object. Confirm Bl3nd returns to Object Mode, activates the new object, re-enters Edit Mode and selects the requested face. Confirm normal viewport face picking and selection overlays remain synchronized.
+- Create or import a mesh with more than 250 faces. Confirm the tree renders a bounded first page/list and displays the search hint; search for a higher numbered face and confirm it can still be selected.
+- Confirm Object Mode Multi selection from List adds/removes objects, and leaving the List drawer does not clear object or face selection.
+
+### Desktop — Chrome / Edge
+- Use the List tab to select objects; verify Shift-click adds/removes objects and active/secondary highlights match the viewport.
+- Expand an object and select individual faces. Verify a face click from Object Mode enters Edit Mode; Shift-click in Edit Mode adds/removes faces; switching to a different object's face returns through Object Mode safely.
+- Verify name/face-number search, clear-search recovery, scroll position, empty-scene state and the 250-row safety limit. Confirm the existing Scene, Modifiers and System tabs still work.

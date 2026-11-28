@@ -1,13 +1,13 @@
-const SHELL_CACHE = 'bl3nd-shell-v71';
-const RUNTIME_CACHE = 'bl3nd-runtime-v71';
+const SHELL_CACHE = 'bl3nd-shell-v72';
+const RUNTIME_CACHE = 'bl3nd-runtime-v72';
 const APP_SHELL = [
   './', './index.html', './manifest.json', './src/styles.css',
   './src/main.js', './src/core/DeviceCapabilities.js', './src/core/CommandBus.js', './src/core/ObjectSelection.js',
-  './src/core/HalfEdgeMesh.js', './src/core/FaceRegionBoundary.js', './src/core/SelectionView.js', './src/core/SceneDocument.js', './src/core/UndoManager.js', './src/core/ScreenRegion.js', './src/core/TransformOrientation.js', './src/core/TransformReadout.js', './src/core/TransformSnap.js', './src/core/TransformGuideGeometry.js', './src/core/ViewportNavigation.js', './src/core/CameraProjection.js', './src/core/ProjectionToggle.js', './src/core/TransformPivot.js', './src/core/ProportionalEditing.js', './src/core/SelectionAddMode.js', './src/core/TouchSelectionInput.js', './src/core/TransformGizmoInput.js', './src/core/SelectedFaceRegions.js', './src/core/WarpedQuadTriangulation.js',
+  './src/core/HalfEdgeMesh.js', './src/core/FaceRegionBoundary.js', './src/core/SelectionView.js', './src/core/SceneDocument.js', './src/core/UndoManager.js', './src/core/ScreenRegion.js', './src/core/TransformOrientation.js', './src/core/TransformReadout.js', './src/core/TransformSnap.js', './src/core/TransformGuideGeometry.js', './src/core/ViewportNavigation.js', './src/core/CameraProjection.js', './src/core/ProjectionToggle.js', './src/core/TransformPivot.js', './src/core/ProportionalEditing.js', './src/core/SelectionAddMode.js', './src/core/TouchSelectionInput.js', './src/core/TransformGizmoInput.js', './src/core/SceneExplorerModel.js', './src/core/SelectedFaceRegions.js', './src/core/WarpedQuadTriangulation.js',
   './src/operators/ModalTransform.js', './src/operators/LoopCutModal.js', './src/operators/BevelModal.js', './src/operators/FaceOperationModal.js', './src/operators/MeshOperators.js',
   './src/input/KeyboardController.js', './src/input/TouchController.js', './src/input/SelectionGestureController.js',
   './src/io/ModelIO.js', './src/operators/SelectionOperators.js', './src/modifiers/ModifierStack.js',
-  './src/ui/Viewport.js', './src/ui/EditModeOverlay.js', './src/ui/RadialPieMenu.js', './src/ui/CommandSearch.js', './src/workers/modifier.worker.js', './assets/icon.svg', './assets/icon-192.png', './assets/icon-512.png'
+  './src/ui/Viewport.js', './src/ui/SceneExplorer.js', './src/ui/EditModeOverlay.js', './src/ui/RadialPieMenu.js', './src/ui/CommandSearch.js', './src/workers/modifier.worker.js', './assets/icon.svg', './assets/icon-192.png', './assets/icon-512.png'
 ];
 
 self.addEventListener('install', event => {

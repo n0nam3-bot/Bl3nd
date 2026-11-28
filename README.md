@@ -21,6 +21,13 @@ The application does not require a build command. Open the GitHub Pages URL afte
 - Search commands by name or related terms. Results follow Object/Edit Mode context and run through the existing CommandBus; supported actions include primitives, transforms, views, pivots, selection tools, mesh operations and modifiers.
 - Use `↑` / `↓` to choose, `Enter` to run and `Esc` to close. Typing in inputs/selects, radial-menu navigation, modal modeling input and browser-modified shortcuts retain priority. The catalogue is curated, so newly registered commands need an explicit search entry.
 
+### Scene Explorer
+
+- Open the **List** tab in the right sidebar on desktop, or tap **List** on the mobile bottom bar. The Explorer shows every scene object with its name, active/selected state and face count; use the arrow to expand an object and its Faces list.
+- Tap an object name to select it. Desktop `Shift`+click and the mobile **Multi** toggle add/remove objects from the list selection.
+- Expand an object's **Faces** group to see numbered faces and their vertex counts. Selecting a face from Object Mode automatically activates that mesh and enters Edit Mode; selecting another face in Edit Mode updates the face selection. Desktop `Shift`+click or touch **Add to Selection** toggles additional faces.
+- Use the search field for object names or face numbers (for example, `Face 003`). The Explorer is a selection surface only; geometry and transforms continue through the existing commands and undo paths.
+
 ### Object Mode multi-selection
 
 - Desktop: click an object to replace the selection; `Shift`+click adds an object, and `Shift`+clicking a selected object removes it. The active object is the most recently added object and is shown with the existing active highlight; other selected objects use a secondary highlight. Clicking empty space clears the selection unless Shift is held.

@@ -20,6 +20,7 @@ import { KeyboardController } from './input/KeyboardController.js';
 import { TouchController } from './input/TouchController.js';
 import { SelectionGestureController } from './input/SelectionGestureController.js';
 import { RadialPieMenu } from './ui/RadialPieMenu.js';
+import { SceneExplorer } from './ui/SceneExplorer.js';
 
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
@@ -97,6 +98,7 @@ syncProjectionUI();
 loadingProgress(43, 'Viewport created · preparing the scene document…');
 
 let ui;
+let sceneExplorer = null;
 let touchController = null;
 const undoManager = new UndoManager({
   maxEntries: capabilities.maxUndoEntries,
@@ -131,6 +133,14 @@ async function run(name, payload = {}) {
   try { return await commandBus.dispatch(name, { ...payload, document: sceneDocument }); }
   catch (error) { console.error(`[Bl3nd command: ${name}]`, error); notify(error?.message || String(error), 'error'); status(`Command failed · ${error?.message || name}`); return false; }
 }
+
+sceneExplorer = new SceneExplorer($('#panel-explorer'), {
+  getDocument: () => sceneDocument,
+  dispatch: (name, payload) => run(name, payload),
+  isAdditive: kind => kind === 'object'
+    ? Boolean(touchController?.objectSelectionAddMode?.enabled)
+    : Boolean(touchController?.selectionAddMode?.enabled)
+});
 
 async function reapplyModifiers() {
   for (const mesh of sceneDocument.objects) if (mesh.userData.modifiers?.length) {
@@ -202,6 +212,30 @@ function registerCommands() {
       status(`${count} object${count === 1 ? '' : 's'} selected${activeName ? ` · Active: ${activeName}` : ''}`);
     }
     refresh();
+  }, { recordUndo: false });
+  commandBus.register('explorer.select_object', ({ object, additive = false }) => {
+    if (!sceneDocument.objects.includes(object)) return false;
+    if (sceneDocument.mode === 'edit') sceneDocument.setMode('object');
+    sceneDocument.setActive(object, { additive, toggle: additive });
+    touchController?.syncObjectSelectionButton();
+    refresh();
+    return true;
+  }, { recordUndo: false });
+  commandBus.register('explorer.select_face', ({ object, faceId, additive = false }) => {
+    if (!sceneDocument.objects.includes(object) || !Number.isInteger(faceId) || !object.userData?.hem?.faces?.[faceId]) return false;
+    const wasEditingObject = sceneDocument.mode === 'edit' && sceneDocument.activeObject === object;
+    if (!wasEditingObject) {
+      if (sceneDocument.mode === 'edit') sceneDocument.setMode('object');
+      sceneDocument.setActive(object);
+      sceneDocument.setMode('edit');
+    }
+    const hem = object.userData.hem;
+    sceneDocument.selectionMode = 'face';
+    hem.setSelectionMode('face');
+    if (!wasEditingObject) hem.clearSelection();
+    hem.selectFace(faceId, wasEditingObject && additive);
+    refresh();
+    return true;
   }, { recordUndo: false });
   commandBus.register('mesh.select_from_hit', ({ mesh, faceId, event = null }) => {
     if (!mesh?.userData?.hem || faceId < 0) return false;
@@ -794,7 +828,7 @@ function refresh() {
     input.value=mesh ? (kind==='rotation'?THREE.MathUtils.radToDeg(mesh.rotation[axis]):mesh[kind][axis]).toFixed(2) : '';
     input.disabled=!mesh;
   });
-  refreshCursor(); refreshModifiers(); ui?.refreshModal(); ui?.refreshSelectionTool();
+  refreshCursor(); refreshModifiers(); sceneExplorer?.refresh(); ui?.refreshModal(); ui?.refreshSelectionTool();
 }
 
 const radialPieMenu = new RadialPieMenu($('#pie-menu'));
@@ -1115,7 +1149,7 @@ $('#mobile-proportional-radius').addEventListener('input',event=>{
   run('transform.proportional_settings',{settings:{radius}});
 });
 $('#mobile-edit').addEventListener('click',()=>run('mode.toggle_edit'));
-$('#mobile-more').addEventListener('click',()=>$('.properties-panel').classList.toggle('mobile-open'));
+$('#mobile-more').addEventListener('click',()=>{ const panel=$('.properties-panel'); if(panel.classList.contains('mobile-open')){panel.classList.remove('mobile-open');return;} $('[data-panel=\"explorer\"]')?.click(); panel.classList.add('mobile-open'); });
 $$('[data-tool]').forEach(button=>button.addEventListener('click',()=>{
   $$('.tool-button').forEach(item=>item.classList.remove('selected'));button.classList.add('selected');
   const tool=button.dataset.tool;

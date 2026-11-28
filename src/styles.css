@@ -101,3 +101,44 @@ body.transform-modal-active .topbar,body.transform-modal-active .tool-rail,body.
 
 @media(max-width:650px){.pie-menu{width:min(316px,calc(100% - 18px),calc(100dvh - 116px))}.pie-menu button[data-slot]{width:26%;min-height:40px;font-size:9px}.pie-menu-core{font-size:8px}.pie-center-action{font-size:7px!important}}
 @media(max-height:500px){.pie-menu{width:min(292px,calc(100% - 18px),calc(100vh - 70px))}.pie-menu button[data-slot]{min-height:36px}}
+
+/* Compact hierarchical object/face picker shared by desktop and touch layouts. */
+.scene-explorer-panel{display:flex;flex-direction:column;gap:9px;min-height:0}
+.scene-explorer-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;color:#d5dce5;font-size:9px;font-weight:850;letter-spacing:1px}
+.scene-explorer-heading b{font:8px ui-monospace,SFMono-Regular,Consolas,monospace;color:#9eabb9;letter-spacing:.3px;white-space:nowrap}
+.scene-explorer-search-label{margin:2px 0 -5px;color:#929eac;font-size:8px;font-weight:750;letter-spacing:.8px}
+.scene-explorer-search{width:100%;height:34px;padding:0 10px;background:#171b21;border:1px solid #444e5c;border-radius:7px;color:#eef2f7;font-size:11px;outline:none}
+.scene-explorer-search::placeholder{color:#707c8b}
+.scene-explorer-search:focus{border-color:#a8754d;box-shadow:0 0 0 2px #ed9b5220}
+.scene-explorer-tree{display:flex;flex-direction:column;gap:2px;min-height:100px;max-height:clamp(190px,42vh,420px);overflow:auto;overscroll-behavior:contain;padding:4px;background:#191d24;border:1px solid #343d49;border-radius:8px;scrollbar-width:thin;scrollbar-color:#515c6b transparent}
+.scene-explorer-row{display:flex;align-items:center;gap:3px;min-width:0;min-height:32px}
+.scene-explorer-expand{width:25px;min-width:25px;height:29px;padding:0;border:0;background:transparent;color:#aab5c3;font-size:17px;line-height:1}
+.scene-explorer-expand:hover{background:#303945;color:#fff}
+.scene-explorer-select,.scene-explorer-group,.scene-explorer-face{display:flex;align-items:center;gap:7px;min-width:0;min-height:30px;width:100%;padding:0 7px;border:1px solid transparent;border-radius:6px;background:transparent;color:#d5dce5;text-align:left;font-size:10px;touch-action:manipulation}
+.scene-explorer-select:hover,.scene-explorer-group:hover,.scene-explorer-face:hover{background:#2b323d;border-color:#424d5b}
+.scene-explorer-object.is-selected{background:#263443;border-color:#415b72}
+.scene-explorer-object.is-active{background:#3b3027;border-color:#88603d;color:#ffd0a7}
+.scene-explorer-icon{color:#e5ad79;font-size:12px;flex:none}
+.scene-explorer-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.scene-explorer-meta{flex:none;color:#8f9baa;font:8px ui-monospace,SFMono-Regular,Consolas,monospace;white-space:nowrap}
+.scene-explorer-child-row{padding-left:17px}
+.scene-explorer-group{color:#b7c2cf;font-size:9px}
+.scene-explorer-group span:nth-child(1){color:#e0b27e;font-size:12px}
+.scene-explorer-face{min-height:29px;padding-left:42px;color:#bfc8d4;font-size:9px}
+.scene-explorer-face.is-selected{background:#3c332b;border-color:#806044;color:#ffcea4}
+.scene-explorer-face-indent{display:none}
+.scene-explorer-face-marker{width:10px;flex:none;color:#717e8e;font-size:9px}
+.scene-explorer-face.is-selected .scene-explorer-face-marker{color:#f4ad70}
+.scene-explorer-empty{padding:20px 9px;text-align:center;color:#8d98a6;font-size:10px;line-height:1.5}
+.scene-explorer-hint{margin:0;color:#84909f;font-size:9px;line-height:1.4}
+.panel-tabs{min-width:0}
+.panel-tab{min-width:0;padding:0 2px;font-size:10px}
+@media(max-width:650px){
+  .scene-explorer-tree{max-height:min(45vh,380px);min-height:120px}
+  .scene-explorer-select,.scene-explorer-group,.scene-explorer-face{min-height:36px;font-size:11px}
+  .scene-explorer-expand{height:34px;width:29px;min-width:29px;font-size:19px}
+  .scene-explorer-face{padding-left:47px}
+  .panel-tab{font-size:10px}
+}
+
+.scene-explorer-limit{padding:9px 7px;color:#8996a5;font-size:8px;line-height:1.45;text-align:center;border-top:1px solid #303945}

@@ -16,6 +16,7 @@
 
 - **Static runtime:** `index.html` is the root entry. Native ES modules run directly in the browser with a pinned Three.js 0.180.0 import map.
 - **Command bus:** UI, keyboard, and touch inputs should dispatch named commands through `src/core/CommandBus.js`; keep mesh algorithms out of DOM handlers.
+- **Scene Explorer:** `src/ui/SceneExplorer.js` is a UI-only searchable tree over the ordered scene object array and each editable mesh’s face array. Object rows use existing object-selection state; face rows dispatch a CommandBus action that enters Edit Mode for the target object when needed and selects the requested face. Touch Add to Selection / Multi state and desktop Shift-click are reused. `src/core/SceneExplorerModel.js` builds renderer-independent searchable rows; large face lists render the first 250 results and can be narrowed by face number. It does not own topology or selection algorithms.
 - **Command search:** `src/ui/CommandSearch.js` is a UI-only, curated search surface. It filters commands by Object/Edit Mode and dispatches existing CommandBus names; it does not own operator logic. Slash is accepted only outside editable controls, browser-modified shortcuts, radial menus and active modal operations.
 - **Object Mode selection/transforms:** `SceneDocument.selectedObjects` is the authoritative Object Mode selection set; `activeObject` must belong to a non-empty set. Desktop Shift-click and the touch-only bottom-bar Multi toggle share the same additive/toggle selection path. The selected object indices and active index are serialized/restored with scene snapshots. Object Mode G/R/S captures all selected transforms at modal start and applies/cancels/undoes them as one transaction. Median uses the arithmetic mean of object origins, Bounds uses the union of world-space object bounds, Cursor is fixed, and Individual Origins uses one pivot per selected object. Edit Mode intentionally collapses to the active mesh. Local orientation uses the active object as the reference frame; the existing TRS representation still cannot express arbitrary shear from non-uniform world-axis scaling of differently rotated objects.
 - **Half-edge data:** `src/core/HalfEdgeMesh.js` owns editable Vertex, Edge, HalfEdge, and Face connectivity. Import merges adjacent coplanar triangles only when they form one convex boundary; Three.js geometry remains a render cache, not the editable source of truth. Complex and non-manifold inputs are not fully repaired. `src/core/FaceRegionBoundary.js` provides read-only selected-region analysis: connected components, ordered boundary loops, nested hole classification on planar regions, region-facing convex/reflex corners, winding and planarity. Operators use this analysis to build private candidates; the analyzer itself never mutates topology.
@@ -63,6 +64,7 @@
 │   │   ├── TransformGuideGeometry.js # Renderer-independent G/R/S axis/ring guide geometry
 │   │   ├── TransformGizmoInput.js # Safe SVG handle decoding and drag threshold
 │   │   ├── TransformPivot.js # Edit-region and multi-object pivot resolution
+│   │   ├── SceneExplorerModel.js # Searchable scene/object/face tree row model
 │   │   ├── SelectionAddMode.js # Shared Shift/touch additive-selection state
 │   │   ├── TouchSelectionInput.js # Pointer-phase policy for touch additive selection
 │   │   └── UndoManager.js      # OPFS-backed snapshots and memory fallback
@@ -81,6 +83,7 @@
 │   │   └── FaceOperationModal.js # Transactional face Extrude/Inset preview and undo
 │   ├── ui/
 │   │   ├── Viewport.js         # Three.js viewport, navigation, pointer origin and overlay lifecycle
+│   │   ├── SceneExplorer.js    # Searchable object list and expandable face selector
 │   │   ├── EditModeOverlay.js  # Non-destructive vertex/edge/face selection display
 │   │   └── CommandSearch.js    # Context-aware searchable command launcher and focus-safe shortcut
 │   ├── workers/modifier.worker.js # Background modifier evaluation
@@ -106,6 +109,7 @@
 │   ├── TransformReadout.test.js # Live Move amount/destination formatting regressions
 │   ├── TransformSnap.test.js # Global/Local Move/Rotate/Scale snap settings, increments and precision regressions
 │   ├── TransformGuideGeometry.test.js # G/R/S guide and axis-ring geometry regressions
+│   ├── SceneExplorerModel.test.js # Object/face hierarchy and search regressions
 │   ├── TransformGizmoInput.test.js # Gizmo handle and pointer-drag regressions
 │   ├── TransformPivot.test.js # Edit-region and multi-object pivot regressions
 │   ├── SelectedFaceRegions.test.js # Disconnected planar face-region operation regressions
@@ -131,7 +135,8 @@ Status meanings: **Working** = implemented end-to-end in the current foundation;
 |---|---|---|
 | Zero-build static app | Working | Native ES modules, static HTML/CSS, pinned Three.js CDN imports. |
 | Mobile ZIP workflow | Working | ZIP path validation, extraction, cleanup, bot commit; workflow files are excluded. |
-| GitHub Pages deployment | Working after workflow correction | Two-job artifact/deploy pipeline; triggers after successful unpack completion and normal main pushes excluding uploads. The v0.1.72 source package was applied to `main` in commit `e8c6ed33ccc37813b140a584a9281ebd592c812e`; Pages workflow run #80 (`46157753589`) succeeded. The v0.1.73 source package is now applied at `main` commit `25149e00d2710fca3904870a5dfb080be017189e`; Pages workflow run #81 (`46159133223`) succeeded, while its Android drag regression retest remains pending. v0.1.74 adds the Move/Scale plane-square controls; Pages deployment and Android acceptance are pending. |
+| GitHub Pages deployment | Working after workflow correction | Two-job artifact/deploy pipeline; triggers after successful unpack completion and normal main pushes excluding uploads. v0.1.74 is applied at `main` commit `4c166e97d1600cd71ea970cc21d8a36133dbba08`; Pages workflow run #82 (`46161907284`) succeeded and the owner confirmed all three Move/Scale plane handles work on Android. The v0.1.73 blank-area free-drag retest remains unconfirmed. v0.1.75 Scene Explorer package is prepared against that deployed baseline; Pages deployment and Android acceptance are pending. |
+| Scene Explorer | Partial | v0.1.75 adds a searchable List tab with scene-object rows and expandable per-object face lists. Object selection reuses the existing active/multi-selection state; choosing a face enters Edit Mode for that mesh and selects that face. Desktop Shift-click and the existing touch additive-selection toggle are supported. Lists cap rendered face buttons at 250 and search can narrow by face number. Browser acceptance is pending. |
 | Bl3nd branding/PWA | Working | Bl3nd header/title, manifest identity, app icons, service worker cache-version migration. |
 | Startup progress/error UI | Partial | Staged progress and visible exceptions. Starter cube now initializes directly through `SceneDocument`, outside command dispatch and undo snapshot I/O; viewport framing and initial panel refresh are isolated as non-fatal steps. Real-browser verification remains. |
 | Device capabilities | Partial | Detects tier, memory, CPU threads, WebGPU, WebGL2 and OPFS. Tier affects render pixel ratio/history budget; WebGPU is not activated. |
@@ -212,6 +217,7 @@ Status meanings: **Working** = implemented end-to-end in the current foundation;
 - [x] Expose Smooth (default), Linear, Sharp, Root and Sphere proportional falloff curves in synchronized desktop Scene Properties, mobile Prop panel and active transform-pad controls.
 - [x] Add surface-aware proportional falloff fans: preserve topology-distance behavior across smooth joins, split face-selection influence at 55°+ creases, and conservatively block non-manifold edges, disconnected vertex fans, inconsistent winding and unusable face normals.
 - [x] Add Object Mode multi-selection (desktop Shift-click; touch Multi toggle), persist selected object indices/active object, and aggregate G/R/S across the selected group with Median, combined Bounds, Cursor and Individual Origins pivots; keep one undo/cancel transaction and passive guide markers.
+- [x] Add a searchable Scene Explorer List tab with object rows, expandable per-object face lists, direct object selection, face-to-Edit-Mode selection, Shift/touch-additive selection and large-list search/row limits; Android acceptance remains pending.
 - [ ] Complete Blender-like G/R/S gizmo ergonomics: v0.1.71 adds modal axis arrows, rotation rings and center dragging; v0.1.72 makes the overlay pointer-transparent outside explicit handles; v0.1.73 routes blank-area modal drags by their initiating pointer ID; v0.1.74 adds Move/Scale XY/YZ/XZ plane squares. Remaining work includes optional persistent transform-tool selection and Android/desktop acceptance.
 - [x] Implement a transactional Bevel preview for one edge and a guarded multi-edge extension for up to eight pairwise-disjoint neighborhoods.
 - [x] Add a validated two-edge connected Bevel miter at one closed tri-valent shared corner; intersect the shared-face offset lines, create two joined strips and retain one manifold miter edge.
@@ -252,6 +258,15 @@ Status meanings: **Working** = implemented end-to-end in the current foundation;
 
 ## Changelog
 
+### 2026-11-28 — `bl3nd-v0.1.75-scene-explorer-delta.zip` — v0.1.75
+- Added a dedicated **List** tab (the desktop right-sidebar tab and mobile bottom-bar List button) with a searchable Scene Explorer. Object rows display names, active/selected state and face counts; each object can expand to a Faces group and an individual numbered face list.
+- Selecting an object row uses the existing SceneDocument object-selection state, including desktop Shift-click and the mobile Multi toggle. Selecting a face row from Object Mode activates that mesh, enters Edit Mode and selects the face; selecting more rows in Edit Mode uses desktop Shift or the existing mobile Add to Selection toggle. Switching to a different object while editing returns to Object Mode before the next face selection.
+- Search matches object names and face identifiers (for example, `Face 003`). Face lists render at most 250 buttons at a time; searching narrows large meshes without constructing an unbounded interactive list. The Explorer is UI-only; selection state and mesh topology remain owned by the document/half-edge model and CommandBus.
+- Added `SceneExplorerModel` row-building/search tests and browser regression steps for object multi-selection, face selection, mode switching, additive selection and large meshes. Updated README controls and PWA app shell.
+- Advanced service-worker shell/runtime caches from v71 to v72. Added `src/core/SceneExplorerModel.js` and `src/ui/SceneExplorer.js` to the app shell. No API, AI service, dependency, secret, backend, workflow or external configuration changes.
+- Full Node regression suite passed: 378 tests, 0 failures. All 75 source/test JavaScript files plus `sw.js` passed syntax checks; all 128 HTML IDs are unique, the import map parses, and all 49 service-worker app-shell paths resolve. Android acceptance remains pending; desktop Chrome/Edge remains deferred.
+- This delta is based on v0.1.74 `main` commit `4c166e97d1600cd71ea970cc21d8a36133dbba08`, Pages workflow run #82 (`46161907284`) succeeded on 2026-11-28.
+
 ### 2026-11-28 — `bl3nd-v0.1.74-move-scale-plane-handles-delta.zip` — v0.1.74
 - Added direct XY, YZ and XZ square handles to the active Move and Scale gizmo. Each plane handle is built from the captured Global/Local transform axes and maps to the existing `ModalTransform.setAxis(normal, true)` constraint; no separate transform math, command path, undo boundary or cancellation behavior was introduced. Rotate remains axis-ring-only.
 - Added transparent expanded SVG hit strokes around the visible plane patches so they remain touchable on phones while the rendered squares stay compact. The full overlay remains pointer-transparent outside explicit handles, and v0.1.73 pointer-ID ownership/free viewport dragging is unchanged.
@@ -271,7 +286,7 @@ Status meanings: **Working** = implemented end-to-end in the current foundation;
 
 ## Next Roadmap Step
 
-Add optional persistent transform-tool selection without weakening direct modal G/R/S behavior. Preserve blank-area free transforms, center/axis/plane handles, pointer-ID ownership and one-step undo. Android acceptance of v0.1.73/v0.1.74 remains pending; desktop Chrome/Edge remains deferred.
+Validate the Scene Explorer on Android: select multiple objects from List, expand an object, search for a face number, select a face from Object Mode (confirm it enters Edit Mode), and add/toggle more faces with the existing Add to Selection control. Then continue with optional persistent transform-tool selection without weakening blank-area free transforms, center/axis/plane handles, pointer-ID ownership or one-step undo. The v0.1.73 blank-area free-drag regression test remains unconfirmed; desktop Chrome/Edge remains deferred.
 
 ### 2026-11-28 — `bl3nd-v0.1.72-mobile-transform-drag-fix.zip` — v0.1.72
 - Fixed the v0.1.71 mobile regression where the full-viewport SVG gizmo overlay intercepted pointerdown events outside its visible handles, preventing the normal canvas drag-to-adjust behavior.

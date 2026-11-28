@@ -172,8 +172,15 @@
       </section>
 
       <aside class="properties-panel">
-        <div class="panel-tabs"><button class="panel-tab active" data-panel="scene">Scene</button><button class="panel-tab" data-panel="modifiers">Modifiers</button><button class="panel-tab" data-panel="system">System</button></div>
-        <section class="panel-content" id="panel-scene">
+        <div class="panel-tabs"><button class="panel-tab active" data-panel="explorer">List</button><button class="panel-tab" data-panel="scene">Scene</button><button class="panel-tab" data-panel="modifiers">Mods</button><button class="panel-tab" data-panel="system">System</button></div>
+        <section class="panel-content scene-explorer-panel" id="panel-explorer">
+          <div class="scene-explorer-heading"><span>SCENE EXPLORER</span><b id="scene-explorer-count">0/0 SELECTED</b></div>
+          <label class="scene-explorer-search-label" for="scene-explorer-search">SEARCH OBJECTS / FACES</label>
+          <input id="scene-explorer-search" class="scene-explorer-search" type="search" placeholder="Name or Face 003…" autocomplete="off" spellcheck="false">
+          <div id="scene-explorer-tree" class="scene-explorer-tree" role="tree" aria-label="Scene objects and mesh faces"></div>
+          <p id="scene-explorer-hint" class="scene-explorer-hint">Tap an object to select · expand it to pick a face</p>
+        </section>
+        <section class="panel-content" id="panel-scene" hidden>
           <div class="panel-heading">TRANSFORM</div>
           <div class="transform-grid">
             <label>Location X<input data-transform="position" data-axis="x" type="number" step="0.1"></label>
@@ -269,7 +276,7 @@
       <button id="mobile-proportional" aria-label="Enable proportional editing" aria-pressed="false" title="Proportional Editing · OFF">◎<small>Prop OFF</small></button>
       <button id="mobile-edit">◫<small>Edit</small></button>
       <button id="mobile-extrude">▱<small>Extrude</small></button>
-      <button id="mobile-more">⋯<small>More</small></button>
+      <button id="mobile-more" title="Open Scene Explorer and properties">☷<small>List</small></button>
     </nav>
     <div class="mobile-proportional-panel" id="mobile-proportional-panel" hidden role="group" aria-label="Proportional editing settings">
       <div class="mobile-proportional-heading"><strong>PROPORTIONAL EDITING · ON</strong><b id="mobile-proportional-radius-value">1.00</b></div>
