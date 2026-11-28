@@ -46,11 +46,12 @@ export class FaceOperationModal {
       this.lastError = 'Switch to Face Select and select one or more separate planar face regions.';
       return false;
     }
-    const sourceReport = source.validateTopology();
+    const sourceReport = source.validateTopology({ allowSafeWarpedQuads: true });
     if (!sourceReport.valid) {
       this.lastError = 'The source mesh has topology warnings. Validate and repair safe issues before using this operation.';
       return false;
     }
+    this.baseSafeWarpedQuadSignatures = source.getSafeWarpedQuadSignatures();
     const regionAnalysis = analyzeSelectedFaceRegions(source, [...source.faceSelection]);
     if (!regionAnalysis.valid) {
       this.lastError = `${operation === 'extrude' ? 'Extrude' : 'Inset'} needs one or more separate connected planar regions. ${regionAnalysis.reason}`;
@@ -136,7 +137,7 @@ export class FaceOperationModal {
       }
     }
 
-    const report = hem.validateTopology();
+    const report = hem.validateTopology({ allowedSafeWarpedQuadSignatures: this.baseSafeWarpedQuadSignatures });
     if (!report.valid || hem.faces.some((_, faceId) => !hem.triangulateFace(faceId).length)) {
       return { hem, result: { changed: false, reason: `${operationName} combined candidate failed final topology or triangulation validation; the source mesh was not changed.` } };
     }
@@ -287,6 +288,7 @@ export class FaceOperationModal {
     this.before = null;
     this.basePositions = [];
     this.baseFaces = [];
+    this.baseSafeWarpedQuadSignatures = new Set();
     this.seedFaceIds = [];
     this.startPointer = null;
     this.startValue = 0;

@@ -20,6 +20,13 @@ function newellNormal(positions, face) {
   return length > 1e-12 ? normal.map(value => value / length) : null;
 }
 
+function warpedQuadSignature(positions, face) {
+  const points = face.map(id => positions[id]?.slice(0, 3));
+  if (points.some(point => !Array.isArray(point) || point.length !== 3 || !point.every(Number.isFinite))) return '';
+  points.sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2]);
+  return JSON.stringify(points);
+}
+
 function projectedPolygon(positions, face) {
   if (!Array.isArray(face) || face.length < 3 || new Set(face).size !== face.length ||
       face.some(id => !Number.isInteger(id) || !positions[id] || positions[id].length < 3 || !positions[id].every(Number.isFinite))) return null;
@@ -710,7 +717,7 @@ export class HalfEdgeMesh {
       return fail('Select one valid face or one connected planar face region before extruding.');
     }
 
-    const sourceReport = this.validateTopology();
+    const sourceReport = this.validateTopology({ allowSafeWarpedQuads: true });
     if (!sourceReport.valid) {
       return fail('The source mesh has topology warnings. Validate and repair safe issues before extruding.');
     }
@@ -770,7 +777,7 @@ export class HalfEdgeMesh {
     }
 
     const candidate = new HalfEdgeMesh(nextPositions, nextFaces);
-    const report = candidate.validateTopology();
+    const report = candidate.validateTopology({ allowedSafeWarpedQuadSignatures: this.getSafeWarpedQuadSignatures() });
     if (!report.valid) {
       return fail(`Extrude candidate failed topology validation (${report.issueCount} issue(s)); the source mesh was not changed.`);
     }
@@ -910,7 +917,7 @@ export class HalfEdgeMesh {
     }
 
     const candidate = new HalfEdgeMesh(newPositions, nextFaces);
-    const report = candidate.validateTopology();
+    const report = candidate.validateTopology({ allowedSafeWarpedQuadSignatures: this.getSafeWarpedQuadSignatures() });
     if (!report.valid) return fail('Inset candidate failed topology validation; the source mesh was not changed.');
     candidate.setSelectionMode('face');
     candidate.faceSelection = new Set(innerFaceIds);
@@ -974,7 +981,7 @@ export class HalfEdgeMesh {
     if (analysis.loopCount !== 1 || !analysis.boundaryLoops[0]?.isSimple || !analysis.singleSimpleBoundary) {
       return fail('Face Bevel requires exactly one simple boundary loop with no holes.');
     }
-    const sourceReport = this.validateTopology();
+    const sourceReport = this.validateTopology({ allowSafeWarpedQuads: true });
     if (!sourceReport.valid) {
       return fail('The source mesh has topology warnings. Validate and repair safe issues before Face Bevel.');
     }
@@ -1138,10 +1145,10 @@ export class HalfEdgeMesh {
     // copies. Compact only when those old interior points are now orphaned;
     // this fixes multi-row/multi-column grids without reordering an ordinary
     // single-face candidate that already has no isolated vertices.
-    let report = candidate.validateTopology();
+    let report = candidate.validateTopology({ allowedSafeWarpedQuadSignatures: this.getSafeWarpedQuadSignatures() });
     if (report.counts.isolatedVertices) {
       candidate.compact();
-      report = candidate.validateTopology();
+      report = candidate.validateTopology({ allowedSafeWarpedQuadSignatures: this.getSafeWarpedQuadSignatures() });
     }
     if (!report.valid) {
       return fail(`Face Bevel candidate failed topology validation (${report.issueCount} issue(s)); the source mesh was not changed.`);
@@ -1227,7 +1234,7 @@ export class HalfEdgeMesh {
     if (analysis.planar) return fail('Use Connected Region Face Bevel for planar selections.');
     if (analysis.loopCount !== 1) return fail('Continuous Curved Face Bevel requires exactly one boundary loop with no holes.');
 
-    const sourceReport = this.validateTopology();
+    const sourceReport = this.validateTopology({ allowSafeWarpedQuads: true });
     if (!sourceReport.valid) return fail('The source mesh has topology warnings. Validate and repair safe issues before Curved Face Bevel.');
 
     const selectedSet = new Set(selected);
@@ -1504,10 +1511,10 @@ export class HalfEdgeMesh {
     }
 
     const candidate = new HalfEdgeMesh(nextPositions, nextFaces);
-    let report = candidate.validateTopology();
+    let report = candidate.validateTopology({ allowedSafeWarpedQuadSignatures: this.getSafeWarpedQuadSignatures() });
     if (report.counts.isolatedVertices) {
       candidate.compact();
-      report = candidate.validateTopology();
+      report = candidate.validateTopology({ allowedSafeWarpedQuadSignatures: this.getSafeWarpedQuadSignatures() });
     }
     if (!report.valid) {
       return fail(`Curved Face Bevel candidate failed topology validation (${report.issueCount} issue(s)); the source mesh was not changed.`);
@@ -1663,7 +1670,7 @@ export class HalfEdgeMesh {
     }
 
     const mean = key => perFace.reduce((sum, item) => sum + item[key], 0) / perFace.length;
-    const topology = candidate.validateTopology();
+    const topology = candidate.validateTopology({ allowedSafeWarpedQuadSignatures: this.getSafeWarpedQuadSignatures() });
     if (!topology.valid) {
       return fail('Individual Face Bevel failed final topology validation; the source mesh was not changed.');
     }
@@ -1960,7 +1967,7 @@ export class HalfEdgeMesh {
         return fail('Connected Bevel accepts one simple three-to-eight-edge chain or separate two-edge miter pairs; branches, cycles and mixed connected/disconnected selections are rejected.');
       }
     }
-    const sourceReport = this.validateTopology();
+    const sourceReport = this.validateTopology({ allowSafeWarpedQuads: true });
     if (!sourceReport.valid) return fail('The mesh has existing topology warnings. Validate and repair safe issues before beveling.');
 
     const occupiedVertices = new Set();
@@ -2064,7 +2071,7 @@ export class HalfEdgeMesh {
       }
     }
 
-    const report = candidate.validateTopology();
+    const report = candidate.validateTopology({ allowedSafeWarpedQuadSignatures: this.getSafeWarpedQuadSignatures() });
     if (!report.valid) return fail(`Combined bevel failed topology validation (${report.issueCount} issue(s)); the original mesh was not changed.`);
     const finalEdgesByPointKey = new Map();
     candidate.edges.forEach(edge => {
@@ -2117,7 +2124,7 @@ export class HalfEdgeMesh {
         edgePairs.some(pair => !Array.isArray(pair) || pair.length !== 2)) {
       return fail('Multi-junction Bevel requires two to four separate two-edge miter pairs and a width factor from 0–0.95.');
     }
-    const sourceReport = this.validateTopology();
+    const sourceReport = this.validateTopology({ allowSafeWarpedQuads: true });
     if (!sourceReport.valid) return fail('The mesh has existing topology warnings. Validate and repair safe issues before beveling.');
 
     const allEndpointIds = new Set();
@@ -2215,7 +2222,7 @@ export class HalfEdgeMesh {
       }
     }
 
-    const report = candidate.validateTopology();
+    const report = candidate.validateTopology({ allowedSafeWarpedQuadSignatures: this.getSafeWarpedQuadSignatures() });
     if (!report.valid) return fail(`Combined miter junctions failed topology validation (${report.issueCount} issue(s)); the original mesh was not changed.`);
     const edgesByPointKey = new Map();
     candidate.edges.forEach(edge => {
@@ -2308,7 +2315,7 @@ export class HalfEdgeMesh {
       return fail('The selected edges do not form one simple connected chain.');
     }
 
-    const sourceReport = this.validateTopology();
+    const sourceReport = this.validateTopology({ allowSafeWarpedQuads: true });
     if (!sourceReport.valid) return fail('The mesh has existing topology warnings. Validate and repair safe issues before beveling.');
     const edgeByKey = new Map(this.edges.map(edge => [keyFor(...edge.vertices), edge]));
     const edgeIdFor = (a, b) => edgeByKey.get(keyFor(a, b))?.id;
@@ -2754,7 +2761,7 @@ export class HalfEdgeMesh {
 
     const candidate = new HalfEdgeMesh(nextPositions, nextFaces);
     const compactMap = candidate.compact();
-    const report = candidate.validateTopology();
+    const report = candidate.validateTopology({ allowedSafeWarpedQuadSignatures: this.getSafeWarpedQuadSignatures() });
     if (!report.valid) return fail(`The proposed connected-chain bevel failed topology validation (${report.issueCount} issue(s)); the original mesh was not changed.`);
     for (let faceId = 0; faceId < candidate.faces.length; faceId++) {
       if (!candidate.triangulateFace(faceId).length) return fail('The proposed chain produced a face that could not be triangulated.');
@@ -2852,7 +2859,7 @@ export class HalfEdgeMesh {
     if (outerVertices.length !== 2 || outerVertices[0] === outerVertices[1]) {
       return fail('The adjacent edge pair has ambiguous outer endpoints.');
     }
-    const sourceReport = this.validateTopology();
+    const sourceReport = this.validateTopology({ allowSafeWarpedQuads: true });
     if (!sourceReport.valid) return fail('The mesh has existing topology warnings. Validate and repair safe issues before beveling.');
 
     const edgeByKey = new Map(this.edges.map(edge => [keyFor(...edge.vertices), edge]));
@@ -3063,7 +3070,7 @@ export class HalfEdgeMesh {
 
     const candidate = new HalfEdgeMesh(nextPositions, nextFaces);
     const compactMap = candidate.compact();
-    const report = candidate.validateTopology();
+    const report = candidate.validateTopology({ allowedSafeWarpedQuadSignatures: this.getSafeWarpedQuadSignatures() });
     if (!report.valid) return fail(`The proposed miter failed topology validation (${report.issueCount} issue(s)); the original mesh was not changed.`);
     for (let faceId = 0; faceId < candidate.faces.length; faceId++) {
       if (!candidate.triangulateFace(faceId).length) return fail('The proposed miter produced a face that could not be triangulated.');
@@ -3156,7 +3163,7 @@ export class HalfEdgeMesh {
       return fail('The selected edge has inconsistent face winding. Repair or orient the mesh before beveling.');
     }
 
-    const sourceReport = this.validateTopology();
+    const sourceReport = this.validateTopology({ allowSafeWarpedQuads: true });
     if (!sourceReport.valid) return fail('The mesh has existing topology warnings. Validate and repair safe issues before beveling.');
 
     const faceAId = first.face?.id, faceBId = second.face?.id;
@@ -3291,7 +3298,7 @@ export class HalfEdgeMesh {
 
     const candidate = new HalfEdgeMesh(nextPositions, nextFaces);
     const compactMap = candidate.compact();
-    const candidateReport = candidate.validateTopology();
+    const candidateReport = candidate.validateTopology({ allowedSafeWarpedQuadSignatures: this.getSafeWarpedQuadSignatures() });
     if (!candidateReport.valid) {
       return fail(`The proposed bevel failed topology validation (${candidateReport.issueCount} issue(s)); the original mesh was not changed.`);
     }
@@ -3441,7 +3448,7 @@ export class HalfEdgeMesh {
     }
 
     const candidate = new HalfEdgeMesh(this.positions, nextFaces);
-    const report = candidate.validateTopology();
+    const report = candidate.validateTopology({ allowedSafeWarpedQuadSignatures: this.getSafeWarpedQuadSignatures() });
     if (!report.valid) {
       return fail(`Segmented bevel failed topology validation (${report.issueCount} issue(s)); the original mesh was not changed.`);
     }
@@ -3766,7 +3773,29 @@ export class HalfEdgeMesh {
     return visited.size;
   }
 
-  validateTopology() {
+  // Return only pre-existing, non-planar quads that the renderer can safely split.
+  // Candidate validators compare these signatures so changed/new faces get no exemption.
+  getSafeWarpedQuadSignatures() {
+    const signatures = new Set();
+    this.faces.forEach((face, faceId) => {
+      if (!Array.isArray(face) || face.length !== 4) return;
+      const projection = projectedPolygon(this.positions, face);
+      if (!projection) return;
+      const tolerance = projection.scale * 1e-5;
+      const needsFallback = projection.deviation > tolerance ||
+        polygonSelfIntersects(projection.points, projection.scale * projection.scale * 1e-10) ||
+        !triangulatePolygon(this.positions, face);
+      if (!needsFallback || this.triangulateFace(faceId).length !== 2) return;
+      const signature = warpedQuadSignature(this.positions, face);
+      if (signature) signatures.add(signature);
+    });
+    return signatures;
+  }
+
+  // `allowSafeWarpedQuads` is for validating the current source mesh. Candidate
+  // validation should instead pass the source signature set to grandfather only
+  // unchanged safe quads; all newly created/changed geometry remains strict.
+  validateTopology({ allowSafeWarpedQuads = false, allowedSafeWarpedQuadSignatures = null } = {}) {
     const invalidPositions = [], invalidFaces = [], duplicateFaces = [], nonManifoldEdges = [];
     const inconsistentWinding = [], isolatedVertices = [], nonPlanarFaces = [];
     const selfIntersectingFaces = [], triangulationFailures = [];
@@ -3792,9 +3821,23 @@ export class HalfEdgeMesh {
       const projection = projectedPolygon(this.positions, face);
       if (!projection) { invalidFaces.push(faceId); triangulationFailures.push(faceId); return; }
       const tolerance = projection.scale * 1e-5;
-      if (projection.deviation > tolerance) nonPlanarFaces.push({ faceId, deviation: projection.deviation, tolerance });
-      if (polygonSelfIntersects(projection.points, projection.scale * projection.scale * 1e-10)) selfIntersectingFaces.push(faceId);
-      if (!triangulatePolygon(this.positions, face)) triangulationFailures.push(faceId);
+      // Proportional G/R/S can intentionally bend neighboring quads while
+      // keeping their shared topology. The renderer has a conservative
+      // two-triangle fallback for simple warped quads: it rejects true 3D
+      // boundary crossings, degenerate triangles and ambiguous zero-area
+      // shapes. Modeling operators may opt into preserving only those safely
+      // triangulatable quads; the public diagnostic remains strict by default.
+      const inheritedSafeWarpedQuad = face.length === 4 &&
+        allowedSafeWarpedQuadSignatures?.has(warpedQuadSignature(this.positions, face));
+      const safeWarpedQuad = face.length === 4 && (allowSafeWarpedQuads || inheritedSafeWarpedQuad) &&
+        this.triangulateFace(faceId).length === 2;
+      if (projection.deviation > tolerance && !safeWarpedQuad) {
+        nonPlanarFaces.push({ faceId, deviation: projection.deviation, tolerance });
+      }
+      if (polygonSelfIntersects(projection.points, projection.scale * projection.scale * 1e-10) && !safeWarpedQuad) {
+        selfIntersectingFaces.push(faceId);
+      }
+      if (!triangulatePolygon(this.positions, face) && !safeWarpedQuad) triangulationFailures.push(faceId);
     });
     for (const [key, incidents] of edgeUses) {
       if (incidents.length > 2) nonManifoldEdges.push(key);

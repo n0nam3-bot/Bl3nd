@@ -89,6 +89,7 @@ export class BevelModal {
 
     this.mesh = mesh;
     this.before = await this.document.serialize();
+    this.baseSafeWarpedQuadSignatures = source.getSafeWarpedQuadSignatures();
     this.basePositions = source.positions.map(point => [...point]);
     this.baseFaces = source.faces.map(face => [...face]);
     const rect = this.viewport?.renderer?.domElement?.getBoundingClientRect?.();
@@ -206,7 +207,7 @@ export class BevelModal {
       perRegion.push(result);
     }
 
-    const topology = hem.validateTopology();
+    const topology = hem.validateTopology({ allowedSafeWarpedQuadSignatures: this.baseSafeWarpedQuadSignatures });
     if (!topology.valid) return fail('Combined multi-region Face Bevel failed final topology validation; the source mesh was not changed.');
     hem.setSelectionMode('face');
     hem.clearSelection();
@@ -547,6 +548,7 @@ export class BevelModal {
     this.before = null;
     this.basePositions = [];
     this.baseFaces = [];
+    this.baseSafeWarpedQuadSignatures = new Set();
     this.seedEdgeIds = [];
     this.seedFaceIds = [];
     this.startPointer = null;

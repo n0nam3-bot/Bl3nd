@@ -292,3 +292,11 @@ This procedure validates browser interaction for the starter cube. The automated
 - Cancel and confirm exact source restoration. Apply, Undo and Redo; confirm one transform transaction. Reload the page and confirm the chosen falloff remains selected in every control. Repeat with Proportional Editing OFF to confirm the saved falloff does not activate the feature by itself.
 - Desktop Chrome/Edge acceptance remains deferred until PC access is available; live Android acceptance is pending.
 
+## v0.1.60 — Mesh operations after proportional editing
+
+- Create a 3×3 face grid. In Face Select, select the center face, enable Proportional Editing, and move the face along its normal with a radius that reaches the diagonal neighboring faces. Confirm the selected center face remains planar while some surrounding quads become gently warped.
+- Apply the transform. Without undoing or rebuilding the mesh, run Extrude on the selected center face, then Undo. Run Inset, then Undo. Run Face Bevel, then Undo. Each operation must enter its normal modal preview and complete/cancel transactionally.
+- Confirm the surrounding warped quads remain visible and safely triangulated through every operation. `Validate Mesh` may still report those non-planar faces because the public diagnostic remains strict; that warning alone must not globally block unrelated planar operations.
+- Select a warped neighboring face itself and try an operation that requires a planar face region. Confirm the operation rejects it non-destructively with the existing geometry-specific explanation. A quad with a true 3D boundary crossing, a degenerate triangle, a non-manifold edge or inconsistent winding must never be waived by the operation-safe validator.
+- Repeat with each proportional falloff curve and with Proportional Editing turned off. Confirm ordinary flat-mesh operations and existing rejection boundaries are unchanged. Android acceptance is pending; desktop Chrome/Edge remains deferred.
+
