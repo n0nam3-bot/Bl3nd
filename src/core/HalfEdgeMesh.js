@@ -3491,9 +3491,85 @@ export class HalfEdgeMesh {
 
 
   /**
-   * Inserts a centered/interpolated cut through a regular quad edge loop.
-   * The operation is transactional: all incident faces are checked before any
-   * vertex or face data is changed. Unsupported topology returns a reason.
+   * Collect a Loop Cut path while validating any extraordinary-pole crossing.
+   * A pair of opposite edges emitted by the two faces around the current edge
+   * can meet at a high-valence vertex. That crossing is accepted only when the
+   * existing reciprocal near-antiparallel fan pairing selects the same pair.
+   * Open extraordinary, non-quad, non-manifold and geometrically ambiguous fans are stops.
+   */
+  collectEdgeLoopForCut(seedEdgeIds) {
+    const fail = reason => ({ valid: false, edgeIds: [], extraordinaryPoleIds: [], reason });
+    const edgeByKey = new Map(this.edges.map(edge => [keyFor(...edge.vertices), edge.id]));
+    const visited = new Set(seedEdgeIds), queue = [...seedEdgeIds];
+    const processed = new Set(), extraordinaryPoleIds = new Set();
+    const incidentEdgeCounts = new Uint32Array(this.positions.length);
+    for (const edge of this.edges) for (const vertexId of edge.vertices) incidentEdgeCounts[vertexId]++;
+    for (let cursor = 0; cursor < queue.length; cursor++) {
+      const edgeId = queue[cursor];
+      if (processed.has(edgeId)) continue;
+      processed.add(edgeId);
+      const edge = this.edges[edgeId];
+      if (!edge || edge.halfEdges.length < 1 || edge.halfEdges.length > 2) {
+        return fail('Loop Cut touches a non-manifold or detached edge.');
+      }
+      const oppositeEdgeIds = new Set();
+      for (const halfEdge of edge.halfEdges) {
+        const face = this.faces[halfEdge.face?.id];
+        if (!face || face.length !== 4) continue;
+        let side = -1;
+        for (let index = 0; index < 4; index++) {
+          if (keyFor(face[index], face[(index + 1) % 4]) === keyFor(...edge.vertices)) {
+            side = index;
+            break;
+          }
+        }
+        if (side < 0) continue;
+        const opposite = edgeByKey.get(keyFor(face[(side + 2) % 4], face[(side + 3) % 4]));
+        if (opposite !== undefined) oppositeEdgeIds.add(opposite);
+      }
+
+      const nextEdges = [...oppositeEdgeIds];
+      if (nextEdges.length === 2) {
+        const [first, second] = nextEdges.map(id => this.edges[id]);
+        const shared = first.vertices.filter(vertexId => second.vertices.includes(vertexId));
+        if (shared.length === 1) {
+          const poleId = shared[0];
+          const fan = this.orderedVertexFan(poleId);
+          const closedQuadFan = this.isClosedQuadFan(fan);
+          const incidentEdgeCount = fan?.length ?? incidentEdgeCounts[poleId] ?? 0;
+          const extraordinary = fan ? fan.length !== 4 : incidentEdgeCount > 4;
+          const mixedRegularFan = !!fan && fan.length === 4 && !closedQuadFan;
+          if (extraordinary || mixedRegularFan) {
+            if (!closedQuadFan) {
+              return fail('Loop Cut reaches an extraordinary pole without a closed all-quad fan.');
+            }
+            if (fan.length !== 4) {
+              const firstPartner = this.oppositeEdgeAtExtraordinaryPole(poleId, first.id, fan);
+              const secondPartner = this.oppositeEdgeAtExtraordinaryPole(poleId, second.id, fan);
+              if (firstPartner !== second.id || secondPartner !== first.id) {
+                return fail('Loop Cut reaches an ambiguous extraordinary pole; no unique reciprocal opposite-edge pair exists.');
+              }
+              extraordinaryPoleIds.add(poleId);
+            }
+          }
+        }
+      }
+
+      for (const nextEdgeId of nextEdges) {
+        if (!visited.has(nextEdgeId)) {
+          visited.add(nextEdgeId);
+          queue.push(nextEdgeId);
+        }
+      }
+    }
+    return { valid: true, edgeIds: [...visited], extraordinaryPoleIds: [...extraordinaryPoleIds], reason: '' };
+  }
+
+  /**
+   * Inserts a centered/interpolated cut through a validated quad edge loop.
+   * Extraordinary poles are crossed only through a unique reciprocal pairing
+   * in a closed all-quad fan. The operation remains transactional: all incident
+   * faces are checked before any vertex or face data is changed.
    */
   cutEdgeLoop({ offset = 0.5, cuts = 1, offsets = null } = {}) {
     if (this.selectionMode !== 'edge' || this.edgeSelection.size !== 1) {
@@ -3512,7 +3588,9 @@ export class HalfEdgeMesh {
       return { changed: false, reason: 'Loop Cut positions are too close together to create stable topology.' };
     }
 
-    const loopEdgeIds = this.collectEdgeLoop([...this.edgeSelection]);
+    const traversal = this.collectEdgeLoopForCut([...this.edgeSelection]);
+    if (!traversal.valid) return { changed: false, reason: traversal.reason };
+    const loopEdgeIds = traversal.edgeIds;
     const loopEdgeSet = new Set(loopEdgeIds);
     const edgeFaces = new Map();
     for (const edgeId of loopEdgeIds) {
@@ -3662,7 +3740,8 @@ export class HalfEdgeMesh {
       splitFaces: splitPlans.length,
       createdFaces: splitPlans.length * (cuts + 1),
       createdCutEdges: cutPairs.length,
-      selectedCutEdges: this.edgeSelection.size
+      selectedCutEdges: this.edgeSelection.size,
+      extraordinaryPoleContinuations: traversal.extraordinaryPoleIds.length
     };
   }
 

@@ -4,7 +4,7 @@ This is a manual acceptance run for the deployed Bl3nd app. It checks the real b
 
 ## Build under test
 
-Current deployed baseline before v0.1.61: v0.1.60, `main` commit `8d0ff05d80ec2460d968c1d7b4862c5e7457dfe1`; Pages workflow run `46107041331` succeeded on 2026-11-28 after unpack run `46107024706`. The v0.1.61 package is a pending delta based on that deployed commit.
+Current deployed baseline before v0.1.63: v0.1.62, `main` commit `fd436dddef429faa9442cbb4d54481eadfd2eab3`; Pages workflow run `46109624623` succeeded on 2026-11-28 after unpack run `46109609929`. The v0.1.63 package is a pending delta based on that deployed commit.
 
 Open the deployed app only after the latest Pages workflow succeeds:
 
@@ -317,3 +317,12 @@ This procedure validates browser interaction for the starter cube. The automated
 - Include a separate, ordinary orientable component with a locally reversed face. Repair Safe Issues must still reorient that independent component even when the same mesh contains a preserved non-manifold or non-orientable component.
 - Confirm malformed and duplicate faces are still removed, isolated vertices are compacted, and planar/non-planar geometry is not moved by repair. The result's `policies` map must identify the keep/remove behavior. Undo must restore the pre-repair document; redo must restore the repaired-safe result.
 - Ambiguous non-manifold sheets and non-orientable components intentionally remain manual-repair work. Desktop Chrome/Edge acceptance remains deferred until PC access is available.
+
+
+## v0.1.63 — Loop Cut through supported extraordinary poles
+
+- On a closed all-quad surface with a six-valence pole, select one edge in Edge Select where the quad-opposite traversal reaches two edges sharing that pole. Confirm the pole fan has a unique near-antiparallel reciprocal pair (at least 155° apart with a clear best match). Start Loop Cut; it must continue through the pole and split the complete quad strip on both sides.
+- Try one cut, then two or more cuts. Drag to slide and change the cut count. Every crossing quad must split into `cuts + 1` quads, the newly selected cut edges must form separate unbranched cut paths, and the mesh must have no new non-manifold edges or inconsistent winding. Apply, Undo and Redo; Cancel must restore the exact original mesh and selection.
+- Create or use an extraordinary pole whose two candidate directions are not sufficiently opposite or have tied/ambiguous best matches. Loop Cut must show a clear rejection and preserve positions, faces and selection.
+- Repeat with an open fan, a fan containing a triangle/ngon, and a non-manifold spoke. All must reject without partial preview or topology mutation.
+- Confirm regular quad strips and closed cube loops still cut normally; boundary stopping, offset orientation, 1–8 cuts, numeric/drag slide and modal Cancel/Apply behavior must remain unchanged. Desktop Chrome/Edge remains deferred until PC access is available.

@@ -448,6 +448,93 @@ test('edge ring refuses extraordinary fans containing non-quad faces', () => {
   assert.ok(hem.lastRingTraversal.stoppedFans >= 1);
 });
 
+function makeLoopCutExtraordinaryPole({ ambiguous = false, open = false, nonQuad = false, nonManifold = false } = {}) {
+  const positions = [
+    [0,0,0], [1,0,0], [0,1,0], [1,1,0],
+    ambiguous ? [0.8,-1,0] : [0,-1,0],
+    [-1,-1,0], [-1,0.5,0], [1,2,0], [-1,-2,0], [-2,0,0], [-1,1.5,0]
+  ];
+  const faces = [
+    [0,1,3,2], [0,3,1,4], [0,2,7,3],
+    [0,4,8,5], [0,5,9,6], [0,6,10,1]
+  ];
+  if (open) faces.pop();
+  if (nonQuad) faces[2] = [0,2,7];
+  if (nonManifold) {
+    positions.push([0.5,2,0], [1.5,2,0]);
+    faces.push([2,0,11,12]);
+  }
+  const hem = new HalfEdgeMesh(positions, faces);
+  hem.setSelectionMode('edge');
+  const seed = hem.edges.find(edge => keyFor(...edge.vertices) === keyFor(1,3));
+  assert.ok(seed);
+  hem.selectEdge(seed.id);
+  return { hem, seed };
+}
+
+test('Loop Cut crosses a closed extraordinary all-quad pole through its unique reciprocal opposite pair', () => {
+  const { hem } = makeLoopCutExtraordinaryPole();
+  assert.equal(hem.orderedVertexFan(0)?.length, 6);
+  const result = hem.cutEdgeLoop({ cuts: 2 });
+  assert.equal(result.changed, true, result.reason);
+  assert.equal(result.extraordinaryPoleContinuations, 1);
+  assert.equal(result.splitFaces, 4);
+  assert.equal(result.createdCutEdges, 8);
+  assert.equal(result.selectedCutEdges, 8);
+  const degree = new Map();
+  for (const edgeId of hem.edgeSelection) {
+    const edge = hem.edges[edgeId];
+    assert.equal(edge.halfEdges.length, 2);
+    for (const vertexId of edge.vertices) degree.set(vertexId, (degree.get(vertexId) || 0) + 1);
+  }
+  assert.equal([...degree.values()].filter(value => value === 1).length, 4, 'two cuts each have two open ends');
+  assert.ok([...degree.values()].every(value => value <= 2), 'the selected cut remains one unbranched path');
+  const report = hem.validateTopology();
+  assert.equal(report.valid, true);
+  assert.equal(report.counts.nonManifoldEdges, 0);
+  assert.equal(report.counts.inconsistentWinding, 0);
+});
+
+test('Loop Cut also crosses a closed extraordinary valence-five all-quad pole', () => {
+  const positions = [
+    [0,0,0], [1,0,0], [0,1,0], [1,1,0], [0,-1,0],
+    [-1,0.5,0], [1,2,0], [-1,-2,0], [-1,1.5,0]
+  ];
+  const faces = [[0,1,3,2],[0,3,1,4],[0,2,6,3],[0,4,7,5],[0,5,8,1]];
+  const hem = new HalfEdgeMesh(positions, faces);
+  hem.setSelectionMode('edge');
+  const seed = hem.edges.find(edge => keyFor(...edge.vertices) === keyFor(1,3));
+  assert.ok(seed);
+  hem.selectEdge(seed.id);
+  assert.equal(hem.orderedVertexFan(0)?.length, 5);
+  const result = hem.cutEdgeLoop({ cuts: 2 });
+  assert.equal(result.changed, true, result.reason);
+  assert.equal(result.extraordinaryPoleContinuations, 1);
+  assert.equal(result.splitFaces, 4);
+  assert.equal(result.selectedCutEdges, 8);
+  assert.equal(hem.validateTopology().valid, true);
+});
+
+test('Loop Cut rejects an extraordinary pole with no unique near-antiparallel continuation', () => {
+  const { hem } = makeLoopCutExtraordinaryPole({ ambiguous: true });
+  const before = JSON.stringify({ positions: hem.positions, faces: hem.faces, selection: [...hem.edgeSelection] });
+  const result = hem.cutEdgeLoop({ cuts: 2 });
+  assert.equal(result.changed, false);
+  assert.match(result.reason, /ambiguous extraordinary pole/i);
+  assert.equal(JSON.stringify({ positions: hem.positions, faces: hem.faces, selection: [...hem.edgeSelection] }), before);
+});
+
+test('Loop Cut refuses an extraordinary pole with an open, non-quad or non-manifold fan', () => {
+  for (const options of [{ open: true }, { nonQuad: true }, { nonManifold: true }]) {
+    const { hem } = makeLoopCutExtraordinaryPole(options);
+    const before = JSON.stringify({ positions: hem.positions, faces: hem.faces, selection: [...hem.edgeSelection] });
+    const result = hem.cutEdgeLoop();
+    assert.equal(result.changed, false);
+    assert.match(result.reason, /extraordinary pole.*closed all-quad fan/i);
+    assert.equal(JSON.stringify({ positions: hem.positions, faces: hem.faces, selection: [...hem.edgeSelection] }), before);
+  }
+});
+
 function makeCube() {
   const positions = [
     [-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],
