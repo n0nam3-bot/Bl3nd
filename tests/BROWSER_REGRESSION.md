@@ -272,3 +272,12 @@ This procedure validates browser interaction for the starter cube. The automated
 6. Toggle proportional editing off with `O` or `Select ▾`; confirm the transform returns to selected-only behavior. Confirm the preference remains after refreshing the page.
 7. Cancel with `Esc` and verify every source vertex is restored. Apply with `Enter`, Undo once and Redo once; verify the complete proportional deformation is one transaction.
 8. Confirm Object Mode `G/R/S` is unchanged, and radius changes never alter topology, vertex count, face count or edge connectivity.
+
+
+## Mobile proportional-edit controls — v0.1.58 visibility fix
+
+- Enter Edit Mode on a phone. Confirm a dedicated **Prop OFF** button appears in the bottom actionbar without opening More, Scene Properties or Select. In Object Mode, the button must be hidden.
+- Tap **Prop OFF**. Confirm it changes to **Prop ON**, receives the active styling, and a **PROPORTIONAL EDITING · ON** panel appears immediately above the bottom actionbar with the current radius value and slider.
+- Drag the radius slider before starting a transform. The value must update continuously and persist after leaving/re-entering Edit Mode or reloading the page. Tap Prop ON to disable; the panel must close and the actionbar button return to Prop OFF.
+- With Prop ON, select one or more vertices and use the mobile Move, Rotate and Scale actions. Confirm the modal numeric pad still includes its proportional toggle and radius slider, and adjusting the radius rebuilds the preview without drift. Cancel restores the exact source; Apply is one undo step.
+- Confirm the existing `Select ▾` toggle and `O` keyboard shortcut remain synchronized with the bottom actionbar button. Desktop keyboard/mouse controls remain unchanged. Desktop Chrome/Edge acceptance remains deferred until PC access is available.

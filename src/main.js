@@ -668,6 +668,27 @@ function refresh() {
   $('#selection-edge').classList.toggle('active',sceneDocument.selectionMode==='edge');
   $('#selection-face').classList.toggle('active',sceneDocument.selectionMode==='face');
   const editing = sceneDocument.mode === 'edit';
+  const mobileProportionalButton = $('#mobile-proportional');
+  const mobileProportionalPanel = $('#mobile-proportional-panel');
+  const mobileProportionalRadius = $('#mobile-proportional-radius');
+  const mobileProportionalRadiusValue = $('#mobile-proportional-radius-value');
+  const proportionalEnabledState = modalTransform.proportionalSettings.enabled;
+  if (mobileProportionalButton) {
+    mobileProportionalButton.hidden = !editing;
+    mobileProportionalButton.classList.toggle('active', proportionalEnabledState);
+    mobileProportionalButton.setAttribute('aria-pressed', String(proportionalEnabledState));
+    mobileProportionalButton.setAttribute('aria-label', `Proportional Editing ${proportionalEnabledState ? 'on' : 'off'}`);
+    mobileProportionalButton.title = `Proportional Editing · ${proportionalEnabledState ? 'ON' : 'OFF'} · tap to toggle`;
+    const smallLabel = mobileProportionalButton.querySelector('small');
+    if (smallLabel) smallLabel.textContent = proportionalEnabledState ? 'Prop ON' : 'Prop OFF';
+  }
+  if (mobileProportionalPanel) mobileProportionalPanel.hidden = !editing || !proportionalEnabledState || modalTransform.active || viewport.modalOperationActive;
+  if (mobileProportionalRadius) {
+    if (document.activeElement !== mobileProportionalRadius) {
+      mobileProportionalRadius.value = String(Math.min(25, Math.max(0.1, modalTransform.proportionalSettings.radius)));
+    }
+  }
+  if (mobileProportionalRadiusValue) mobileProportionalRadiusValue.textContent = modalTransform.proportionalSettings.radius.toFixed(2);
   if (!editing && viewport.selectionTool !== 'tap') viewport.selectionTool = 'tap';
   ['selection-vertex','selection-edge','selection-face','select-all-btn','deselect-btn','selection-menu-btn','dissolve-panel-btn','validate-topology-btn','repair-topology-btn','loop-cut-btn'].forEach(id => { const control = document.getElementById(id); if (control) control.disabled = !editing; });
   $('#selection-vertex').setAttribute('aria-pressed', String(sceneDocument.selectionMode==='vertex'));
@@ -677,7 +698,7 @@ function refresh() {
   const hintDesktop = $('.hint-desktop'), hintMobile = $('.hint-mobile');
   if (editing) {
     hintDesktop.textContent = 'Edit: Click topology · O proportional · Alt+L loop · Ctrl+Alt+L ring · Ctrl+B bevel · Ctrl+R loop cut · X delete';
-    hintMobile.textContent = 'Edit: Tap topology · Select ▾ for tools / proportional · Edit Mesh panel for Bevel / Loop Cut';
+    hintMobile.textContent = 'Edit: Tap topology · Prop in the bottom bar toggles proportional G/R/S · adjust radius in its panel or transform pad · Select ▾ for selection tools';
   } else {
     hintDesktop.textContent = 'Drag to orbit · Right-drag to pan · Scroll to zoom · Click to select · G/R/S then drag to transform';
     hintMobile.textContent = 'One finger: orbit · Two fingers: pan/zoom · Long press: 3D Cursor · G/R/S: transform';
@@ -726,6 +747,8 @@ ui = {
     const proportionalRadius=$('#pad-proportional-radius');
     const proportionalRadiusValue=$('#pad-proportional-radius-value');
     proportionalControls.hidden=true;
+    const mobileProportionalPanel=$('#mobile-proportional-panel');
+    if(mobileProportionalPanel) mobileProportionalPanel.hidden=sceneDocument.mode!=='edit' || !modalTransform.proportionalSettings.enabled || modalTransform.active || viewport.modalOperationActive;
     const snapControls=$('#pad-transform-snap-controls');
     const snapButton=$('#pad-transform-snap-toggle');
     const snapSettingsButton=$('#pad-transform-snap-settings-toggle');
@@ -953,6 +976,12 @@ $('#mobile-add').addEventListener('click',()=>ui.togglePie('add'));
 $('#mobile-move').addEventListener('click',()=>run('transform.modal_start',{type:'move',pointer:ui.pointerOrigin()}));
 $('#mobile-rotate').addEventListener('click',()=>run('transform.modal_start',{type:'rotate',pointer:ui.pointerOrigin()}));
 $('#mobile-scale').addEventListener('click',()=>run('transform.modal_start',{type:'scale',pointer:ui.pointerOrigin()}));
+$('#mobile-proportional').addEventListener('click',()=>run('transform.proportional_toggle'));
+$('#mobile-proportional-radius').addEventListener('input',event=>{
+  const radius=Number(event.target.value);
+  $('#mobile-proportional-radius-value').textContent=radius.toFixed(2);
+  run('transform.proportional_settings',{settings:{radius}});
+});
 $('#mobile-edit').addEventListener('click',()=>run('mode.toggle_edit'));
 $('#mobile-more').addEventListener('click',()=>$('.properties-panel').classList.toggle('mobile-open'));
 $$('[data-tool]').forEach(button=>button.addEventListener('click',()=>{

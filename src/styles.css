@@ -74,3 +74,19 @@ body.face-operation-modal-active .topbar,body.face-operation-modal-active .tool-
 
 /* Proportional-edit controls remain attached to Edit Mode and its modal pad. */
 .proportional-enable{display:flex;align-items:center;gap:8px;margin:5px 0 9px;color:#b7c0cc;font-size:10px}.proportional-enable input{width:14px;height:14px;margin:0;accent-color:var(--accent)}.proportional-radius-control{display:grid;grid-template-columns:1fr auto;gap:5px 8px;align-items:center;color:#aeb7c3;font-size:9px}.proportional-radius-control b{color:#ffd0a7;font:11px ui-monospace,monospace}.proportional-radius-control input{grid-column:1/-1;width:100%;accent-color:var(--accent)}.pad-proportional-controls{display:grid;gap:6px;margin:0 0 8px;padding:7px;background:#222832;border:1px solid #414b58;border-radius:7px}.pad-proportional-controls[hidden]{display:none}.pad-proportional-controls button{height:28px;background:#29313a;border-color:#596574;color:#d3dbe5;font-size:8px;font-weight:750;letter-spacing:.45px}.pad-proportional-controls button.is-enabled{background:#23392f;border-color:#4d966e;color:#a6e6bd}.pad-proportional-controls label{display:grid;grid-template-columns:1fr auto;gap:4px;color:#aab5c3;font-size:8px;letter-spacing:.65px}.pad-proportional-controls label b{color:#ffd0a7;font:10px ui-monospace,monospace}.pad-proportional-controls input{grid-column:1/-1;width:100%;accent-color:var(--accent)}.pie-menu button.is-enabled{background:#23392f;border-color:#4d966e;color:#a6e6bd}
+
+
+/* Direct proportional-edit access on phones; no More/Scene drawer or keyboard required. */
+.mobile-actionbar button[hidden]{display:none!important}
+.mobile-actionbar #mobile-proportional.active{color:#a6e6bd;background:#23392f;border-radius:8px}
+.mobile-proportional-panel{display:none}
+@media(max-width:650px){
+  .mobile-proportional-panel:not([hidden]){position:fixed;left:10px;right:10px;bottom:calc(64px + env(safe-area-inset-bottom));z-index:8;display:grid;grid-template-columns:1fr auto;gap:5px 9px;padding:10px 12px;background:#191c22f5;border:1px solid #4d966e;border-radius:10px;box-shadow:0 8px 28px #0009;color:#dce5ee}
+  .mobile-proportional-heading{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:9px;letter-spacing:.8px;color:#a6e6bd}
+  .mobile-proportional-heading b{font:11px ui-monospace,monospace;color:#ffd0a7}
+  .mobile-proportional-panel>label{font-size:8px;letter-spacing:.8px;color:#aeb7c3}
+  .mobile-proportional-panel input{grid-column:1/-1;width:100%;margin:0;accent-color:var(--accent);touch-action:pan-y}
+  .mobile-proportional-panel p{grid-column:1/-1;margin:0;color:#9ba7b5;font-size:9px;line-height:1.35}
+  .mobile-actionbar #mobile-proportional{font-size:18px}
+  .mobile-actionbar #mobile-proportional small{font-size:8px}
+}
