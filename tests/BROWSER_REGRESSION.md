@@ -4,7 +4,7 @@ This is a manual acceptance run for the deployed Bl3nd app. It checks the real b
 
 ## Build under test
 
-Current package baseline before v0.1.51: v0.1.50, `main` commit `effe5c81ceb5caf21557f17025e08aea3fd5338b`; Pages workflow run `46087985134` succeeded.
+Current package baseline before v0.1.53: v0.1.52, `main` commit `2c3fa9dd569f7e220fd4acbd07c9ff78849797c3`; Pages workflow run `46091874557` succeeded on 2026-11-28.
 
 Open the deployed app only after the latest Pages workflow succeeds:
 
@@ -219,3 +219,14 @@ This procedure validates browser interaction for the starter cube. The automated
 - Select two edge paths that meet at an endpoint. They must share one pivot; a separate edge path must have its own pivot. Repeat with vertex selection and confirm only selected vertices connected by actual mesh edges are grouped.
 - Select faces that meet at a shared vertex. They must be treated as one region so the shared vertex is transformed only once and topology remains welded. Undo/Redo must restore both islands exactly.
 - Confirm Move applies the same world delta to every region, Global/Local axis constraints and snapping remain consistent across all regions, numeric entry stays exact, and Cancel/Apply remain one transactional operation. Repeat Free Move/Rotate/Scale and X/Y/Z constraints on Android. Desktop Chrome/Edge remains deferred.
+
+## Touch additive selection — v0.1.53 (browser acceptance pending)
+
+- On Android, enter Edit Mode and choose Face Select. Open `Select ▾`; confirm the menu contains `Add to Selection · OFF`. Tap it. Confirm the menu closes and the toolbar button changes to `Select+ ▾` (or displays a visible `+` beside the active selection tool).
+- Tap one visible cube face, orbit the camera to expose a different face, then tap that face. Both faces must remain highlighted. Repeat with a third face. The mode must work even though no Shift key is available.
+- Open `Select+ ▾` and tap `Add to Selection · ON` to turn it off. Confirm the toolbar loses the `+`. Tap another face and confirm normal click selection replaces the previous selection.
+- Turn Add to Selection back on and tap an already selected face. It must toggle off without clearing the other selected faces. Tap an unselected face and confirm it is added.
+- Switch to Box, Circle and Lasso from `Select ▾`. With Add to Selection on, each region gesture must extend the existing selection; with it off, the gesture must replace the selection. Confirm the toggle state remains visible while a region tool is active.
+- Confirm ordinary one-finger orbit still works with Add to Selection on, a stationary tap selects, and long-press still places the 3D Cursor. Confirm the toggle automatically resets when leaving Edit Mode.
+- Repeat desktop Shift-click and Shift-drag selection with the touch toggle unavailable or off; keyboard behavior must be unchanged.
+- Desktop Chrome/Edge G/R/S and selection acceptance remains deferred until the owner has PC access.
