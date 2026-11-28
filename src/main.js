@@ -20,6 +20,7 @@ import { clampSubdivisionLevel, getSubdivisionLevelOptions } from './modifiers/C
 import { clampMirrorMergeDistance, normalizeMirrorAxis } from './modifiers/MirrorGeometry.js';
 import { clampSolidifyOffset, clampSolidifyThickness } from './modifiers/SolidifyGeometry.js';
 import { getModifierBudget } from './modifiers/ModifierBudget.js';
+import { reorderModifierAndEvaluate, summarizeModifierStack } from './modifiers/ModifierStackOrder.js';
 import { Viewport } from './ui/Viewport.js';
 import { ModelIO } from './io/ModelIO.js';
 import { KeyboardController } from './input/KeyboardController.js';
@@ -85,8 +86,11 @@ loadingProgress(22, 'Device profile ready · initializing the 3D renderer…');
 function status(message) { if (statusEl) statusEl.textContent = message; }
 function syncModifierBusyControls() {
   const busy = Boolean(modifierStack?.busy);
-  $$('.modifier-add-grid button, .modifier-card button, .modifier-card input, .modifier-card select').forEach(control => {
+  $$('.modifier-add-grid button, .modifier-card input, .modifier-card select').forEach(control => {
     control.disabled = busy;
+  });
+  $$('.modifier-card button').forEach(control => {
+    control.disabled = busy || control.dataset.stackBoundary === 'true';
   });
   const cancel = $('#modifier-cancel-btn');
   if (cancel) cancel.disabled = !busy;
@@ -849,6 +853,23 @@ function registerCommands() {
     }
     refreshModifiers();
   });
+  commandBus.register('modifier.move', async ({ id, direction }) => {
+    assertStableModelForModifiers();
+    const mesh = sceneDocument.activeObject;
+    if (!mesh) return false;
+    let reordered;
+    try {
+      reordered = await reorderModifierAndEvaluate(
+        mesh, id, direction, target => modifierStack.evaluate(target)
+      );
+    } catch (error) {
+      refreshModifiers();
+      throw error;
+    }
+    if (!reordered) return false;
+    refreshModifiers();
+    return true;
+  });
   commandBus.register('modifier.toggle', async ({ id }) => {
     assertStableModelForModifiers();
     const mesh = sceneDocument.activeObject; const item = mesh?.userData?.modifiers?.find(m => m.id === id); if (!item) return;
@@ -920,13 +941,77 @@ function refreshModifiers() {
   host.replaceChildren();
   if (!mesh) { host.innerHTML = '<div class="empty-state">Select a mesh to manage its modifiers.</div>'; return; }
   if (!modifiers.length) { host.innerHTML = '<div class="empty-state">No modifiers yet. Add one above.</div>'; return; }
-  for (const mod of modifiers) {
-    const card = document.createElement('div'); card.className='modifier-card';
-    const title = document.createElement('header'); title.textContent = mod.type[0].toUpperCase()+mod.type.slice(1);
-    const actions=document.createElement('span');
-    const toggle=document.createElement('button'); toggle.textContent=mod.enabled?'On':'Off'; toggle.addEventListener('click',()=>run('modifier.toggle',{id:mod.id}));
-    const remove=document.createElement('button'); remove.textContent='×'; remove.title='Remove modifier'; remove.addEventListener('click',()=>run('modifier.remove',{id:mod.id}));
-    actions.append(toggle,remove); title.append(actions); card.append(title);
+
+  const summary = summarizeModifierStack(modifiers);
+  const displayedGeometry = mesh.userData.evaluatedGeometry || mesh.geometry;
+  const displayedVertices = displayedGeometry?.getAttribute?.('position')?.count ?? displayedGeometry?.attributes?.position?.count ?? 0;
+  const displayedIndices = displayedGeometry?.index?.count ?? displayedGeometry?.index?.array?.length ?? 0;
+  const diagnostics = document.createElement('section');
+  diagnostics.className = 'modifier-stack-summary';
+  diagnostics.setAttribute('aria-label', 'Modifier stack diagnostics');
+  const diagnosticsHeading = document.createElement('strong');
+  diagnosticsHeading.textContent = 'STACK DIAGNOSTICS';
+  const diagnosticsCounts = document.createElement('div');
+  diagnosticsCounts.className = 'modifier-stack-counts';
+  diagnosticsCounts.textContent = `${summary.enabledCount} enabled · ${summary.disabledCount} bypassed · ${summary.totalCount} total`;
+  const diagnosticsOrder = document.createElement('div');
+  diagnosticsOrder.className = 'modifier-stack-order';
+  diagnosticsOrder.textContent = `ORDER · ${summary.order.map(item => `${item.type[0].toUpperCase()}${item.type.slice(1)}${item.enabled ? '' : ' (off)'}`).join(' → ')}`;
+  const diagnosticsOutput = document.createElement('div');
+  diagnosticsOutput.className = 'modifier-stack-output';
+  diagnosticsOutput.textContent = displayedGeometry
+    ? `Displayed mesh · ${displayedVertices.toLocaleString()} vertices · ${Math.floor(displayedIndices / 3).toLocaleString()} triangles`
+    : 'Displayed mesh statistics unavailable';
+  diagnostics.append(diagnosticsHeading, diagnosticsCounts, diagnosticsOrder, diagnosticsOutput);
+  host.append(diagnostics);
+
+  for (const [index, mod] of modifiers.entries()) {
+    const card = document.createElement('div');
+    card.className = 'modifier-card';
+    card.dataset.modifierId = mod.id;
+    card.dataset.stackPosition = String(index + 1);
+    const title = document.createElement('header');
+    title.textContent = mod.type[0].toUpperCase()+mod.type.slice(1);
+    const actions = document.createElement('span');
+    actions.className = 'modifier-card-actions';
+    const moveUp = document.createElement('button');
+    moveUp.type = 'button';
+    moveUp.className = 'modifier-order-button';
+    moveUp.textContent = '↑';
+    moveUp.title = `Move ${mod.type} earlier in the stack`;
+    moveUp.setAttribute('aria-label', `Move ${mod.type} modifier ${index + 1} up`);
+    moveUp.dataset.stackBoundary = String(index === 0);
+    moveUp.disabled = index === 0;
+    moveUp.addEventListener('click', () => run('modifier.move', { id: mod.id, direction: 'up' }));
+    const moveDown = document.createElement('button');
+    moveDown.type = 'button';
+    moveDown.className = 'modifier-order-button';
+    moveDown.textContent = '↓';
+    moveDown.title = `Move ${mod.type} later in the stack`;
+    moveDown.setAttribute('aria-label', `Move ${mod.type} modifier ${index + 1} down`);
+    moveDown.dataset.stackBoundary = String(index === modifiers.length - 1);
+    moveDown.disabled = index === modifiers.length - 1;
+    moveDown.addEventListener('click', () => run('modifier.move', { id: mod.id, direction: 'down' }));
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.textContent = mod.enabled ? 'On' : 'Off';
+    toggle.setAttribute('aria-label', `${mod.enabled ? 'Disable' : 'Enable'} ${mod.type} modifier`);
+    toggle.addEventListener('click', () => run('modifier.toggle', { id: mod.id }));
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.textContent = '×';
+    remove.title = 'Remove modifier';
+    remove.setAttribute('aria-label', `Remove ${mod.type} modifier`);
+    remove.addEventListener('click', () => run('modifier.remove', { id: mod.id }));
+    actions.append(moveUp, moveDown, toggle, remove);
+    title.append(actions);
+    card.append(title);
+
+    const stage = document.createElement('div');
+    stage.className = 'modifier-stage-meta';
+    stage.textContent = `STAGE ${String(index + 1).padStart(2, '0')} · ${mod.enabled ? 'ENABLED' : 'DISABLED · BYPASSED'}`;
+    card.append(stage);
+
     const addField=(label,field,value,limits={})=>{
       const row=document.createElement('label'); row.textContent=label; const input=document.createElement('input'); input.type='number';
       if(Number.isFinite(limits.min)) input.min=String(limits.min);

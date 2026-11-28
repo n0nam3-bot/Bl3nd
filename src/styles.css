@@ -190,3 +190,17 @@ body.transform-modal-active .topbar,body.transform-modal-active .tool-rail,body.
 
 .modifier-progress-bar.is-indeterminate span{width:32%;animation:modifier-progress-sweep 1.15s ease-in-out infinite alternate}
 @keyframes modifier-progress-sweep{from{transform:translateX(-12%);opacity:.62}to{transform:translateX(210%);opacity:1}}
+
+
+/* Editable modifier ordering and compact evaluated-stack diagnostics. */
+.modifier-stack-summary{display:grid;gap:5px;margin:11px 0 9px;padding:10px;background:#202630;border:1px solid #4b5968;border-radius:7px}
+.modifier-stack-summary>strong{color:#ffd0a7;font-size:9px;font-weight:850;letter-spacing:.8px}
+.modifier-stack-counts{color:#dce3eb;font-size:10px;font-weight:750}
+.modifier-stack-order,.modifier-stack-output{color:#9eabba;font-size:9px;line-height:1.5;overflow-wrap:anywhere}
+.modifier-card header{gap:8px}
+.modifier-card-actions{display:flex;align-items:center;gap:4px;flex:0 0 auto}
+.modifier-card header .modifier-order-button{width:29px;min-width:29px;height:29px;min-height:29px;padding:2px;border:1px solid #586474;background:#202630;color:#e4eaf1;font-size:13px;font-weight:850;line-height:1;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+.modifier-card header .modifier-order-button:disabled{opacity:.28;cursor:default}
+.modifier-card header .modifier-order-button:not(:disabled):active{background:#493729;border-color:#ed9b52;color:#ffd0a7}
+.modifier-stage-meta{margin:-4px 0 8px;color:#9ba8b8;font:750 8px ui-monospace,SFMono-Regular,Consolas,monospace;letter-spacing:.55px}
+@media(max-width:650px){.modifier-stack-summary{padding:11px;gap:6px}.modifier-stack-counts{font-size:11px}.modifier-stack-order,.modifier-stack-output{font-size:10px}.modifier-card header .modifier-order-button{width:36px;min-width:36px;height:40px;min-height:40px;font-size:15px}.modifier-card-actions{gap:5px}.modifier-stage-meta{font-size:9px}}

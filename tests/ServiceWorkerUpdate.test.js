@@ -7,6 +7,7 @@ const workerSource = await readFile(new URL('../sw.js', import.meta.url), 'utf8'
 const entrySource = await readFile(new URL('../index.html', import.meta.url), 'utf8');
 const mainSource = await readFile(new URL('../src/main.js', import.meta.url), 'utf8');
 const styleSource = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+const orderSource = await readFile(new URL('../src/modifiers/ModifierStackOrder.js', import.meta.url), 'utf8');
 
 class FakeRequest {
   constructor(input, init = {}) {
@@ -50,7 +51,7 @@ function createWorkerHarness({ fetchImpl = async () => new FakeResponse('fresh-p
     async match(key) { return cache.match(key); }
   };
   const self = {
-    location: new URL('https://example.test/Bl3nd/sw.js?v=0.1.84'),
+    location: new URL('https://example.test/Bl3nd/sw.js?v=0.1.85'),
     registration: { scope: 'https://example.test/Bl3nd/' },
     clients: { async claim() {} },
     addEventListener(type, listener) { listeners.set(type, listener); },
@@ -67,7 +68,7 @@ function createWorkerHarness({ fetchImpl = async () => new FakeResponse('fresh-p
 }
 
 test('app entry versions the worker URL and checks for updates on startup/foreground return', () => {
-  assert.match(entrySource, /const APP_RELEASE = '0\.1\.84'/);
+  assert.match(entrySource, /const APP_RELEASE = '0\.1\.85'/);
   assert.match(entrySource, /workerURL\.searchParams\.set\('v', APP_RELEASE\)/);
   assert.match(entrySource, /updateViaCache: 'none'/);
   assert.match(entrySource, /serviceWorkerRegistration\.update\(\)/);
@@ -83,7 +84,7 @@ test('new release derives fresh shell/runtime caches and bypasses HTTP cache for
   harness.listeners.get('install')({ waitUntil(promise) { installPromise = promise; } });
   await installPromise;
 
-  assert.ok(harness.openedCaches.includes('bl3nd-shell-0.1.84'));
+  assert.ok(harness.openedCaches.includes('bl3nd-shell-0.1.85'));
   assert.ok(harness.precacheRequests.length > 0);
   assert.ok(harness.precacheRequests.every(request => request.cache === 'reload'));
   assert.ok(harness.precacheRequests.some(request => request.url.endsWith('/Bl3nd/index.html')));
@@ -91,6 +92,7 @@ test('new release derives fresh shell/runtime caches and bypasses HTTP cache for
   assert.ok(harness.precacheRequests.some(request => request.url.endsWith('/Bl3nd/src/modifiers/CatmullClark.js')));
   assert.ok(harness.precacheRequests.some(request => request.url.endsWith('/Bl3nd/src/core/EditOverlayStyle.js')));
   assert.ok(harness.precacheRequests.some(request => request.url.endsWith('/Bl3nd/src/modifiers/ModifierBudget.js')));
+  assert.ok(harness.precacheRequests.some(request => request.url.endsWith('/Bl3nd/src/modifiers/ModifierStackOrder.js')));
   assert.ok(harness.precacheRequests.some(request => request.url.endsWith('/Bl3nd/src/modifiers/MirrorGeometry.js')));
   assert.ok(harness.precacheRequests.some(request => request.url.endsWith('/Bl3nd/src/modifiers/SolidifyGeometry.js')));
 });
@@ -110,7 +112,7 @@ test('page navigation bypasses HTTP cache, returns the network page and stores a
   assert.equal(harness.fetchCalls.length, 1);
   assert.equal(harness.fetchCalls[0].cache, 'no-store');
   assert.equal(response.body, 'fresh-page');
-  assert.ok(harness.openedCaches.includes('bl3nd-shell-0.1.84'));
+  assert.ok(harness.openedCaches.includes('bl3nd-shell-0.1.85'));
 });
 
 test('offline navigation keeps the last cached app page available', async () => {
@@ -185,4 +187,19 @@ test('modifier panel exposes staged progress, an explicit cancel action and devi
   assert.match(mainSource, /Apply or cancel the active modeling operation before evaluating modifiers/);
   assert.match(styleSource, /\.modifier-progress-panel/);
   assert.match(styleSource, /@media\(max-width:650px\).*modifier-progress-heading button/s);
+});
+
+
+test('modifier cards expose safe per-stage reordering and visible stack diagnostics', () => {
+  assert.match(mainSource, /commandBus\.register\('modifier\.move'/);
+  assert.match(mainSource, /reorderModifierAndEvaluate\(/);
+  assert.match(mainSource, /catch \(error\) \{\s*refreshModifiers\(\);\s*throw error;/);
+  assert.match(orderSource, /mesh\.userData\.modifiers = reordered\.modifiers/);
+  assert.match(orderSource, /mesh\.userData\.modifiers = previousModifiers/);
+  assert.match(mainSource, /Move .* earlier in the stack/);
+  assert.match(mainSource, /Move .* later in the stack/);
+  assert.match(mainSource, /modifier-stack-summary/);
+  assert.match(mainSource, /ENABLED.*BYPASSED/s);
+  assert.match(styleSource, /\.modifier-order-button/);
+  assert.match(styleSource, /\.modifier-stack-summary/);
 });

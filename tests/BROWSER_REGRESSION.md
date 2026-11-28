@@ -631,3 +631,17 @@ Full Blender keymap parity is not claimed by this build. Android touch acceptanc
 ### Desktop — Chrome / Edge (deferred)
 - Repeat multi-stage progress, cancellation during a running stage, immediate restart, preflight rejection and stack-order checks. Verify the worker terminates rather than blocking the interface until a large geometry function returns.
 - Confirm desktop receives its larger device budget while low-memory profiles receive lower vertex, triangle and estimated-memory limits. The estimate is a conservative preflight, not a guarantee of browser heap availability.
+
+
+## v0.1.85 — Editable modifier order and stack diagnostics
+
+### Android — Chrome / Samsung Internet
+- Open **More → Mods** on a cube and add Mirror, Subdivision and Solidify. Confirm every card shows its stage number and enabled/bypassed state; the diagnostics card shows total/enabled/bypassed counts, top-to-bottom order and displayed vertex/triangle counts.
+- Tap **↓** on the first card and confirm it moves one position later, all stage labels/order summary update, and the complete modifier stack is reevaluated in the new order. Tap **↑** on the moved card to restore the original order.
+- Confirm the first card's **↑** and last card's **↓** controls are disabled. Confirm middle cards can move both directions. Disable one modifier, reorder it, and confirm it remains visible as **DISABLED · BYPASSED** while enabled stages evaluate in the displayed order.
+- Cancel a reorder while its worker is active. Confirm the order rolls back to the last accepted arrangement, the previous evaluated mesh remains visible, and every stack control becomes available again. Trigger a fresh reorder and confirm it succeeds.
+- Use Undo and Redo after a successful reorder; both modifier order and evaluated appearance must restore. Wait for `LOCAL · SAVED`, refresh, and confirm the order and enabled states recover from IndexedDB.
+- Confirm reorder controls are disabled during evaluation, do not alter the editable source cage, and do not interfere with picking, selection overlays, modifier settings or existing progress/cancel/preflight behavior.
+
+### Desktop — Chrome / Edge (deferred)
+- Repeat order changes, boundary disabling, disabled-stage behavior, cancel rollback, Undo/Redo and reload recovery. Verify order changes use the same worker pipeline and no modifier evaluation is committed before the full stack succeeds.
