@@ -3865,59 +3865,98 @@ export class HalfEdgeMesh {
   repairTopology() {
     const before = this.validateTopology();
     const invalidPositionSet = new Set(before.details.invalidPositions);
-    const kept = [], seen = new Set();
+    const kept = [], keptSourceFaceIds = [], seen = new Set();
     let removedInvalidFaces = 0, removedDuplicateFaces = 0;
-    for (const face of this.faces) {
+    for (let sourceFaceId = 0; sourceFaceId < this.faces.length; sourceFaceId++) {
+      const face = this.faces[sourceFaceId];
       const valid = Array.isArray(face) && face.length >= 3 && new Set(face).size === face.length &&
         face.every(id => Number.isInteger(id) && id >= 0 && id < this.positions.length && !invalidPositionSet.has(id));
       if (!valid) { removedInvalidFaces++; continue; }
       const key = [...face].sort((a,b)=>a-b).join(':');
       if (seen.has(key)) { removedDuplicateFaces++; continue; }
-      seen.add(key); kept.push([...face]);
+      seen.add(key); kept.push([...face]); keptSourceFaceIds.push(sourceFaceId);
     }
 
-    // Reorient only closed, manifold-connected face components. Components touching
-    // an edge with >2 incident faces are deliberately left untouched.
+    const sourceFaceIds = ids => ids.map(id => keptSourceFaceIds[id]).filter(Number.isInteger).sort((a,b)=>a-b);
+
+    // Repair policy is intentionally conservative and now returned to callers:
+    // remove malformed/duplicate records, orient only unambiguous manifold
+    // components, and preserve non-manifold or contradictory components intact.
+    const policies = {
+      invalidFaces: 'remove',
+      duplicateFaces: 'keep-first',
+      isolatedVertices: 'remove-by-compaction',
+      orientableWinding: 'reorient-consistent-components',
+      nonManifoldEdges: 'preserve-and-report',
+      nonOrientableConflicts: 'preserve-and-report',
+      nonPlanarAndSelfIntersectingFaces: 'preserve-and-report'
+    };
+
     const uses = new Map();
     kept.forEach((face, faceId) => face.forEach((a, i) => {
       const b = face[(i+1)%face.length], key = keyFor(a,b);
       if (!uses.has(key)) uses.set(key, []);
       uses.get(key).push({ faceId, a, b });
     }));
-    const adjacency = kept.map(() => []), blocked = new Set();
-    for (const incidents of uses.values()) {
-      if (incidents.length > 2) { incidents.forEach(item => blocked.add(item.faceId)); continue; }
+    const adjacency = kept.map(() => []), blocked = new Set(), skippedNonManifoldEdges = [];
+    for (const [edgeKey, incidents] of uses) {
+      if (incidents.length > 2) {
+        const faceIds = incidents.map(item => item.faceId).sort((a, b) => a - b);
+        faceIds.forEach(id => blocked.add(id));
+        skippedNonManifoldEdges.push({
+          edge: edgeKey,
+          incidentFaceIds: sourceFaceIds(faceIds),
+          directions: incidents.map(item => ({ faceId: keptSourceFaceIds[item.faceId], from: item.a, to: item.b }))
+        });
+        continue;
+      }
       if (incidents.length !== 2) continue;
       const [a,b] = incidents;
       const sameDirection = a.a === b.a && a.b === b.b;
       adjacency[a.faceId].push([b.faceId, sameDirection]);
       adjacency[b.faceId].push([a.faceId, sameDirection]);
     }
+
     const flip = new Map(), unsafe = new Set();
+    const windingConflictComponents = [], componentsAdjacentToNonManifold = [];
     for (let seed=0; seed<kept.length; seed++) {
       if (flip.has(seed) || blocked.has(seed)) continue;
-      const queue=[seed], component=[]; flip.set(seed,false); let conflict=false;
-      while(queue.length) {
-        const current=queue.shift(); component.push(current);
+      const queue=[seed], component=[]; flip.set(seed,false);
+      let conflict=false, touchesNonManifold=false;
+      for (let cursor=0; cursor<queue.length; cursor++) {
+        const current=queue[cursor]; component.push(current);
         for (const [next, mustDiffer] of adjacency[current]) {
-          if (blocked.has(next)) { conflict=true; continue; }
+          if (blocked.has(next)) { touchesNonManifold=true; continue; }
           const expected=flip.get(current) !== mustDiffer;
           if (!flip.has(next)) { flip.set(next,expected); queue.push(next); }
           else if (flip.get(next)!==expected) conflict=true;
         }
       }
-      if (conflict) component.forEach(id=>unsafe.add(id));
+      if (conflict || touchesNonManifold) component.forEach(id=>unsafe.add(id));
+      if (conflict) windingConflictComponents.push(sourceFaceIds(component));
+      if (touchesNonManifold) componentsAdjacentToNonManifold.push(sourceFaceIds(component));
     }
+
     const safeFlips = [...flip].filter(([id,value])=>value && !unsafe.has(id)).map(([id])=>id);
     for (const id of safeFlips) kept[id].reverse();
     this.faces = kept;
     this.compact();
     const after = this.validateTopology();
+    const skippedNonManifoldFaceIds = sourceFaceIds([...blocked]);
+    const skippedWindingConflictFaceIds = [...new Set(windingConflictComponents.flat())].sort((a,b)=>a-b);
+    const skippedFaceIdsAdjacentToNonManifold = [...new Set(componentsAdjacentToNonManifold.flat())].sort((a,b)=>a-b);
     return {
       changed: removedInvalidFaces + removedDuplicateFaces + safeFlips.length > 0 || before.details.isolatedVertices.length > 0,
       removedInvalidFaces, removedDuplicateFaces, flippedFaces: safeFlips.length,
       removedIsolatedVertices: before.details.isolatedVertices.length,
       skippedNonManifoldComponents: blocked.size,
+      skippedNonManifoldEdges,
+      skippedNonManifoldFaceIds,
+      skippedWindingConflictComponents: windingConflictComponents,
+      skippedWindingConflictFaceIds,
+      componentsAdjacentToNonManifold,
+      skippedFaceIdsAdjacentToNonManifold,
+      policies,
       remaining: after
     };
   }

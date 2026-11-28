@@ -351,7 +351,9 @@ function registerCommands() {
     if (!result) { notify('Select a mesh before repairing topology.'); return false; }
     if (result.changed) await reapplyActiveModifiers();
     const remaining = result.remaining;
-    notify(`Safe repair · removed ${result.removedInvalidFaces} invalid face(s), ${result.removedDuplicateFaces} duplicate(s), flipped ${result.flippedFaces} face(s), removed ${result.removedIsolatedVertices} isolated vertex/vertices. ${remaining.issueCount} issue(s) remain.`, remaining.issueCount ? 'error' : 'success');
+    const preservedNonManifold = result.skippedNonManifoldEdges?.length || 0;
+    const preservedOrientation = result.skippedWindingConflictComponents?.length || 0;
+    notify(`Safe repair · removed ${result.removedInvalidFaces} invalid / ${result.removedDuplicateFaces} duplicate face(s), flipped ${result.flippedFaces}; preserved ${preservedNonManifold} non-manifold edge(s) and ${preservedOrientation} winding-conflict component(s). ${remaining.issueCount} issue(s) remain.`, remaining.issueCount ? 'error' : 'success');
     console.info('[Bl3nd topology repair]', result);
     refresh(); return result;
   });

@@ -53,7 +53,7 @@ See [`HANDOFF.md`](./HANDOFF.md) for architecture, exact implementation status, 
 
 ### Safe topology repair
 
-In Edit Mode, **Repair Safe Issues** removes malformed faces and duplicate faces, reorients consistently orientable manifold face components, and compacts unused vertices. It deliberately does not guess how to repair non-manifold edges, non-planar faces, self-intersections, or contradictory/non-orientable components; those remain in the validation report for manual correction. Use **Validate Mesh** before and after repair to inspect what changed.
+In Edit Mode, **Repair Safe Issues** removes malformed faces and duplicate faces, reorients independently orientable manifold components, and compacts unused vertices. Its result explicitly reports the repair policy plus the source face IDs and directed edge uses for every preserved non-manifold edge. Components that touch a non-manifold fan are not reoriented across that ambiguity; contradictory/non-orientable components are also preserved and reported by their face IDs. Non-planar faces and self-intersections are never altered by this repair. This avoids deleting faces or inventing a sheet split when the intended surface is ambiguous. Use **Validate Mesh** before and after repair to inspect the remaining issues.
 
 ### Extrude and Inset
 

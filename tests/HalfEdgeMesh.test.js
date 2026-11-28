@@ -155,7 +155,7 @@ test('safe topology repair removes duplicate faces and isolated vertices and fix
   assert.equal(hem.positions.length, 6);
 });
 
-test('safe topology repair leaves non-manifold faces untouched', () => {
+test('safe topology repair explicitly reports and preserves non-manifold edge fans', () => {
   const hem = new HalfEdgeMesh(
     [[0,0,0],[1,0,0],[0,1,0],[0,-1,0],[0,0,1]],
     [[0,1,2],[1,0,3],[0,1,4]]
@@ -163,8 +163,69 @@ test('safe topology repair leaves non-manifold faces untouched', () => {
   const before = JSON.stringify({ positions: hem.positions, faces: hem.faces });
   const result = hem.repairTopology();
   assert.equal(result.skippedNonManifoldComponents, 3);
+  assert.equal(result.skippedNonManifoldEdges.length, 1);
+  assert.deepEqual(result.skippedNonManifoldEdges[0].incidentFaceIds, [0,1,2]);
+  assert.deepEqual(result.skippedNonManifoldFaceIds, [0,1,2]);
+  assert.equal(result.policies.nonManifoldEdges, 'preserve-and-report');
   assert.equal(JSON.stringify({ positions: hem.positions, faces: hem.faces }), before);
   assert.equal(result.remaining.counts.nonManifoldEdges, 1);
+});
+
+test('safe repair still reorients independent manifold components beside preserved non-manifold fans', () => {
+  const positions = [
+    [0,0,0],[1,0,0],[0,1,0],[0,-1,0],[0,0,1],
+    [3,0,0],[4,0,0],[4,1,0],[3,1,0],[4,2,0]
+  ];
+  const faces = [[0,1,2],[1,0,3],[0,1,4],[5,6,7,8],[6,7,9]];
+  const hem = new HalfEdgeMesh(positions, faces);
+  const result = hem.repairTopology();
+  assert.equal(result.skippedNonManifoldEdges.length, 1);
+  assert.equal(result.flippedFaces, 1);
+  assert.equal(result.remaining.counts.nonManifoldEdges, 1);
+  assert.equal(result.remaining.counts.inconsistentWinding, 0);
+  assert.equal(result.policies.orientableWinding, 'reorient-consistent-components');
+});
+
+test('safe repair separately reports an orientable component blocked by a non-manifold neighbor', () => {
+  const hem = new HalfEdgeMesh(
+    [[0,0,0],[1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,2,0]],
+    [[0,1,2],[1,0,3],[0,1,4],[2,0,5]]
+  );
+  const before = hem.faces.map(face => face.map(id => [...hem.positions[id]]));
+  const result = hem.repairTopology();
+  assert.equal(result.skippedNonManifoldEdges.length, 1);
+  assert.deepEqual(result.componentsAdjacentToNonManifold, [[3]]);
+  assert.deepEqual(result.skippedFaceIdsAdjacentToNonManifold, [3]);
+  assert.equal(result.skippedWindingConflictComponents.length, 0);
+  assert.deepEqual(hem.faces.map(face => face.map(id => [...hem.positions[id]])), before);
+  assert.equal(result.remaining.counts.inconsistentWinding, 1);
+});
+
+test('safe repair preserves a contradictory non-orientable face component and reports its faces', () => {
+  const sections = 6;
+  const positions = [];
+  for (let index = 0; index < sections; index++) {
+    const angle = index * Math.PI * 2 / sections;
+    positions.push([Math.cos(angle), Math.sin(angle), 0.15]);
+    positions.push([Math.cos(angle), Math.sin(angle), -0.15]);
+  }
+  const faces = [];
+  for (let index = 0; index < sections - 1; index++) {
+    const a = index * 2, next = (index + 1) * 2;
+    faces.push([a, a + 1, next + 1, next]);
+  }
+  const last = (sections - 1) * 2;
+  // Möbius seam: the final face shares the 0-1 edge in the same direction,
+  // making the otherwise manifold face-adjacency cycle non-orientable.
+  faces.push([last, last + 1, 0, 1]);
+  const hem = new HalfEdgeMesh(positions, faces);
+  const beforeFaceCoordinates = hem.faces.map(face => face.map(id => [...hem.positions[id]]));
+  const result = hem.repairTopology();
+  assert.equal(result.skippedWindingConflictComponents.length, 1);
+  assert.equal(result.skippedWindingConflictFaceIds.length, sections);
+  assert.equal(result.policies.nonOrientableConflicts, 'preserve-and-report');
+  assert.deepEqual(hem.faces.map(face => face.map(id => [...hem.positions[id]])), beforeFaceCoordinates);
+  assert.equal(result.remaining.counts.inconsistentWinding, 1);
 });
 
 
