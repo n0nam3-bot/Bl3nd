@@ -95,7 +95,7 @@ export class ModalTransform {
       this.sourcePositions = [];
       this.selectedGroups = [];
       this.proportionalInfluencedCount = 0;
-      this.transformGroups = [];
+        this.transformGroups = [];
       this.individualPivotWorlds = [];
       const worldPosition = this.object.getWorldPosition(new THREE.Vector3());
       const worldQuaternion = this.object.getWorldQuaternion(new THREE.Quaternion());
@@ -142,10 +142,17 @@ export class ModalTransform {
       const worldPositions = this.sourcePositions.map(position =>
         this.object.localToWorld(new THREE.Vector3(...position)).toArray()
       );
+      const hem = this.object.userData.hem;
+      const seedFaceGroups = hem.selectionMode === 'face' && hem.faceSelection?.size
+        ? seedGroups.map(group => [...hem.faceSelection].filter(faceId =>
+          (hem.faces[faceId] || []).some(vertexId => group.includes(vertexId))))
+        : null;
       const influence = buildProportionalInfluence({
         positions: worldPositions,
-        edges: this.object.userData.hem.edges,
+        edges: hem.edges,
+        faces: hem.faces,
         seedGroups,
+        seedFaceGroups,
         radius: this.proportionalSettings.radius,
         falloff: this.proportionalSettings.falloff
       });

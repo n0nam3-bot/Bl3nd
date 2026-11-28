@@ -4,7 +4,7 @@ This is a manual acceptance run for the deployed Bl3nd app. It checks the real b
 
 ## Build under test
 
-Current deployed baseline before v0.1.56: v0.1.55, `main` commit `55a5356e2b2acc80a692d5d1b5a167830f47237d`; Pages workflow run `46101370254` succeeded on 2026-11-28. The v0.1.56 package is a pending delta based on that deployed commit.
+Current deployed baseline before v0.1.61: v0.1.60, `main` commit `8d0ff05d80ec2460d968c1d7b4862c5e7457dfe1`; Pages workflow run `46107041331` succeeded on 2026-11-28 after unpack run `46107024706`. The v0.1.61 package is a pending delta based on that deployed commit.
 
 Open the deployed app only after the latest Pages workflow succeeds:
 
@@ -300,3 +300,12 @@ This procedure validates browser interaction for the starter cube. The automated
 - Select a warped neighboring face itself and try an operation that requires a planar face region. Confirm the operation rejects it non-destructively with the existing geometry-specific explanation. A quad with a true 3D boundary crossing, a degenerate triangle, a non-manifold edge or inconsistent winding must never be waived by the operation-safe validator.
 - Repeat with each proportional falloff curve and with Proportional Editing turned off. Confirm ordinary flat-mesh operations and existing rejection boundaries are unchanged. Android acceptance is pending; desktop Chrome/Edge remains deferred.
 
+
+
+## v0.1.61 — Surface-aware proportional editing guards
+
+- On a subdivided cube, enter Face Select and select one small face on a flat side, away from the cube's outer boundary. Enable Prop and choose a radius large enough to reach across that side. Start Move and deform the face slightly. Confirm nearby coplanar faces on the same side receive a smooth falloff, while unselected vertices on the perpendicular side do not receive influence around the 90° cube crease. The shared crease vertices may still move because they belong to the selected face; the guard prevents influence from spreading through those vertices into the opposite surface fan. Cancel and confirm the mesh restores exactly.
+- Repeat with a small selected face farther from the crease and a larger radius. Confirm the influence follows the surface's connected edge paths and remains on the same smooth side. Try Rotate and Scale as well as Move, then Apply and Undo.
+- Change to Vertex Select, select a vertex on the crease and start Move with Prop enabled. Explicitly selected shared vertices seed their incident surface fans, so both sides may receive influence from that selected vertex. Confirm this differs from the face-selection side-context behavior and that the selected vertex itself still moves once.
+- Automated topology regressions cover sub-55° smooth joins, sharp creases at/above 55°, edges with more than two incident faces, two face fans that meet only at one vertex, and inconsistent winding. Invalid or ambiguous neighborhoods must be isolated rather than silently bridged.
+- Recheck all five falloff curves, radius changes during a modal preview, Individual Origins, disconnected islands, Cancel/Apply and Undo/Redo. Desktop Chrome/Edge acceptance remains deferred until PC access is available.

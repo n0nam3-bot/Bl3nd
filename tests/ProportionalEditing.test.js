@@ -5,6 +5,7 @@ import {
   normalizeProportionalSettings,
   proportionalFalloffWeight
 } from '../src/core/ProportionalEditing.js';
+import { HalfEdgeMesh } from '../src/core/HalfEdgeMesh.js';
 
 function lineMesh(count, spacing = 1) {
   return {
@@ -136,3 +137,114 @@ test('falloff selection survives radius-only updates through settings normalizat
   assert.equal(normalizeProportionalSettings({ falloff: 'unknown' }, selected).falloff, 'smooth');
 });
 
+
+function surfaceInfluence(mesh, seedFaceIds, radius = 20) {
+  const seedVertexIds = [...new Set(seedFaceIds.flatMap(faceId => mesh.faces[faceId] || []))];
+  return buildProportionalInfluence({
+    positions: mesh.positions,
+    edges: mesh.edges,
+    faces: mesh.faces,
+    seedGroups: [seedVertexIds],
+    seedFaceGroups: [seedFaceIds],
+    radius
+  });
+}
+
+function foldedTwoPanelMesh(angleDegrees = 90) {
+  const angle = angleDegrees * Math.PI / 180;
+  const c = Math.cos(angle), s = Math.sin(angle);
+  return new HalfEdgeMesh([
+    [0,0,0], [1,0,0], [2,0,0],
+    [0,1,0], [1,1,0], [2,1,0],
+    [2 + c,0,-s], [2 + c,1,-s]
+  ], [
+    [0,1,4,3], [1,2,5,4], [2,6,7,5]
+  ]);
+}
+
+test('surface-aware falloff stays on the selected side of a sharp crease', () => {
+  const mesh = foldedTwoPanelMesh(90);
+  const result = surfaceInfluence(mesh, [0]);
+  const affected = new Set(result.groups[0].map(item => item.vertexId));
+  assert.equal(affected.has(2), true, 'same-side vertices remain reachable');
+  assert.equal(affected.has(5), true, 'the same-side edge of the crease remains reachable');
+  assert.equal(affected.has(6), false, 'the opposite panel is protected from crease leakage');
+  assert.equal(affected.has(7), false, 'the opposite panel is protected from crease leakage');
+  assert.equal(result.guards.sharpEdges, 1);
+});
+
+test('surface-aware falloff treats the 55-degree default boundary as a crease', () => {
+  const angle = 55 * Math.PI / 180;
+  const c = Math.cos(angle), s = Math.sin(angle);
+  const mesh = new HalfEdgeMesh([
+    [0,0,0], [1,0,0], [1,1,0], [0,1,0],
+    [1 + c,0,-s], [1 + c,1,-s]
+  ], [[0,1,2,3], [1,4,5,2]]);
+  const result = surfaceInfluence(mesh, [0]);
+  const affected = new Set(result.groups[0].map(item => item.vertexId));
+  assert.equal(affected.has(4), false);
+  assert.equal(affected.has(5), false);
+  assert.equal(result.guards.sharpEdges, 1);
+});
+
+test('surface-aware falloff crosses smooth and sub-threshold curved joins', () => {
+  const angle = 40 * Math.PI / 180;
+  const c = Math.cos(angle), s = Math.sin(angle);
+  const mesh = new HalfEdgeMesh([
+    [0,0,0], [1,0,0], [1,1,0], [0,1,0],
+    [1 + c,0,-s], [1 + c,1,-s]
+  ], [[0,1,2,3], [1,4,5,2]]);
+  const result = surfaceInfluence(mesh, [0]);
+  const affected = new Set(result.groups[0].map(item => item.vertexId));
+  assert.equal(affected.has(4), true);
+  assert.equal(affected.has(5), true);
+  assert.equal(result.guards.sharpEdges, 0);
+});
+
+test('surface-aware falloff does not bridge a non-manifold edge fan', () => {
+  const mesh = new HalfEdgeMesh([
+    [0,0,0], [1,0,0], [0,1,0], [0,-1,0], [0,0,1]
+  ], [[0,1,2], [1,0,3], [0,1,4]]);
+  const result = surfaceInfluence(mesh, [0]);
+  const affected = new Set(result.groups[0].map(item => item.vertexId));
+  assert.equal(affected.has(3), false);
+  assert.equal(affected.has(4), false);
+  assert.equal(result.guards.nonManifoldEdges, 1);
+  assert.ok(result.guards.nonManifoldVertices >= 2);
+});
+
+test('surface-aware falloff isolates disconnected face fans that only share a vertex', () => {
+  const mesh = new HalfEdgeMesh([
+    [0,0,0], [1,0,0], [0,1,0], [-1,0,0], [0,-1,0]
+  ], [[0,1,2], [0,3,4]]);
+  const result = surfaceInfluence(mesh, [0]);
+  const affected = new Set(result.groups[0].map(item => item.vertexId));
+  assert.equal(affected.has(3), false);
+  assert.equal(affected.has(4), false);
+  assert.ok(result.guards.nonManifoldVertices >= 1);
+});
+
+test('surface-aware falloff blocks inconsistent-winding shared edges', () => {
+  const mesh = new HalfEdgeMesh([
+    [0,0,0], [1,0,0], [0,1,0], [0,-1,0]
+  ], [[0,1,2], [0,1,3]]);
+  const result = surfaceInfluence(mesh, [0]);
+  const affected = new Set(result.groups[0].map(item => item.vertexId));
+  assert.equal(affected.has(3), false);
+  assert.ok(result.guards.inconsistentEdges >= 1);
+});
+
+
+test('explicit vertex selection seeds all incident surface fans at the selected shared vertex', () => {
+  const mesh = foldedTwoPanelMesh(90);
+  const result = buildProportionalInfluence({
+    positions: mesh.positions,
+    edges: mesh.edges,
+    faces: mesh.faces,
+    seedGroups: [[2]],
+    radius: 3
+  });
+  const affected = new Set(result.groups[0].map(item => item.vertexId));
+  assert.equal(affected.has(6), true);
+  assert.equal(affected.has(7), true);
+});
