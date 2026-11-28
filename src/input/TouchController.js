@@ -96,10 +96,14 @@ export class TouchController {
     if (!button) {
       button = document.createElement('button');
       button.type = 'button';
+      button.classList.add('pie-center-action');
       button.dataset.command = 'mobile_add_selection';
       const loopEntry = menu.querySelector('button[data-command="edge_loop"]');
       menu.insertBefore(button, loopEntry || null);
     }
+    button.classList.add('pie-center-action');
+    button.setAttribute('role', 'menuitemcheckbox');
+    button.setAttribute('aria-label', 'Add to Selection');
     const enabled = this.selectionAddMode.enabled;
     button.textContent = `Add to Selection · ${enabled ? 'ON' : 'OFF'}`;
     button.setAttribute('aria-pressed', String(enabled));

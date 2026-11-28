@@ -18,6 +18,7 @@ import { ModelIO } from './io/ModelIO.js';
 import { KeyboardController } from './input/KeyboardController.js';
 import { TouchController } from './input/TouchController.js';
 import { SelectionGestureController } from './input/SelectionGestureController.js';
+import { RadialPieMenu } from './ui/RadialPieMenu.js';
 
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
@@ -151,7 +152,7 @@ async function startFaceOperation(operation) {
   viewport.selectionTool = 'tap';
   viewport.modalOperationActive = true;
   ui.refreshSelectionTool();
-  $('#pie-menu').hidden = true;
+  ui?.closePie();
   document.body.classList.add('face-operation-modal-active');
   refresh();
   ui.refreshModal();
@@ -401,7 +402,7 @@ function registerCommands() {
     viewport.selectionTool = 'tap';
     viewport.modalOperationActive = true;
     ui.refreshSelectionTool();
-    $('#pie-menu').hidden = true;
+    ui?.closePie();
     document.body.classList.add('bevel-modal-active');
     refresh();
     ui.refreshModal();
@@ -500,7 +501,7 @@ function registerCommands() {
     viewport.selectionTool = 'tap';
     viewport.modalOperationActive = true;
     ui.refreshSelectionTool();
-    $('#pie-menu').hidden = true;
+    ui?.closePie();
     document.body.classList.add('loop-cut-modal-active');
     refresh();
     ui.refreshModal();
@@ -724,21 +725,68 @@ function refresh() {
   refreshCursor(); refreshModifiers(); ui?.refreshModal(); ui?.refreshSelectionTool();
 }
 
+const radialPieMenu = new RadialPieMenu($('#pie-menu'));
+const PIE_MENU_DEFINITIONS = {
+  add: { title: 'ADD', entries: [
+    ['Cube','add_cube',0], ['UV Sphere','add_sphere',1], ['Cylinder','add_cylinder',2],
+    ['Plane','add_plane',4], ['Edit Mode','toggle_mode',5], ['3D Cursor','cursor_center',6]
+  ] },
+  shading: { title: 'SHADING', entries: [
+    ['Solid','shade_solid',0], ['Wireframe','shade_wire',2], ['Material','shade_material',4], ['Rendered','shade_render',6]
+  ] },
+  selection: { title: 'SELECT', entries: [
+    ['Select Tools','select_tools',0],
+    ['Proportional · '+(modalTransform.proportionalSettings.enabled?'ON':'OFF'),'toggle_proportional',1],
+    ['Edge Loop','edge_loop',2], ['Edge Ring','edge_ring',3],
+    ['Select All','select_all',4], ['Deselect','clear_selection',5], ['Invert','invert_selection',6],
+    ['More Actions','selection_actions',7]
+  ] },
+  'selection-tools': { title: 'SELECT TOOLS', entries: [
+    ['Click Select','tool_tap',0], ['Box Select','tool_box',2], ['Circle Select','tool_circle',4], ['Lasso Select','tool_lasso',6]
+  ] },
+  'selection-actions': { title: 'ACTIONS', entries: [
+    ['Validate Mesh','validate_topology',0], ['Safe Repair','repair_topology',2],
+    ['Delete Selected','delete_selected',4], ['Dissolve Selected','dissolve_selected',6]
+  ] }
+};
+
 ui = {
   async undo(){if(loopCutModal.active || bevelModal.active || faceOperationModal.active){notify('Apply or cancel the active mesh operation before undoing.');return;}if(!undoManager.canUndo){notify('Nothing to undo.');return;} await undoManager.undo();refresh();},
   async redo(){if(loopCutModal.active || bevelModal.active || faceOperationModal.active){notify('Apply or cancel the active mesh operation before redoing.');return;}if(!undoManager.canRedo){notify('Nothing to redo.');return;} await undoManager.redo();refresh();},
-  togglePie(kind){
-    const menu=$('#pie-menu');
-    if(!menu.hidden && menu.dataset.kind===kind){menu.hidden=true;return;}
-    const entries=kind==='shading'?
-      [['Solid','shade_solid'],['Wireframe','shade_wire'],['Material','shade_material'],['Rendered','shade_render']]:
-      kind==='selection'?
-      [['Click Select','tool_tap'],['Box Select (B)','tool_box'],['Circle Select (C)','tool_circle'],['Lasso Select (L)','tool_lasso'],['Proportional Editing · '+(modalTransform.proportionalSettings.enabled?'ON':'OFF')+' (O)','toggle_proportional'],['Edge Loop (Alt+L)','edge_loop'],['Edge Ring (Ctrl+Alt+L)','edge_ring'],['Select All','select_all'],['Deselect All','clear_selection'],['Invert','invert_selection'],['Delete Selected (X)','delete_selected'],['Dissolve Selected (Shift+X)','dissolve_selected']]:
-      [['Cube','add_cube'],['UV Sphere','add_sphere'],['Cylinder','add_cylinder'],['Plane','add_plane'],['Edit Mode','toggle_mode'],['3D Cursor','cursor_center']];
-    menu.replaceChildren();
-    for(const [label,command] of entries){const button=document.createElement('button');button.textContent=label;button.dataset.command=command;if(command==='toggle_proportional' && modalTransform.proportionalSettings.enabled)button.classList.add('is-enabled');menu.append(button);}
-    menu.dataset.kind=kind; menu.hidden=false;
+  get pieMenuOpen(){return radialPieMenu.isOpen;},
+  openPie(kind, options={}){
+    const definition=PIE_MENU_DEFINITIONS[kind];
+    if(!definition)return false;
+    const viewportRect=$('#viewport').getBoundingClientRect();
+    const pointer=viewport.lastPointer;
+    const wheelRadius=Math.min(168,Math.max(112,Math.min(viewportRect.width,viewportRect.height)*0.43));
+    const canAnchorAtPointer=Boolean(options.gestureKey && pointer &&
+      pointer.x>=viewportRect.left+wheelRadius && pointer.x<=viewportRect.right-wheelRadius &&
+      pointer.y>=viewportRect.top+wheelRadius && pointer.y<=viewportRect.bottom-wheelRadius);
+    const anchor=canAnchorAtPointer ? pointer : {
+      x:viewportRect.left+viewportRect.width/2,
+      y:viewportRect.top+viewportRect.height/2
+    };
+    const entries=definition.entries.map(([label,command,slot])=>({
+      label:command==='toggle_proportional' ? `Proportional · ${modalTransform.proportionalSettings.enabled?'ON':'OFF'}` : label,
+      command,slot,enabled:command==='toggle_proportional' && modalTransform.proportionalSettings.enabled
+    }));
+    radialPieMenu.open({
+      kind,title:definition.title,entries,
+      center:{x:anchor.x-viewportRect.left,y:anchor.y-viewportRect.top},
+      screenAnchor:anchor,
+      gestureKey:canAnchorAtPointer ? options.gestureKey : null
+    });
+    return true;
   },
+  togglePie(kind,options={}){
+    if(radialPieMenu.isOpen && radialPieMenu.kind===kind){radialPieMenu.close();return;}
+    this.openPie(kind,options);
+  },
+  closePie(){radialPieMenu.close();},
+  movePieSelection(direction){return radialPieMenu.moveSelection(direction);},
+  activatePieSelection(){return radialPieMenu.activateSelected();},
+  finishPieGesture(key){return radialPieMenu.finishGesture(key);},
   pointerCenter(){const rect=$('#viewport').getBoundingClientRect();return{x:rect.left+rect.width/2,y:rect.top+rect.height/2};},
   pointerOrigin(){return this.pointerCenter();},
   refreshSelectionTool(){
@@ -1063,7 +1111,12 @@ $$('[data-panel]').forEach(button=>button.addEventListener('click',()=>{
 }));
 $$('[data-transform]').forEach(input=>input.addEventListener('change',()=>run('object.set_transform',{kind:input.dataset.transform,axis:input.dataset.axis,value:input.value})));
 $('#pie-menu').addEventListener('click',async event=>{
-  const button=event.target.closest('button[data-command]');if(!button)return;const command=button.dataset.command;$('#pie-menu').hidden=true;
+  const button=event.target.closest('button[data-command]');if(!button)return;
+  const command=button.dataset.command;
+  if(command==='select_tools'){ui.openPie('selection-tools');return;}
+  if(command==='selection_actions'){ui.openPie('selection-actions');return;}
+  if(command==='pie_back'){ui.openPie('selection');return;}
+  ui.closePie();
   if(command.startsWith('add_')) await run('object.add_primitive',{primitive:command.slice(4)});
   else if(command==='toggle_mode') await run('mode.toggle_edit');
   else if(command==='cursor_center') await run('cursor.set',{point:viewport.controls.target.toArray()});
@@ -1076,9 +1129,9 @@ $('#pie-menu').addEventListener('click',async event=>{
   else if(command==='edge_loop') await run('mesh.select_edge_loop');
   else if(command==='edge_ring') await run('mesh.select_edge_ring');
   else if(command==='toggle_proportional') await run('transform.proportional_toggle');
-  else if(command.startsWith('shade_')){
-    await run('shading.set',{mode:command.slice(6)});
-  }
+  else if(command==='validate_topology') await run('mesh.validate_topology');
+  else if(command==='repair_topology') await run('mesh.repair_topology');
+  else if(command.startsWith('shade_')) await run('shading.set',{mode:command.slice(6)});
 });
 $('#shading-btn').addEventListener('click',()=>ui.togglePie('shading'));
 $('#numeric-pad').addEventListener('click',async event=>{

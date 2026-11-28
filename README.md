@@ -15,6 +15,14 @@ The application does not require a build command. Open the GitHub Pages URL afte
 
 ## Controls
 
+### Radial pie menus
+
+- `Shift+A` opens the **Add** pie; `Z` opens the **Shading** pie. Hold the shortcut and flick the pointer out from the wheel center, then release to choose a sector. A quick tap of the shortcut leaves the wheel open for clicking or arrow-key navigation.
+- Use **Enter** to activate the highlighted sector and **Esc** to close. Arrow keys choose the nearest available direction. You can also click/tap a sector directly.
+- **Select ▾** opens the eight-direction selection pie. **Select Tools** opens Click/Box/Circle/Lasso; **More Actions** opens Validate, Safe Repair, Delete and Dissolve. The center button on touch devices remains the Add to Selection toggle.
+- The radial wheel is a first-pass command menu, not full Blender keymap parity. Existing direct mobile actionbar buttons remain available for Move, Rotate, Scale, Extrude and proportional editing.
+
+
 - `Tab`: Object/Edit Mode
 - `G`, `R`, `S`: start Move, Rotate or Scale; move the pointer to preview
 - Edit Mode Proportional Editing: tap the visible **Prop OFF / Prop ON** button in the bottom mobile actionbar (or press `O` / use `Select ▾`). When enabled, its panel appears above the actionbar with radius and **Falloff** selectors. Desktop uses the Scene Properties controls; the active mobile transform pad also exposes the falloff during G/R/S.

@@ -4,7 +4,7 @@ This is a manual acceptance run for the deployed Bl3nd app. It checks the real b
 
 ## Build under test
 
-Current deployed baseline before v0.1.63: v0.1.62, `main` commit `fd436dddef429faa9442cbb4d54481eadfd2eab3`; Pages workflow run `46109624623` succeeded on 2026-11-28 after unpack run `46109609929`. The v0.1.63 package is a pending delta based on that deployed commit.
+Current deployed baseline before v0.1.64: v0.1.63, `main` commit `81dcba7f09a05756019799f09088ec0a02421b8e`; Pages workflow run `46112111100` succeeded on 2026-11-28 after unpack run `46112098266`. The v0.1.64 package is a pending delta based on that deployed commit.
 
 Open the deployed app only after the latest Pages workflow succeeds:
 
@@ -326,3 +326,26 @@ This procedure validates browser interaction for the starter cube. The automated
 - Create or use an extraordinary pole whose two candidate directions are not sufficiently opposite or have tied/ambiguous best matches. Loop Cut must show a clear rejection and preserve positions, faces and selection.
 - Repeat with an open fan, a fan containing a triangle/ngon, and a non-manifold spoke. All must reject without partial preview or topology mutation.
 - Confirm regular quad strips and closed cube loops still cut normally; boundary stopping, offset orientation, 1–8 cuts, numeric/drag slide and modal Cancel/Apply behavior must remain unchanged. Desktop Chrome/Edge remains deferred until PC access is available.
+
+
+## v0.1.64 — Radial pie menus and directional selection
+
+### Desktop — Chrome or Edge
+
+- Move the pointer to a safe interior point of the viewport. Hold `Z`, move the pointer toward the top/right/bottom/left sector of the radial wheel, then release `Z`. Confirm the highlighted direction activates the corresponding Solid/Wireframe/Material/Rendered shading mode. Repeat with `Shift+A` and confirm the requested Add action runs. Diagonal directions must activate their matching sector as well.
+- Press and release `Z` without moving the pointer. Confirm the Shading wheel remains open; click a sector to select it. Reopen it and use arrow keys to highlight directions, `Enter` to activate and `Esc` to close. `Backspace` must also close the wheel.
+- Repeat at viewport positions near each edge. The wheel must move to a safe centered position rather than clipping off-screen; it remains usable by click or keyboard navigation when the pointer-flick origin cannot be safely placed. Clicking outside the wheel closes it without also orbiting/selecting the mesh on that same pointer-down.
+- Press `Shift+A` and test Cube, UV Sphere, Cylinder, Plane, Edit Mode and 3D Cursor. Confirm each still invokes its original command and the menu closes after selection.
+- Enter Edit Mode and open `Select ▾`. Confirm the eight-direction wheel contains Select Tools, Proportional, Edge Loop, Edge Ring, Select All, Deselect, Invert and More Actions. Select Tools opens a second radial wheel with Click/Box/Circle/Lasso and a center Back button. More Actions opens Validate Mesh, Safe Repair, Delete and Dissolve with the same Back behavior.
+- In the main Select wheel, confirm Proportional ON/OFF text and enabled styling reflect the current preference when the wheel is reopened. Run Edge Loop/Edge Ring only with valid Edge Select input; these must continue to use their existing topology commands.
+- Confirm arrow keys move the highlight to the nearest available direction in both nested wheels. `Enter` activates the highlighted sector. `Esc` closes and does not trigger a viewport command. Direct clicking on each visible sector must still work.
+
+### Android — Chrome
+
+- Open the Add wheel from the bottom actionbar. Confirm the radial wheel fits in portrait mode without clipped/overlapping sectors. Tap each sector; verify Cube, Sphere, Cylinder, Plane, Edit Mode and 3D Cursor actions work. Tap outside the wheel; it should close without accidentally orbiting/selecting the viewport.
+- In Edit Mode, open `Select ▾`. Confirm the Add to Selection ON/OFF control remains centered in the wheel. Tap it and confirm the menu closes, the mode changes, and the toolbar still shows the `+` state. Reopen the wheel; the center label must display the current ON/OFF state.
+- Open Select Tools and tap Click, Box, Circle and Lasso. Confirm each tool works as before and Back returns to the main Select wheel. Open More Actions and confirm all four action sectors remain reachable; Back returns to Select.
+- Recheck the wheel in a narrow portrait viewport and landscape orientation, and with the More drawer open. Every sector must remain tappable; the wheel must not block direct actionbar Move/Rotate/Scale/Extrude/Prop controls after it closes.
+- Confirm existing touch orbit, two-finger pan/zoom, selection additive mode, modal controls, Undo/Redo and the `O` proportional action are unchanged. Desktop pointer-flick behavior is not applicable to touch; tapping sectors is the mobile selection path.
+
+Full Blender keymap parity is not claimed by this build. Android touch acceptance is pending; desktop Chrome/Edge remains deferred until PC access is available.
