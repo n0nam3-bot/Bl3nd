@@ -516,13 +516,49 @@ export class ModalTransform {
     }
   }
 
-  setAxis(axis, plane = false) {
+  setAxis(axis, plane = false, pointer = null) {
     if (!this.active || !AXES[axis]) return;
     if (plane) { this.axis = null; this.planeNormal = axis; }
     else { this.axis = axis; this.planeNormal = null; }
+    if (pointer && Number.isFinite(Number(pointer.x)) && Number.isFinite(Number(pointer.y))) {
+      this.numeric = '';
+      this.startPointer = { x: Number(pointer.x), y: Number(pointer.y) };
+      this.lastPointer = { ...this.startPointer };
+      this.arcballStart = this.mapArcball(this.startPointer);
+    }
     this.apply();
     this.status?.(`${this.type.toUpperCase()} · ${this.orientation.toUpperCase()} ${plane ? `${axis.toUpperCase()} plane` : `${axis.toUpperCase()} axis`} · Enter apply / Esc cancel`);
     this.onChange?.();
+  }
+
+  /** Re-anchor a gizmo drag so the first captured pointer is a zero-delta origin. */
+  reanchorPointer(point) {
+    if (!this.active || !point) return false;
+    const x = Number(point.x), y = Number(point.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
+    this.numeric = '';
+    this.startPointer = { x, y };
+    this.lastPointer = { x, y };
+    this.arcballStart = this.mapArcball(this.startPointer);
+    this.apply();
+    this.onChange?.();
+    return true;
+  }
+
+  /** Select the unconstrained center handle (view-plane / trackball / uniform scale). */
+  setFreeConstraint(point = null) {
+    if (!this.active) return false;
+    this.axis = null;
+    this.planeNormal = null;
+    if (point && Number.isFinite(Number(point.x)) && Number.isFinite(Number(point.y))) {
+      this.numeric = '';
+      this.startPointer = { x: Number(point.x), y: Number(point.y) };
+      this.lastPointer = { ...this.startPointer };
+      this.arcballStart = this.mapArcball(this.startPointer);
+    }
+    this.apply();
+    this.onChange?.();
+    return true;
   }
 
   setTransformSnapSettings(settings = {}) {
@@ -560,15 +596,16 @@ export class ModalTransform {
       planeBasis = { u: basis.u.toArray(), v: basis.v.toArray() };
     }
 
-    let ringBasis = null;
-    if (this.type === 'rotate') {
-      const normal = constraint ? this.axisVector(constraint) : this.viewFrame.forward.clone();
-      const u = this.viewFrame.right.clone().addScaledVector(normal, -this.viewFrame.right.dot(normal));
-      if (u.lengthSq() < 1e-8) u.copy(this.viewFrame.up).addScaledVector(normal, -this.viewFrame.up.dot(normal));
-      u.normalize();
-      const v = new THREE.Vector3().crossVectors(normal, u).normalize();
-      ringBasis = { u: u.toArray(), v: v.toArray() };
-    }
+    const axisRingBases = this.type === 'rotate'
+      ? Object.fromEntries(['x', 'y', 'z'].map(name => {
+          const normal = this.axisVector(name);
+          const u = this.viewFrame.right.clone().addScaledVector(normal, -this.viewFrame.right.dot(normal));
+          if (u.lengthSq() < 1e-8) u.copy(this.viewFrame.up).addScaledVector(normal, -this.viewFrame.up.dot(normal));
+          u.normalize();
+          const v = new THREE.Vector3().crossVectors(normal, u).normalize();
+          return [name, { u: u.toArray(), v: v.toArray() }];
+        }))
+      : null;
 
     const editIndividual = this.document.mode === 'edit' && this.document.pivot === 'individual';
     const objectIndividual = this.document.mode === 'object' && this.document.pivot === 'individual';
@@ -595,7 +632,7 @@ export class ModalTransform {
       axes,
       activeAxis: this.axis || this.planeNormal,
       planeBasis,
-      ringBasis,
+      axisRingBases,
       orientation: this.orientation,
       pivotMode: this.document.pivot || 'median',
       proportional: this.document.mode === 'edit' && this.proportionalSettings.enabled,

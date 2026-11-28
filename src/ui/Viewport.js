@@ -3,6 +3,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { EditModeOverlay } from './EditModeOverlay.js';
 import { chooseSelectionViewDirection } from '../core/SelectionView.js';
 import { buildTransformGuideGeometry } from '../core/TransformGuideGeometry.js';
+import { isTransformGizmoDrag, resolveTransformGizmoHandle } from '../core/TransformGizmoInput.js';
 import { orbitOffsetBySteps, rotateViewUpByHorizontalSteps } from '../core/ViewportNavigation.js';
 import { orthographicFrustum, orthographicViewHeight, perspectiveDistanceForViewHeight, perspectiveViewHeight } from '../core/CameraProjection.js';
 
@@ -26,6 +27,14 @@ export class Viewport {
     this.transformGuideSvg.classList.add('transform-guide');
     this.transformGuideSvg.setAttribute('aria-hidden', 'true');
     this.transformGuideSvg.setAttribute('hidden', '');
+    this.transformGuideSvg.style.pointerEvents = 'none';
+    this.transformGuideSvg.addEventListener('pointerdown', event => this.onTransformGuidePointerDown(event));
+    this.transformGuidePointerMove = event => this.onTransformGuidePointerMove(event);
+    this.transformGuidePointerUp = event => this.onTransformGuidePointerUp(event);
+    this.transformGuidePointerCancel = event => this.onTransformGuidePointerCancel(event);
+    window.addEventListener('pointermove', this.transformGuidePointerMove, { passive: false });
+    window.addEventListener('pointerup', this.transformGuidePointerUp);
+    window.addEventListener('pointercancel', this.transformGuidePointerCancel);
     this.container.appendChild(this.transformGuideSvg);
     this.transformGuideState = null;
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
@@ -105,6 +114,7 @@ export class Viewport {
     if (!svg) return;
     if (!state || !this.camera || !this.renderer) {
       svg.setAttribute('hidden', '');
+      svg.style.pointerEvents = 'none';
       svg.replaceChildren();
       return;
     }
@@ -129,10 +139,12 @@ export class Viewport {
       ...state,
       worldLength,
       ringRadius: worldLength * 0.72,
-      ringSegments: 56
+      axisRingBases: state.axisRingBases,
+      ringSegments: 64
     });
     if (!guide) {
       svg.setAttribute('hidden', '');
+      svg.style.pointerEvents = 'none';
       svg.replaceChildren();
       return;
     }
@@ -145,6 +157,7 @@ export class Viewport {
     const center = project(guide.pivot);
     if (!center || center.x < -width * 0.4 || center.x > width * 1.4 || center.y < -height * 0.4 || center.y > height * 1.4) {
       svg.setAttribute('hidden', '');
+      svg.style.pointerEvents = 'none';
       svg.replaceChildren();
       return;
     }
@@ -181,6 +194,17 @@ export class Viewport {
         elements.push(`<rect x="${(tip.x-4.5).toFixed(2)}" y="${(tip.y-4.5).toFixed(2)}" width="9" height="9" rx="1.5" fill="#20242d" stroke="${color}" stroke-width="2" opacity="${opacity}"/>`);
       }
       elements.push(`<text x="${(tip.x + ux * 10).toFixed(2)}" y="${(tip.y + uy * 10 + 4).toFixed(2)}" fill="${color}" opacity="${opacity}" font-size="12" font-weight="800" text-anchor="middle" paint-order="stroke" stroke="#151920" stroke-width="3">${name.toUpperCase()}</text>`);
+      elements.push(`<line x1="${(center.x + ux * 12).toFixed(2)}" y1="${(center.y + uy * 12).toFixed(2)}" x2="${tip.x.toFixed(2)}" y2="${tip.y.toFixed(2)}" stroke="transparent" stroke-width="24" stroke-linecap="round" data-gizmo-hit data-gizmo-handle="axis" data-axis="${name}"/>`);
+    }
+
+    for (const ring of guide.axisRings || []) {
+      const ringPoints = ring.points.map(project);
+      if (!ringPoints.every(Boolean)) continue;
+      const path = ringPoints.map((point, index) => `${index ? 'L' : 'M'} ${pointString(point)}`).join(' ');
+      const color = colors[ring.axis];
+      const active = guide.activeAxis === ring.axis;
+      elements.push(`<path d="${path}" fill="none" stroke="${color}" stroke-width="${active ? 3 : 2}" stroke-opacity="${active ? 0.96 : 0.68}"/>`);
+      elements.push(`<path d="${path}" fill="none" stroke="transparent" stroke-width="24" stroke-linecap="round" data-gizmo-hit data-gizmo-handle="axis" data-axis="${ring.axis}"/>`);
     }
 
     if (guide.ringPoints.length) {
@@ -200,13 +224,61 @@ export class Viewport {
     }
     elements.push(`<circle cx="${center.x.toFixed(2)}" cy="${center.y.toFixed(2)}" r="7" fill="#1a1e25" fill-opacity="0.88" stroke="${activeColor}" stroke-width="2"/>`);
     elements.push(`<path d="M ${(center.x-11).toFixed(2)} ${center.y.toFixed(2)} H ${(center.x+11).toFixed(2)} M ${center.x.toFixed(2)} ${(center.y-11).toFixed(2)} V ${(center.y+11).toFixed(2)}" stroke="#f3f4f6" stroke-opacity="0.72" stroke-width="1"/>`);
+    elements.push(`<circle cx="${center.x.toFixed(2)}" cy="${center.y.toFixed(2)}" r="15" fill="transparent" data-gizmo-hit data-gizmo-handle="free"/>`);
     const markerLabel = state.pivotMarkerLabel || 'REGION';
     const regionBadge = state.pivotMode === 'individual' && state.regionCount ? ` · ${state.regionCount} ${markerLabel}${state.regionCount === 1 ? '' : 'S'}` : '';
     const badge = `${(state.orientation || 'global').toUpperCase()} · ${(state.pivotMode || 'median').toUpperCase()}${regionBadge}`;
     elements.push(`<text x="${(center.x+12).toFixed(2)}" y="${(center.y+20).toFixed(2)}" fill="#f0d6b5" font-size="9" font-weight="700" paint-order="stroke" stroke="#151920" stroke-width="3">${badge}</text>`);
 
     svg.innerHTML = elements.join('');
+    svg.querySelectorAll('*').forEach(element => {
+      element.style.pointerEvents = element.hasAttribute('data-gizmo-hit') ? 'stroke' : 'none';
+      if (element.dataset.gizmoHandle === 'free') element.style.pointerEvents = 'all';
+      if (element.dataset.gizmoHandle) element.style.cursor = element.dataset.gizmoHandle === 'free' ? 'move' : 'grab';
+    });
+    svg.style.pointerEvents = 'auto';
     svg.removeAttribute('hidden');
+  }
+
+  onTransformGuidePointerDown(event) {
+    if (!this.modalOperationActive || !this.transformGuideState || this.gizmoPointer) return;
+    const target = event.target?.closest?.('[data-gizmo-hit]');
+    const handle = resolveTransformGizmoHandle(target);
+    if (!handle) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const point = { x: event.clientX, y: event.clientY };
+    const accepted = this.onTransformGizmoStart?.({ handle, point, event });
+    if (accepted === false) return;
+    this.gizmoPointer = { pointerId: event.pointerId, start: point, moved: false };
+    try { this.transformGuideSvg.setPointerCapture(event.pointerId); } catch { /* Pointer capture may be unavailable in embedded browsers. */ }
+  }
+
+  onTransformGuidePointerMove(event) {
+    const gesture = this.gizmoPointer;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    const point = { x: event.clientX, y: event.clientY };
+    if (!gesture.moved && !isTransformGizmoDrag(gesture.start, point, 3)) return;
+    gesture.moved = true;
+    this.onTransformGizmoMove?.(point, event);
+  }
+
+  onTransformGuidePointerUp(event) {
+    const gesture = this.gizmoPointer;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    this.gizmoPointer = null;
+    try { this.transformGuideSvg.releasePointerCapture(event.pointerId); } catch { /* The pointer may already have been released. */ }
+    if (gesture.moved) this.onTransformGizmoEnd?.({ x: event.clientX, y: event.clientY }, event);
+  }
+
+  onTransformGuidePointerCancel(event) {
+    const gesture = this.gizmoPointer;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    this.gizmoPointer = null;
+    try { this.transformGuideSvg.releasePointerCapture(event.pointerId); } catch { /* The pointer may already have been released. */ }
+    if (gesture.moved) this.onTransformGizmoCancel?.(event);
   }
 
   updateEditOverlay(mesh, selectionMode = 'face') {
@@ -500,5 +572,5 @@ export class Viewport {
     requestAnimationFrame(this.animate); this.controls.update(); this.renderer.render(this.scene,this.camera);
   };
 
-  dispose() { this.running=false; this.clearEditOverlay(); this.transformGuideSvg?.remove(); window.removeEventListener('pointermove', this.trackPointer); this.resizeObserver?.disconnect(); this.controls.dispose(); this.renderer.dispose(); this.renderer.domElement.remove(); }
+  dispose() { this.running=false; this.clearEditOverlay(); this.transformGuideSvg?.remove(); window.removeEventListener('pointermove', this.trackPointer); window.removeEventListener('pointermove', this.transformGuidePointerMove); window.removeEventListener('pointerup', this.transformGuidePointerUp); window.removeEventListener('pointercancel', this.transformGuidePointerCancel); this.resizeObserver?.disconnect(); this.controls.dispose(); this.renderer.dispose(); this.renderer.domElement.remove(); }
 }

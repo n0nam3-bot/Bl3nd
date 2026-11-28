@@ -60,3 +60,35 @@ test('transform guide safely rejects invalid pivots and zero-length axes', () =>
   assert.equal(buildTransformGuideGeometry({ pivot: [0, 0, 0], axes: { x: [0, 0, 0] } }), null);
   assert.equal(buildTransformGuideGeometry({ pivot: [0, 0, 0], axes: { x: [1, 0, 0] }, worldLength: 0 }), null);
 });
+
+test('rotation gizmo exposes independently addressable X, Y and Z axis rings', () => {
+  const guide = buildTransformGuideGeometry({
+    pivot: [1, 2, 3],
+    axes: { x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1] },
+    axisRingBases: {
+      x: { u: [0, 1, 0], v: [0, 0, 1] },
+      y: { u: [0, 0, 1], v: [1, 0, 0] },
+      z: { u: [1, 0, 0], v: [0, 1, 0] }
+    },
+    type: 'rotate', worldLength: 2, ringRadius: 1.5, ringSegments: 32
+  });
+  assert.deepEqual(guide.axisRings.map(ring => ring.axis), ['x', 'y', 'z']);
+  for (const ring of guide.axisRings) {
+    assert.equal(ring.points.length, 33);
+    ring.points[0].forEach((value, index) => close(value, ring.points.at(-1)[index]));
+    close(Math.hypot(...ring.points[0].map((value, index) => value - guide.pivot[index])), 1.5);
+  }
+});
+
+test('rotation gizmo omits invalid individual axis rings without losing valid rings', () => {
+  const guide = buildTransformGuideGeometry({
+    pivot: [0, 0, 0], axes: { x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1] },
+    axisRingBases: {
+      x: { u: [0, 1, 0], v: [0, 0, 1] },
+      y: { u: [0, 0, 0], v: [1, 0, 0] },
+      z: { u: [1, 0, 0], v: [0, 1, 0] }
+    },
+    type: 'rotate', worldLength: 1
+  });
+  assert.deepEqual(guide.axisRings.map(ring => ring.axis), ['x', 'z']);
+});

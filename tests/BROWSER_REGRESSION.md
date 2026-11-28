@@ -4,7 +4,7 @@ This is a manual acceptance run for the deployed Bl3nd app. It checks the real b
 
 ## Build under test
 
-Current repository baseline before v0.1.70: v0.1.69, `main` commit `161e322ba814711839cb3a8d178d5ced963a1219`. The last Pages deployment independently confirmed in this handoff was v0.1.68; verify the latest Pages run before treating v0.1.69 as live.
+Current repository baseline before v0.1.71: v0.1.70 source, `main` commit `90c38ed135bfdc8a63271e9c865e964e9bb1164d`. The owner reports the v0.1.70 mobile Multi workflow works for Move and Rotate; Scale was not explicitly confirmed.
 
 Open the deployed app only after the latest Pages workflow succeeds:
 
@@ -429,3 +429,17 @@ Full Blender keymap parity is not claimed by this build. Android touch acceptanc
 - With at least two objects selected, start G/R/S from the bottom actionbar. Confirm the operation applies to all selected objects, mobile numeric entry and Apply/Cancel work, and camera orbit returns immediately after completion.
 - Test Median, Bounding Box, Individual and Cursor pivots with Move/Rotate/Scale. Confirm individual-origin guide markers remain visible and controls do not select geometry or place the cursor accidentally.
 - Confirm two-finger viewport pan/zoom, one-finger orbit, P/O View, Add, More and the mobile properties drawer remain functional.
+
+
+## v0.1.71 — Draggable G/R/S gizmo
+
+### Android — Chrome
+- With an object selected in Object Mode, tap Move. Confirm the colored gizmo appears at the active pivot. Drag the red X, green Y and blue Z arrows one at a time; each drag must move the object/group only on the named Global axis and apply on finger release. Undo must restore each move in one step.
+- Tap an axis handle without dragging. Confirm the operation stays active and its numeric readout names that axis. Enter a numeric amount and apply; confirm the same constrained axis is used. Esc must cancel and restore the original transform.
+- Tap the center handle and drag. Confirm free Move follows the camera-facing view plane. Repeat with Scale: the axis arrows constrain scale and the center handle performs uniform scale. Scale on multiple objects should preserve the complete selection and undo as one transaction.
+- Tap Rotate. Confirm red/green/blue rings appear. Drag each ring and confirm rotation is around its matching Global axis; use the center handle for the existing free trackball rotation. Release must apply one undoable transform. Verify Esc cancels.
+- Repeat in Edit Mode with a vertex, edge and face selection; proportional editing on/off; and Individual Origins. Confirm the same underlying modal operator is used and no topology or selection changes occur from starting/dragging the gizmo.
+- During a gizmo drag, confirm the camera does not orbit, the viewport does not pick another object, and movement outside the visible ring/arrow still updates until release. After apply/cancel, one-finger orbit and two-finger pan/zoom work immediately again. Confirm the numeric pad remains tappable while a transform is active.
+
+### Desktop — Chrome / Edge (deferred)
+- Repeat axis-arrow Move/Scale and axis-ring Rotate with a mouse. Confirm a drag-release is one transaction, a click-only selects a constraint without committing, and the center handle provides free transforms. Confirm ordinary viewport dragging, Shift plane constraints, numeric input, Enter/Esc, snap settings, Undo/Redo and object picking are unchanged.

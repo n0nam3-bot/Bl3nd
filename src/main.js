@@ -109,6 +109,15 @@ const bevelModal = new BevelModal({ document: sceneDocument, undoManager, viewpo
 const faceOperationModal = new FaceOperationModal({ document: sceneDocument, undoManager, viewport, status, onChange: () => { refresh(); ui?.refreshModal(); } });
 viewport.onModalPointerStart = event => faceOperationModal.setPointerAnchor({ x: event.clientX, y: event.clientY });
 const commandBus = new CommandBus({ undoManager, status });
+viewport.onTransformGizmoStart = ({ handle, point }) => {
+  if (!modalTransform.active) return false;
+  return handle.kind === 'free'
+    ? modalTransform.setFreeConstraint(point)
+    : (modalTransform.setAxis(handle.axis, false, point), true);
+};
+viewport.onTransformGizmoMove = point => commandBus.dispatch('transform.modal_update', { point });
+viewport.onTransformGizmoEnd = () => run('transform.modal_confirm');
+viewport.onTransformGizmoCancel = () => run('transform.modal_cancel');
 const modifierStack = new ModifierStack({ onStatus: status });
 const modelIO = new ModelIO(sceneDocument, notify);
 loadingProgress(50, 'Scene document, undo history and model I/O are initialized…');
@@ -591,14 +600,30 @@ function registerCommands() {
   }, { recordUndo: false });
   commandBus.register('transform.modal_start', async ({ type, pointer }) => {
     transformSnapSettingsOpen = false;
-    if (loopCutModal.active || bevelModal.active) { notify('Apply or cancel the current mesh operation before starting a transform.'); return false; }
+    if (loopCutModal.active || bevelModal.active || faceOperationModal.active) { notify('Apply or cancel the current mesh operation before starting a transform.'); return false; }
     const started = await modalTransform.begin(type, pointer || ui.pointerOrigin());
-    if (!started) notify('Select an object before transforming.');
+    viewport.modalOperationActive = Boolean(started);
+    document.body.classList.toggle('transform-modal-active', Boolean(started));
+    if (!started) notify('Select an object or mesh elements before transforming.');
     else minimizeMobilePropertiesPanel();
     viewport.controls.enabled = !started; ui.refreshModal(); return started;
   }, { recordUndo: false });
-  commandBus.register('transform.modal_confirm', async () => { const result = await modalTransform.commit(); viewport.controls.enabled = true; await reapplyActiveModifiers(); refresh(); return result; }, { recordUndo: false });
-  commandBus.register('transform.modal_cancel', async () => { const result = await modalTransform.cancel(); viewport.controls.enabled = true; await reapplyModifiers(); refresh(); return result; }, { recordUndo: false });
+  commandBus.register('transform.modal_confirm', async () => {
+    const result = await modalTransform.commit();
+    viewport.modalOperationActive = false;
+    document.body.classList.remove('transform-modal-active');
+    viewport.controls.enabled = true;
+    await reapplyActiveModifiers(); refresh();
+    return result;
+  }, { recordUndo: false });
+  commandBus.register('transform.modal_cancel', async () => {
+    const result = await modalTransform.cancel();
+    viewport.modalOperationActive = false;
+    document.body.classList.remove('transform-modal-active');
+    viewport.controls.enabled = true;
+    await reapplyModifiers(); refresh();
+    return result;
+  }, { recordUndo: false });
   commandBus.register('transform.modal_update', ({ point }) => { modalTransform.pointerMove(point); }, { recordUndo: false });
   commandBus.register('transform.modal_axis', ({ axis, plane = false }) => { modalTransform.setAxis(axis, plane); ui.refreshModal(); }, { recordUndo: false });
   commandBus.register('transform.modal_orientation_toggle', () => modalTransform.toggleOrientation(), { recordUndo: false });
@@ -753,8 +778,8 @@ function refresh() {
     hintDesktop.textContent = 'Edit: Click topology · O proportional · Alt+L loop · Ctrl+Alt+L ring · Ctrl+B bevel · Ctrl+R loop cut · X delete · Numpad: views/orbit/frame/projection';
     hintMobile.textContent = 'Edit: Tap topology · Prop toggles proportional G/R/S · P/O switches projection · Select ▾ for selection tools';
   } else {
-    hintDesktop.textContent = 'Drag to orbit · Right-drag to pan · Scroll to zoom · Numpad 2/4/6/8 orbit · Numpad 5 / P-O switch projection · Numpad . frame · G/R/S transform';
-    hintMobile.textContent = 'One finger: orbit · Two fingers: pan/zoom · Multi adds/toggles objects · P/O View switches projection · Long press: 3D Cursor · G/R/S: transform';
+    hintDesktop.textContent = 'Drag to orbit · Right-drag to pan · Scroll to zoom · Numpad 2/4/6/8 orbit · Numpad 5 / P-O projection · G/R/S: drag colored handles or center';
+    hintMobile.textContent = 'One finger: orbit · Two fingers: pan/zoom · Multi adds/toggles objects · G/R/S: drag axis handles or center; release applies · P/O View: projection';
   }
   const stats=sceneDocument.stats(); $('#object-count').textContent=`Objects: ${stats.objects} · Selected: ${sceneDocument.selectedObjects?.size || 0}`;
   touchController?.syncObjectSelectionButton();

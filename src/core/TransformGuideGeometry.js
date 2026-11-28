@@ -46,6 +46,7 @@ export function buildTransformGuideGeometry({
   activeAxis = null,
   planeBasis = null,
   ringBasis = null,
+  axisRingBases = null,
   type = 'move',
   worldLength = 1,
   ringRadius = null,
@@ -81,12 +82,17 @@ export function buildTransformGuideGeometry({
     ? Number(ringRadius)
     : length * 0.72;
   const segments = Math.max(12, Math.min(96, Math.round(Number(ringSegments) || 48)));
-  const ringPoints = ring && type === 'rotate'
-    ? Array.from({ length: segments + 1 }, (_, index) => {
-        const angle = (index / segments) * Math.PI * 2;
-        return origin.map((component, axisIndex) => component + radius * (
-          ring.u[axisIndex] * Math.cos(angle) + ring.v[axisIndex] * Math.sin(angle)
-        ));
+  const makeRingPoints = basis => Array.from({ length: segments + 1 }, (_, index) => {
+    const angle = (index / segments) * Math.PI * 2;
+    return origin.map((component, axisIndex) => component + radius * (
+      basis.u[axisIndex] * Math.cos(angle) + basis.v[axisIndex] * Math.sin(angle)
+    ));
+  });
+  const ringPoints = ring && type === 'rotate' ? makeRingPoints(ring) : [];
+  const axisRings = type === 'rotate'
+    ? AXIS_NAMES.flatMap(axis => {
+        const basis = normalizedBasis(axisRingBases?.[axis]);
+        return basis ? [{ axis, points: makeRingPoints(basis), radius }] : [];
       })
     : [];
 
@@ -97,6 +103,7 @@ export function buildTransformGuideGeometry({
     axisLines,
     planeCorners,
     ringPoints,
+    axisRings,
     worldLength: length
   };
 }
