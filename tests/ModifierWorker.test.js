@@ -64,3 +64,60 @@ test('worker surfaces topology errors without returning a partial geometry', () 
   assert.equal(result.positions, undefined);
   assert.equal(result.indices, undefined);
 });
+
+
+test('worker mirrors and welds a half-surface at the configured center plane', () => {
+  const result = runWorker({
+    id: 11,
+    positions: new Float32Array([0,0,0, 0,1,0, 1,0,0]),
+    indices: new Uint32Array([0,1,2]),
+    faces: [[0,1,2]],
+    modifiers: [{ type: 'mirror', axis: 'x', mergeDistance: 0.001, enabled: true }]
+  });
+  assert.equal(result.id, 11);
+  assert.equal(result.error, undefined);
+  assert.equal(result.positions.length / 3, 4);
+  assert.deepEqual([...result.indices], [0,1,2,0,3,1]);
+});
+
+test('worker Mirror uses the normalized Y axis and preserves the source triangle', () => {
+  const positions = new Float32Array([0,0,0, 0,0.5,0, 0,0.5,1]);
+  const result = runWorker({
+    id: 12,
+    positions,
+    indices: new Uint32Array([0,1,2]),
+    modifiers: [{ type: 'mirror', axis: 'y', mergeDistance: 0.0001, enabled: true }]
+  });
+  assert.equal(result.error, undefined);
+  assert.equal(result.positions.length / 3, 5);
+  assert.equal(result.positions[3 * 3 + 1], -0.5);
+  assert.equal(result.positions[4 * 3 + 1], -0.5);
+  assert.equal(positions[4], 0.5);
+});
+
+test('worker skips duplicate geometry from faces already on the Mirror center plane', () => {
+  const result = runWorker({
+    id: 13,
+    positions: new Float32Array([0,0,0, 0,1,0, 0,1,1]),
+    indices: new Uint32Array([0,1,2]),
+    modifiers: [{ type: 'mirror', axis: 'x', mergeDistance: 0.001, enabled: true }]
+  });
+  assert.equal(result.positions.length / 3, 3);
+  assert.deepEqual([...result.indices], [0,1,2]);
+});
+
+test('worker can apply Catmull-Clark after a welded Mirror result', () => {
+  const result = runWorker({
+    id: 14,
+    positions: new Float32Array([0,0,0, 0,1,0, 1,0,0]),
+    indices: new Uint32Array([0,1,2]),
+    faces: [[0,1,2]],
+    modifiers: [
+      { type: 'mirror', axis: 'x', mergeDistance: 0, enabled: true },
+      { type: 'subdivision', level: 1, enabled: true }
+    ]
+  });
+  assert.equal(result.error, undefined);
+  assert.ok(result.positions.length / 3 > 4);
+  assert.equal(result.indices.length % 3, 0);
+});

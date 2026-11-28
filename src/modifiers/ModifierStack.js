@@ -15,7 +15,7 @@ export class ModifierStack {
 
   add(mesh, type) {
     const defaults = {
-      subdivision: { level: 1 }, mirror: { axis: 'x' }, array: { count: 2, offset: [2,0,0] }, solidify: { thickness: 0.08 }
+      subdivision: { level: 1 }, mirror: { axis: 'x', mergeDistance: 0.001 }, array: { count: 2, offset: [2,0,0] }, solidify: { thickness: 0.08 }
     };
     if (!defaults[type]) throw new Error(`Unknown modifier: ${type}`);
     const modifiers = mesh.userData.modifiers || (mesh.userData.modifiers = []);

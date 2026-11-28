@@ -17,6 +17,7 @@ import { BevelModal } from './operators/BevelModal.js';
 import { FaceOperationModal } from './operators/FaceOperationModal.js';
 import { ModifierStack } from './modifiers/ModifierStack.js';
 import { clampSubdivisionLevel, getSubdivisionLevelOptions } from './modifiers/CatmullClark.js';
+import { clampMirrorMergeDistance, normalizeMirrorAxis } from './modifiers/MirrorGeometry.js';
 import { Viewport } from './ui/Viewport.js';
 import { ModelIO } from './io/ModelIO.js';
 import { KeyboardController } from './input/KeyboardController.js';
@@ -774,6 +775,8 @@ function registerCommands() {
     const previousValue = item[field];
     item[field] = field === 'level'
       ? clampSubdivisionLevel(value)
+      : field === 'mergeDistance' ? clampMirrorMergeDistance(value)
+      : field === 'axis' ? normalizeMirrorAxis(value)
       : ['count', 'thickness'].includes(field) ? Number(value) : value;
     try {
       await modifierStack.evaluate(mesh);
@@ -838,6 +841,10 @@ function refreshModifiers() {
       const row=document.createElement('label'); row.textContent='Axis'; const select=document.createElement('select');
       for(const axis of ['x','y','z']){const option=document.createElement('option');option.value=axis;option.textContent=axis.toUpperCase();select.append(option);} select.value=mod.axis;
       select.addEventListener('change',()=>run('modifier.update',{id:mod.id,field:'axis',value:select.value}));row.append(select);card.append(row);
+      addField('Merge Distance','mergeDistance',clampMirrorMergeDistance(mod.mergeDistance),{min:0,max:1,step:0.001});
+      const note=document.createElement('div'); note.className='panel-note';
+      note.textContent='Reflects this half-mesh across the object origin. Vertices within the merge distance are snapped to the center plane and shared by both sides. Build only one side first; Mirror does not delete the opposite half.';
+      card.append(note);
     }
     if(mod.type==='array') addField('Copies','count',mod.count);
     if(mod.type==='solidify') addField('Thickness','thickness',mod.thickness);

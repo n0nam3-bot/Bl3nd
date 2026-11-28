@@ -1,4 +1,5 @@
 import { clampSubdivisionLevel, subdivideCatmullClark } from '../modifiers/CatmullClark.js';
+import { mirrorGeometry } from '../modifiers/MirrorGeometry.js';
 
 const edgeKey = (a, b) => a < b ? `${a}:${b}` : `${b}:${a}`;
 
@@ -26,16 +27,6 @@ function subdivide(positions, indices, sourceFaces, modifier) {
     nextFaces = result.faces;
   }
   return { positions: nextPositions, faces: nextFaces, indices: facesToTriangleIndices(nextFaces) };
-}
-
-function mirror(positions, indices, modifier) {
-  const axis = ({x:0,y:1,z:2})[modifier.axis || 'x'];
-  const count = positions.length / 3, points = Array.from(positions), out = Array.from(indices);
-  for (let i=0;i<count;i++) {
-    const p = [positions[i*3],positions[i*3+1],positions[i*3+2]]; p[axis] *= -1; points.push(...p);
-  }
-  for (let i=0;i+2<indices.length;i+=3) out.push(indices[i]+count,indices[i+2]+count,indices[i+1]+count);
-  return { positions:new Float32Array(points), indices:new Uint32Array(out) };
 }
 
 function arrayMesh(positions, indices, modifier) {
@@ -78,7 +69,7 @@ self.onmessage = ({ data }) => {
     for (const modifier of data.modifiers || []) {
       if (modifier.enabled === false) continue;
       if (modifier.type === 'subdivision') result = subdivide(result.positions, result.indices, result.faces, modifier);
-      else if (modifier.type === 'mirror') result = { ...mirror(result.positions, result.indices, modifier), faces: null };
+      else if (modifier.type === 'mirror') result = { ...mirrorGeometry(result.positions, result.indices, modifier), faces: null };
       else if (modifier.type === 'array') result = { ...arrayMesh(result.positions, result.indices, modifier), faces: null };
       else if (modifier.type === 'solidify') result = { ...solidify(result.positions, result.indices, modifier), faces: null };
     }

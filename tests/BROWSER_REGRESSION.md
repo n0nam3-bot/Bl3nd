@@ -4,7 +4,7 @@ This is a manual acceptance run for the deployed Bl3nd app. It checks the real b
 
 ## Build under test
 
-Current accepted mobile baseline: v0.1.77 local scene recovery. The owner confirmed that scene recovery works after reload. Desktop Chrome/Edge and the v0.1.73 blank-area free-drag retest remain deferred. This document now includes the v0.1.78 update-delivery checks below.
+Current accepted mobile baseline: v0.1.80. The owner confirmed that v0.1.77 local scene recovery works after reload and that the explicit Subdivision Level 1/2/3 controls work on Android. Desktop Chrome/Edge and the v0.1.73 blank-area free-drag retest remain deferred. This document includes the v0.1.78 update-delivery checks and the v0.1.81 Mirror checks below.
 
 Open the deployed app only after the latest Pages workflow succeeds:
 
@@ -570,3 +570,19 @@ Full Blender keymap parity is not claimed by this build. Android touch acceptanc
 
 ### Desktop — Chrome / Edge
 - Repeat Levels 1–3, keyboard tab/space activation, visible focus outline, selected-state semantics, modifier toggle/remove, Undo/Redo and autosave/reload. Confirm the level selector does not overflow the modifier card at narrow desktop widths.
+
+
+## v0.1.81 — Seam-welded Mirror
+
+### Android — Chrome / Samsung Internet
+- Create or keep a mesh with only one side modeled and its open border vertices positioned on the object's local X=0 plane. Do not use a complete symmetric mesh for this test; Mirror does not remove the opposite half.
+- Open **More → Mods**, tap **Mirror**, and confirm the modifier card exposes an **Axis** selector and a **Merge Distance** numeric field. The default should be `0.001`.
+- Keep Axis X and confirm the reflected side appears. Inspect the center seam at close zoom; it must be closed with no visible gap or doubled strip. Rotate the view around the seam and check lighting/normals on both sides.
+- Change Merge Distance to `0` and confirm only exact center-plane vertices weld. Set a small positive value such as `0.01`; confirm near-plane vertices snap to X=0 in the evaluated copy and the seam remains continuous. Confirm the original editable cage positions do not move.
+- Change the axis to Y and Z on simple one-sided test surfaces. Confirm reflection occurs across the selected local axis plane and the source shape is unchanged. Return to X.
+- Add Subdivision after Mirror and test Level 1, then turn Subdivision off. The seam must remain connected in both cases. Also test Mirror after Subdivision and note the different stack order.
+- Toggle Mirror off/on and remove it. Confirm the original source mesh returns without lost geometry. Undo/Redo, wait for `LOCAL · SAVED`, then refresh and confirm the modifier axis/merge distance and evaluated result return.
+- Confirm a triangle/surface entirely on the mirror plane is not duplicated, and malformed modifier input does not replace the last valid evaluated mesh.
+
+### Desktop — Chrome / Edge (deferred)
+- Repeat Axis X/Y/Z, Merge Distance 0/small/large, seam inspection, toggle/remove, stack order and Undo/Redo with a mouse. Confirm the merge field remains readable and keyboard focus does not trigger viewport shortcuts.

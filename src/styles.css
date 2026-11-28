@@ -163,3 +163,7 @@ body.transform-modal-active .topbar,body.transform-modal-active .tool-rail,body.
 .modifier-level-button[aria-pressed="true"]{background:#493729;border-color:#ed9b52;color:#ffd0a7;box-shadow:inset 0 0 0 1px #ed9b5244}
 .modifier-level-button:disabled{opacity:.6;cursor:progress}
 @media(max-width:650px){.modifier-level-control{padding:10px;gap:9px}.modifier-level-heading{font-size:10px}.modifier-level-heading strong{font-size:11px}.modifier-level-buttons{gap:7px}.modifier-level-button{min-height:46px;font-size:11px;letter-spacing:.35px}}
+
+/* Modifier fields are deliberately touch-sized on narrow displays. */
+.modifier-card input,.modifier-card select{min-height:36px}
+@media(max-width:650px){.modifier-card input,.modifier-card select{width:112px;min-height:42px}}
