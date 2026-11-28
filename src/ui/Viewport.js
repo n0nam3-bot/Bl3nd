@@ -179,9 +179,16 @@ export class Viewport {
     }
 
     const activeColor = colors[guide.activeAxis] || '#ffd08a';
+    for (const markerWorld of state.pivotMarkers || []) {
+      const marker = project(markerWorld);
+      if (!marker || marker.x < -width * 0.4 || marker.x > width * 1.4 || marker.y < -height * 0.4 || marker.y > height * 1.4) continue;
+      elements.push(`<circle cx="${marker.x.toFixed(2)}" cy="${marker.y.toFixed(2)}" r="5" fill="#1a1e25" fill-opacity="0.9" stroke="#ffd08a" stroke-width="2"/>`);
+      elements.push(`<circle cx="${marker.x.toFixed(2)}" cy="${marker.y.toFixed(2)}" r="1.4" fill="#ffd08a"/>`);
+    }
     elements.push(`<circle cx="${center.x.toFixed(2)}" cy="${center.y.toFixed(2)}" r="7" fill="#1a1e25" fill-opacity="0.88" stroke="${activeColor}" stroke-width="2"/>`);
     elements.push(`<path d="M ${(center.x-11).toFixed(2)} ${center.y.toFixed(2)} H ${(center.x+11).toFixed(2)} M ${center.x.toFixed(2)} ${(center.y-11).toFixed(2)} V ${(center.y+11).toFixed(2)}" stroke="#f3f4f6" stroke-opacity="0.72" stroke-width="1"/>`);
-    const badge = `${(state.orientation || 'global').toUpperCase()} · ${(state.pivotMode || 'median').toUpperCase()}`;
+    const regionBadge = state.pivotMode === 'individual' && state.regionCount ? ` · ${state.regionCount} REGION${state.regionCount === 1 ? '' : 'S'}` : '';
+    const badge = `${(state.orientation || 'global').toUpperCase()} · ${(state.pivotMode || 'median').toUpperCase()}${regionBadge}`;
     elements.push(`<text x="${(center.x+12).toFixed(2)}" y="${(center.y+20).toFixed(2)}" fill="#f0d6b5" font-size="9" font-weight="700" paint-order="stroke" stroke="#151920" stroke-width="3">${badge}</text>`);
 
     svg.innerHTML = elements.join('');

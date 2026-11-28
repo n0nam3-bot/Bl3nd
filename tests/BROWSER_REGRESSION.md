@@ -210,3 +210,12 @@ This procedure validates browser interaction for the starter cube. The automated
 - In Object Mode, choose Bounding Box Center and transform a mesh whose local geometry is offset from its object origin (or an imported mesh with an off-center origin). The guide pivot must sit at the center of the mesh's world-space bounds, and Rotate/Scale must operate around that point. The object origin must remain distinct.
 - Switch between Median Point, Bounding Box Center and 3D Cursor. The dropdown must reflect the active mode after a refresh/undo restore. 3D Cursor remains fixed while the object/selection moves; the Median and Bounding Box pivots remain anchored to the transform's starting geometry during Rotate/Scale previews.
 - Confirm the guide remains pointer-transparent, snapping still uses the same increments, numeric input stays exact, and Apply/Cancel/Undo/Redo remain transactional. Individual Origins is a documented limited mode and is not part of this acceptance. Desktop Chrome/Edge remains deferred.
+
+
+## Edit Mode Individual Origins by connected selected region — v0.1.52 (browser acceptance pending)
+
+- On a subdivided cube/grid, select two adjacent faces sharing an edge, choose **Individual Origins**, then Rotate or Scale. Both faces must move together around one shared region pivot; the shared edge/vertices remain welded with no seam or duplicate points.
+- Select a second face island separated by unselected faces/edges. Rotate or Scale: each disconnected selected island must turn/scale around its own median pivot. The passive guide must show a marker at each region origin and the badge must report the connected-region count.
+- Select two edge paths that meet at an endpoint. They must share one pivot; a separate edge path must have its own pivot. Repeat with vertex selection and confirm only selected vertices connected by actual mesh edges are grouped.
+- Select faces that meet at a shared vertex. They must be treated as one region so the shared vertex is transformed only once and topology remains welded. Undo/Redo must restore both islands exactly.
+- Confirm Move applies the same world delta to every region, Global/Local axis constraints and snapping remain consistent across all regions, numeric entry stays exact, and Cancel/Apply remain one transactional operation. Repeat Free Move/Rotate/Scale and X/Y/Z constraints on Android. Desktop Chrome/Edge remains deferred.
