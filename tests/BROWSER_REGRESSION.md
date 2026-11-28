@@ -388,3 +388,22 @@ Full Blender keymap parity is not claimed by this build. Android touch acceptanc
 - Tap the P/O button while close to the viewport edge. Confirm the action changes projection without rotating the view, selecting mesh elements, placing the 3D cursor or opening another panel.
 - During an active Move/Rotate/Scale, Bevel, Extrude, Inset or Loop Cut modal, confirm the mobile actionbar is disabled/visually dimmed per existing modal rules and projection switching remains blocked. Confirm Cancel/Apply restores the button's usable state.
 - Verify the desktop P/O button remains beside the X/Y/Z axes and continues to synchronize with the same mobile/keyboard camera state. Desktop Numpad 5 acceptance still requires a physical keyboard.
+
+
+## v0.1.68 — Command search launcher
+
+### Desktop — Chrome / Edge
+- Click the **⌕** button in the top bar. Confirm a modal Command Search panel opens, focuses its search field and displays commands available in the current Object/Edit Mode.
+- Type a complete label, partial label and a multi-word synonym. Confirm results update immediately, require every query term, rank direct label matches first and show a useful empty state for unmatched queries.
+- Use Up/Down to move the active result, Enter to run it, and Esc to close. Confirm the active row is visibly highlighted and announced through its selected option state.
+- Search for Add Cube, Move, Front View, Projection, Frame Selection, Pivot, Bevel, Extrude, Loop Cut and a modifier. Confirm each result dispatches its existing named command, opens the expected modal where relevant, and preserves existing undo behavior.
+- Enter Edit Mode and search for Delete. Confirm Delete Selected Geometry is offered and Delete Active Object is hidden; return to Object Mode and confirm the reverse. Confirm Edit Mesh commands are hidden from Object Mode.
+- Press `/` with the viewport focused. Confirm Command Search opens. Press `/` while an input, textarea, select or contenteditable field is focused; confirm the character is typed normally and the palette does not open.
+- Confirm Ctrl/Meta/Alt/Shift combinations are not captured by the search shortcut. Test Ctrl/Meta+Z/Y, Ctrl+B, Ctrl+R, Shift+A, Z, Tab and numpad view/projection shortcuts to confirm existing behavior and browser-reserved combinations remain unchanged.
+- During G/R/S, Bevel, Extrude, Inset or Loop Cut, press `/` and confirm the palette does not open or steal modal input. Confirm the header launcher is inaccessible while the existing modal overlay rules are active. Open a radial pie menu and confirm slash does not cover it.
+- Click the backdrop outside the panel to close. Confirm focus returns to the launcher and the palette can be opened again.
+
+### Android — Chrome
+- Confirm the **⌕** header button remains visible and tappable at narrow phone widths without clipping Object/Edit, Undo/Redo, Export or Import controls.
+- Tap the launcher, type a search query and tap a result. Confirm the correct command runs and the palette closes. Verify the panel scrolls and result targets remain comfortably tappable.
+- Confirm Android keyboard typing, text selection, scrolling, Back/Esc close behavior and touch viewport navigation remain usable after closing the palette.

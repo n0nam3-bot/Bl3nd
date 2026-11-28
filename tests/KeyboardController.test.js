@@ -102,3 +102,51 @@ test('modified Numpad 5 is left to browser shortcuts instead of toggling project
   assert.equal(calls.length, 0);
   controller.dispose();
 });
+
+
+test('slash opens command search when the viewport owns focus', async () => {
+  const { controller } = makeController('object');
+  let opened = 0;
+  controller.commandSearch = { isOpen:false, open() { opened++; return true; } };
+  const event = keyEvent({ key:'/', code:'Slash' });
+  await controller.onKeyDown(event);
+  assert.equal(opened, 1);
+  assert.equal(event.prevented, true);
+  controller.dispose();
+});
+
+test('slash remains ordinary text in editable fields', async () => {
+  const { controller } = makeController('object');
+  let opened = 0;
+  controller.commandSearch = { isOpen:false, open() { opened++; return true; } };
+  const event = keyEvent({ key:'/', code:'Slash' });
+  event.target = { tagName:'INPUT' };
+  await controller.onKeyDown(event);
+  assert.equal(opened, 0);
+  assert.equal(event.prevented, false);
+  controller.dispose();
+});
+
+test('slash does not open command search during an active transform', async () => {
+  const { controller } = makeController('object');
+  let opened = 0;
+  controller.commandSearch = { isOpen:false, open() { opened++; return true; } };
+  controller.modal.active = true;
+  const event = keyEvent({ key:'/', code:'Slash' });
+  await controller.onKeyDown(event);
+  assert.equal(opened, 0);
+  assert.equal(event.prevented, false);
+  controller.dispose();
+});
+
+test('radial menu keeps keyboard focus ahead of command search', async () => {
+  const { controller } = makeController('object');
+  let opened = 0;
+  controller.commandSearch = { isOpen:false, open() { opened++; return true; } };
+  controller.ui.pieMenuOpen = true;
+  const event = keyEvent({ key:'/', code:'Slash' });
+  await controller.onKeyDown(event);
+  assert.equal(opened, 0);
+  assert.equal(event.prevented, false);
+  controller.dispose();
+});

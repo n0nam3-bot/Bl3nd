@@ -15,6 +15,12 @@ The application does not require a build command. Open the GitHub Pages URL afte
 
 ## Controls
 
+### Command search
+
+- Press `/` when no form field or modal operation owns focus, or tap the **⌕** button in the top bar, to open Command Search.
+- Search commands by name or related terms. Results follow Object/Edit Mode context and run through the existing CommandBus; supported actions include primitives, transforms, views, pivots, selection tools, mesh operations and modifiers.
+- Use `↑` / `↓` to choose, `Enter` to run and `Esc` to close. Typing in inputs/selects, radial-menu navigation, modal modeling input and browser-modified shortcuts retain priority. The catalogue is curated, so newly registered commands need an explicit search entry.
+
 ### Radial pie menus
 
 - `Shift+A` opens the **Add** pie; `Z` opens the **Shading** pie. Hold the shortcut and flick the pointer out from the wheel center, then release to choose a sector. A quick tap of the shortcut leaves the wheel open for clicking or arrow-key navigation.

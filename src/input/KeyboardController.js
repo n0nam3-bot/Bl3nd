@@ -1,16 +1,29 @@
 import { resolveNumpadShortcut } from '../core/ViewportNavigation.js';
+import { CommandSearch, isCommandSearchShortcut, isEditableCommandSearchTarget } from '../ui/CommandSearch.js';
 
 export class KeyboardController {
   constructor({ viewport, commandBus, modalTransform, loopCutModal = null, bevelModal = null, faceOperationModal = null, getDocument, ui, notify }) {
     this.viewport=viewport; this.commandBus=commandBus; this.modal=modalTransform; this.loopCutModal=loopCutModal; this.bevelModal=bevelModal; this.faceOperationModal=faceOperationModal; this.getDocument=getDocument; this.ui=ui; this.notify=notify;
     this.listener=event=>this.onKeyDown(event);
     this.keyupListener=event=>this.onKeyUp(event);
+    this.commandSearch = typeof document !== 'undefined' ? new CommandSearch({
+      dispatch:(name,payload)=>this.dispatch(name,payload),
+      getMode:()=>this.getDocument()?.mode || 'object',
+      canOpen:()=>!this.isModalActive() && !this.ui?.pieMenuOpen,
+      getPointerOrigin:()=>this.viewport?.getPointerOrigin?.() || this.ui?.pointerOrigin?.(),
+      notify:this.notify
+    }) : null;
     window.addEventListener('keydown',this.listener);
     window.addEventListener('keyup',this.keyupListener);
   }
   dispatch(name,payload={}) { return this.commandBus.dispatch(name,{...payload,document:this.getDocument()}); }
-  isTyping(target) { return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target?.isContentEditable; }
+  isTyping(target) { return isEditableCommandSearchTarget(target); }
+  isModalActive() {
+    return Boolean(this.modal?.active || this.loopCutModal?.active || this.bevelModal?.active ||
+      this.faceOperationModal?.active || this.viewport?.modalOperationActive);
+  }
   async onKeyDown(event) {
+    if (this.commandSearch?.isOpen) return;
     if (this.isTyping(event.target)) return;
     const key=event.key.toLowerCase(), doc=this.getDocument();
     if (this.ui?.pieMenuOpen) {
@@ -74,6 +87,10 @@ export class KeyboardController {
       if (key==='backspace') { event.preventDefault(); await this.dispatch('transform.modal_input',{value:'backspace'}); return; }
       return;
     }
+    if (isCommandSearchShortcut(event)) {
+      if (this.commandSearch?.open({ returnFocus: event.target })) event.preventDefault();
+      return;
+    }
     const numpad = resolveNumpadShortcut(event.code, event);
     if (numpad?.action === 'view') {
       event.preventDefault(); await this.dispatch('view.set', { view: numpad.view }); return;
@@ -110,8 +127,9 @@ export class KeyboardController {
     if (key==='home') { event.preventDefault(); await this.dispatch('view.frame'); }
   }
   onKeyUp(event) {
+    if (this.isTyping(event.target) || this.commandSearch?.isOpen) return;
     const key=event.key.toLowerCase();
     if (key==='a' || key==='z') this.ui?.finishPieGesture(key);
   }
-  dispose(){window.removeEventListener('keydown',this.listener);window.removeEventListener('keyup',this.keyupListener);}
+  dispose(){window.removeEventListener('keydown',this.listener);window.removeEventListener('keyup',this.keyupListener);this.commandSearch?.destroy?.();}
 }
