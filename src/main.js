@@ -685,6 +685,7 @@ ui = {
     button.setAttribute('aria-pressed',String(tool!=='tap'));
   },
   refreshModal(){
+    viewport.updateTransformGuide(modalTransform.active ? modalTransform.getGuideState() : null);
     const readout=$('#modal-readout'),pad=$('#numeric-pad'),padTitle=pad.querySelector('.pad-title');
     const axisButtons=pad.querySelectorAll('[data-axis]');
     const orientationButton=$('#pad-transform-orientation');

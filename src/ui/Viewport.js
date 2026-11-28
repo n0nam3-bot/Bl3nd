@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { EditModeOverlay } from './EditModeOverlay.js';
 import { chooseSelectionViewDirection } from '../core/SelectionView.js';
+import { buildTransformGuideGeometry } from '../core/TransformGuideGeometry.js';
 
 export class Viewport {
   constructor(container, { pixelRatio = 1.5, onSelect, onCursor, onStatus } = {}) {
@@ -18,9 +19,18 @@ export class Viewport {
     this.renderer.toneMappingExposure = 1.15;
     this.renderer.shadowMap.enabled = true; this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.container.appendChild(this.renderer.domElement);
+    this.transformGuideSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    this.transformGuideSvg.classList.add('transform-guide');
+    this.transformGuideSvg.setAttribute('aria-hidden', 'true');
+    this.transformGuideSvg.setAttribute('hidden', '');
+    this.container.appendChild(this.transformGuideSvg);
+    this.transformGuideState = null;
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.075;
+    this.controls.addEventListener('change', () => {
+      if (this.transformGuideState) this.updateTransformGuide(this.transformGuideState);
+    });
     this.controls.target.set(0, 0, 0);
     this.controls.enableRotate = true;
     this.controls.enableZoom = true;
@@ -64,6 +74,7 @@ export class Viewport {
   resize() {
     const width = Math.max(1, this.container.clientWidth), height = Math.max(1, this.container.clientHeight);
     this.camera.aspect = width / height; this.camera.updateProjectionMatrix(); this.renderer.setSize(width,height,false);
+    this.updateTransformGuide(this.transformGuideState);
   }
 
   setContent(group) {
@@ -75,6 +86,106 @@ export class Viewport {
   clearEditOverlay() {
     this.editOverlay?.dispose();
     this.editOverlay = null;
+  }
+
+  updateTransformGuide(state = null) {
+    this.transformGuideState = state;
+    const svg = this.transformGuideSvg;
+    if (!svg) return;
+    if (!state || !this.camera || !this.renderer) {
+      svg.setAttribute('hidden', '');
+      svg.replaceChildren();
+      return;
+    }
+
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const width = Math.max(1, rect.width);
+    const height = Math.max(1, rect.height);
+    svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+    svg.setAttribute('width', String(width));
+    svg.setAttribute('height', String(height));
+    this.camera.updateWorldMatrix(true, false);
+    const distance = this.camera.getWorldPosition(new THREE.Vector3()).distanceTo(new THREE.Vector3(...state.pivot));
+    const fov = THREE.MathUtils.degToRad(this.camera.fov || 48);
+    const worldLength = THREE.MathUtils.clamp(
+      (78 * 2 * Math.max(0.01, distance) * Math.tan(fov / 2)) / (height * Math.max(0.01, this.camera.zoom || 1)),
+      0.04,
+      500
+    );
+    const guide = buildTransformGuideGeometry({
+      ...state,
+      worldLength,
+      ringRadius: worldLength * 0.72,
+      ringSegments: 56
+    });
+    if (!guide) {
+      svg.setAttribute('hidden', '');
+      svg.replaceChildren();
+      return;
+    }
+
+    const project = point => {
+      const projected = new THREE.Vector3(...point).project(this.camera);
+      if (!Number.isFinite(projected.x) || !Number.isFinite(projected.y) || projected.z < -1.1 || projected.z > 1.1) return null;
+      return { x: (projected.x + 1) * width / 2, y: (1 - projected.y) * height / 2 };
+    };
+    const center = project(guide.pivot);
+    if (!center || center.x < -width * 0.4 || center.x > width * 1.4 || center.y < -height * 0.4 || center.y > height * 1.4) {
+      svg.setAttribute('hidden', '');
+      svg.replaceChildren();
+      return;
+    }
+
+    const colors = { x: '#ff7777', y: '#76d79b', z: '#82adff' };
+    const elements = [];
+    const pointString = point => `${point.x.toFixed(2)},${point.y.toFixed(2)}`;
+    const planePoints = guide.planeCorners.map(project);
+    if (planePoints.length === 4 && planePoints.every(Boolean)) {
+      elements.push(`<polygon points="${planePoints.map(pointString).join(' ')}" fill="#edb16b" fill-opacity="0.10" stroke="#edb16b" stroke-opacity="0.48" stroke-width="1" stroke-dasharray="4 4"/>`);
+    }
+
+    for (const name of ['x', 'y', 'z']) {
+      const line = guide.axisLines[name];
+      if (!line) continue;
+      const end = project(line.end);
+      if (!end) continue;
+      const color = colors[name];
+      const active = guide.activeAxis === name;
+      const muted = guide.activeAxis && !active;
+      const dx = end.x - center.x, dy = end.y - center.y;
+      const magnitude = Math.hypot(dx, dy);
+      if (magnitude < 2) continue;
+      const ux = dx / magnitude, uy = dy / magnitude;
+      const tip = { x: end.x, y: end.y };
+      const back = { x: end.x - ux * (active ? 11 : 8), y: end.y - uy * (active ? 11 : 8) };
+      const wing = active ? 5.5 : 4;
+      const left = { x: back.x - uy * wing, y: back.y + ux * wing };
+      const right = { x: back.x + uy * wing, y: back.y - ux * wing };
+      const opacity = muted ? 0.34 : 0.96;
+      elements.push(`<line x1="${center.x.toFixed(2)}" y1="${center.y.toFixed(2)}" x2="${tip.x.toFixed(2)}" y2="${tip.y.toFixed(2)}" stroke="${color}" stroke-width="${active ? 3 : 2}" stroke-linecap="round" opacity="${opacity}"/>`);
+      elements.push(`<path d="M ${pointString(tip)} L ${pointString(left)} L ${pointString(right)} Z" fill="${color}" opacity="${opacity}"/>`);
+      if (state.type === 'scale') {
+        elements.push(`<rect x="${(tip.x-4.5).toFixed(2)}" y="${(tip.y-4.5).toFixed(2)}" width="9" height="9" rx="1.5" fill="#20242d" stroke="${color}" stroke-width="2" opacity="${opacity}"/>`);
+      }
+      elements.push(`<text x="${(tip.x + ux * 10).toFixed(2)}" y="${(tip.y + uy * 10 + 4).toFixed(2)}" fill="${color}" opacity="${opacity}" font-size="12" font-weight="800" text-anchor="middle" paint-order="stroke" stroke="#151920" stroke-width="3">${name.toUpperCase()}</text>`);
+    }
+
+    if (guide.ringPoints.length) {
+      const ringPoints = guide.ringPoints.map(project);
+      if (ringPoints.every(Boolean)) {
+        const path = ringPoints.map((point, index) => `${index ? 'L' : 'M'} ${pointString(point)}`).join(' ');
+        elements.push(`<path d="${path}" fill="none" stroke="#ffd08a" stroke-width="2.4" stroke-opacity="0.92" stroke-dasharray="6 3"/>`);
+      }
+    }
+
+    const activeColor = colors[guide.activeAxis] || '#ffd08a';
+    elements.push(`<circle cx="${center.x.toFixed(2)}" cy="${center.y.toFixed(2)}" r="7" fill="#1a1e25" fill-opacity="0.88" stroke="${activeColor}" stroke-width="2"/>`);
+    elements.push(`<path d="M ${(center.x-11).toFixed(2)} ${center.y.toFixed(2)} H ${(center.x+11).toFixed(2)} M ${center.x.toFixed(2)} ${(center.y-11).toFixed(2)} V ${(center.y+11).toFixed(2)}" stroke="#f3f4f6" stroke-opacity="0.72" stroke-width="1"/>`);
+    const badge = `${(state.orientation || 'global').toUpperCase()} · ${(state.pivotMode || 'median').toUpperCase()}`;
+    elements.push(`<text x="${(center.x+12).toFixed(2)}" y="${(center.y+20).toFixed(2)}" fill="#f0d6b5" font-size="9" font-weight="700" paint-order="stroke" stroke="#151920" stroke-width="3">${badge}</text>`);
+
+    svg.innerHTML = elements.join('');
+    svg.removeAttribute('hidden');
   }
 
   updateEditOverlay(mesh, selectionMode = 'face') {
@@ -281,5 +392,5 @@ export class Viewport {
     requestAnimationFrame(this.animate); this.controls.update(); this.renderer.render(this.scene,this.camera);
   };
 
-  dispose() { this.running=false; this.clearEditOverlay(); window.removeEventListener('pointermove', this.trackPointer); this.resizeObserver?.disconnect(); this.controls.dispose(); this.renderer.dispose(); this.renderer.domElement.remove(); }
+  dispose() { this.running=false; this.clearEditOverlay(); this.transformGuideSvg?.remove(); window.removeEventListener('pointermove', this.trackPointer); this.resizeObserver?.disconnect(); this.controls.dispose(); this.renderer.dispose(); this.renderer.domElement.remove(); }
 }

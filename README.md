@@ -22,6 +22,7 @@ The application does not require a build command. Open the GitHub Pages URL afte
 - `,` during a transform toggles **Global / Local** orientation. Global is the default; Local uses the object's world-space starting axes for axis-constrained Move, Rotate and Scale. The mobile transform pad has the same toggle.
 - Optional axis snapping is shared by `G`, `R` and `S` when constrained with `X/Y/Z`. It is off by default; Move uses world-unit steps, Rotate uses degree steps (15° by default), and Scale snaps factor changes around 1.0 (0.1 by default). Global and Local steps are configured separately. Typed numeric values remain exact; free movement/trackball and Shift+axis plane constraints are not changed. On mobile the SNAP and STEP SIZE controls appear inside the active transform pad; desktop settings are in Scene properties.
 - Free `R` uses a camera-oriented virtual trackball; `R` + `X/Y/Z` rotates around the chosen Global or Local axis
+- While `G/R/S` is active, a passive viewport guide marks the live transform pivot, Global/Local X/Y/Z axes, and the active move/scale plane or rotation ring. It is visual feedback only; it does not intercept pointer/touch input or act as a draggable gizmo.
 - Numeric keys, `Enter`, `Esc`: enter a value, apply, cancel
 - Press `G/R/S` with the pointer over the viewport to begin there; otherwise the viewport center is used
 - Edit Mode `1/2/3`: vertex/edge/face selection; selected topology is drawn directly over the mesh

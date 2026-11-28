@@ -370,6 +370,48 @@ export class ModalTransform {
     return getTransformSnapStep(this.transformSnapSettings, this.type, this.orientation);
   }
 
+  getGuideState() {
+    if (!this.active || !this.viewFrame || !this.worldPivot) return null;
+
+    const numeric = this.numeric.trim() !== '' && Number.isFinite(Number(this.numeric));
+    const pivot = this.worldPivot.clone();
+    // The guide follows a moving object/selection, but a cursor pivot is fixed.
+    if (this.type === 'move' && this.document.pivot !== 'cursor') {
+      pivot.add(this.getMoveWorldDelta(numeric));
+    }
+
+    const axes = Object.fromEntries(['x', 'y', 'z'].map(name => [name, this.axisVector(name).toArray()]));
+    const constraint = this.axis || this.planeNormal;
+    let planeBasis = null;
+    if (this.type === 'move' && !constraint) {
+      planeBasis = { u: this.viewFrame.right.toArray(), v: this.viewFrame.up.toArray() };
+    } else if ((this.type === 'move' || this.type === 'scale') && this.planeNormal) {
+      const basis = this.planeBasis(this.planeNormal);
+      planeBasis = { u: basis.u.toArray(), v: basis.v.toArray() };
+    }
+
+    let ringBasis = null;
+    if (this.type === 'rotate') {
+      const normal = constraint ? this.axisVector(constraint) : this.viewFrame.forward.clone();
+      const u = this.viewFrame.right.clone().addScaledVector(normal, -this.viewFrame.right.dot(normal));
+      if (u.lengthSq() < 1e-8) u.copy(this.viewFrame.up).addScaledVector(normal, -this.viewFrame.up.dot(normal));
+      u.normalize();
+      const v = new THREE.Vector3().crossVectors(normal, u).normalize();
+      ringBasis = { u: u.toArray(), v: v.toArray() };
+    }
+
+    return {
+      type: this.type,
+      pivot: pivot.toArray(),
+      axes,
+      activeAxis: this.axis || this.planeNormal,
+      planeBasis,
+      ringBasis,
+      orientation: this.orientation,
+      pivotMode: this.document.pivot || 'median'
+    };
+  }
+
   toggleOrientation() {
     if (!this.active) return false;
     this.orientation = this.orientation === 'global' ? 'local' : 'global';

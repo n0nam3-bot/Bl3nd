@@ -66,3 +66,7 @@ body.face-operation-modal-active .topbar,body.face-operation-modal-active .tool-
 @media(max-width:650px){.transform-snap-panel{display:none!important}}
 
 .transform-snap-group{margin:8px 0 12px}.transform-snap-group-title{margin:0 0 6px;color:#aeb8c5;font-size:8px;font-weight:800;letter-spacing:.8px}.transform-snap-panel .panel-note{margin-top:10px}
+
+/* Passive world-space guide for active G/R/S operations. It never captures input. */
+.transform-guide{position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none;z-index:4}
+.transform-guide[hidden]{display:none}

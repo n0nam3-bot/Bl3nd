@@ -4,6 +4,8 @@ This is a manual acceptance run for the deployed Bl3nd app. It checks the real b
 
 ## Build under test
 
+Current package baseline before v0.1.50: v0.1.49, `main` commit `d8d8cff318bc4ae86f26e6f2668de0d64f069fc1`; Pages workflow run `46085889963` succeeded.
+
 Open the deployed app only after the latest Pages workflow succeeds:
 
 `https://n0nam3-bot.github.io/Bl3nd/`
@@ -188,3 +190,15 @@ This procedure validates browser interaction for the starter cube. The automated
 - Confirm free Rotate trackball and unconstrained Scale remain unsnapped. Shift+axis plane Scale remains unchanged; this increment targets explicit X/Y/Z axis constraints only.
 - Toggle snapping on/off during an active Rotate and Scale preview. Turning it off must immediately restore continuous pointer movement; turning it back on must quantize from the same immutable modal start. Apply creates one undo record; Cancel restores the original transform; Undo/Redo restore both states.
 - Confirm the More drawer remains free of snap settings on mobile. The active pad contains the compact toggle and operation-specific STEP SIZE panel. Desktop Scene properties expose Move (world units), Rotate (degrees), and Scale (factor delta) Global/Local increments.
+
+
+## Passive transform guide — v0.1.50 (browser acceptance pending)
+
+- Start Move (`G`) with no constraint. Confirm the viewport shows a centered pivot marker, three labeled world axes, and a translucent camera-facing movement plane. Drag in the viewport: the guide's pivot marker must follow the moved object/selection while the plane and axis directions remain stable.
+- Press `X`, `Y` or `Z`. Confirm the selected axis becomes visually emphasized and the others remain visible but dimmed. Toggle Global/Local with `,`; the guide axes must rotate with the captured object orientation when Local is active, then return to world alignment in Global.
+- Press `Shift+X/Y/Z` during Move. Confirm the highlighted movement plane is perpendicular to that selected Global/Local axis and updates when orientation changes. The guide must remain pointer-transparent: viewport drag, numeric pad input, Apply and Cancel behave exactly as before.
+- Start Rotate (`R`) unconstrained. Confirm a camera-facing ring surrounds the pivot. Constrain to `X/Y/Z` and confirm the ring plane is perpendicular to the active axis and the corresponding axis is emphasized. Free trackball rotation, snapped axis rotation and exact numeric rotation must remain unchanged.
+- Start Scale (`S`). Confirm the three scale directions and endpoint handles are visible; Shift+axis plane scale displays the active plane. Scale previews, snapping and numeric entry must be unchanged.
+- Apply each transform and confirm the guide disappears immediately. Cancel each transform and confirm it disappears while the source transform/mesh is restored. Starting Bevel, Extrude, Inset or Loop Cut must never leave a stale transform guide visible.
+- Orbit/pan/zoom before starting G/R/S from several camera angles. The guide must align with the actual projected world axes/pivot and remain clipped within the viewport. Normal camera navigation remains disabled during the modal transform; the SVG guide must not block viewport drags, touch gestures or modal controls. Confirm the marker stays at the cursor when the active pivot mode is 3D Cursor.
+- Desktop Chrome/Edge follows the same visual checks when the owner next has PC access; desktop acceptance remains deferred until then.
