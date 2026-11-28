@@ -602,3 +602,16 @@ Full Blender keymap parity is not claimed by this build. Android touch acceptanc
 
 ### Desktop — Chrome / Edge (deferred)
 - Repeat open-surface rim generation and closed-cube shell generation. Inspect normals, triangle winding, boundaries and local fold rejection. Verify Thickness input, Inside/Center/Outside keyboard access, focus states, stack order, Undo/Redo and save/reload.
+
+
+## v0.1.83 — Modifier-aware Edit Mode selection visibility
+
+### Android — Chrome / Samsung Internet
+- Select a cube, add Solidify, and enter Edit Mode. Switch between Face, Edge and Vertex selection. Confirm the source cage selection remains visible over the inner/outer shell instead of disappearing behind it.
+- Select one face. Confirm the selected region has a stronger amber translucent fill and its boundary edges remain bright when viewed from either side of the shell. Select a face on the rear/inside and verify the highlight is still visible through the evaluated shell.
+- Switch to Edge Select and Vertex Select. Confirm selected edges draw in bright amber through the shell; selected vertices have a dark outline halo and larger amber center. Unselected cage edges must remain depth-tested rather than showing a full cluttered X-ray wireframe.
+- Repeat with Mirror and Subdivision. Confirm the selected source cage elements remain identifiable while each evaluated modifier result is displayed. Toggle/remove all modifiers and confirm selection overlays return to ordinary depth-based occlusion.
+- Confirm face/edge/vertex picking, Add to Selection, Undo/Redo, mesh operations, modifier settings and local scene recovery are unchanged. The overlay must not intercept taps or change the editable source mesh.
+
+### Desktop — Chrome / Edge (deferred)
+- Repeat face/edge/vertex X-ray visibility with Solidify, Mirror and Subdivision. Compare selection from front and rear views; ensure selected items remain visible while non-selected geometry stays normally occluded. Verify normal occlusion is restored when modifiers are disabled/removed.

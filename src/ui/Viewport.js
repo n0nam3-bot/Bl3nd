@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { EditModeOverlay } from './EditModeOverlay.js';
+import { hasActiveEvaluatedModifiers } from '../core/EditOverlayStyle.js';
 import { chooseSelectionViewDirection } from '../core/SelectionView.js';
 import { buildTransformGuideGeometry } from '../core/TransformGuideGeometry.js';
 import { isTransformGizmoDrag, isTransformPointerOwner, resolveTransformGizmoHandle, resolveTransformGuidePointerEvents } from '../core/TransformGizmoInput.js';
@@ -317,7 +318,12 @@ export class Viewport {
       this.clearEditOverlay();
       this.editOverlay = new EditModeOverlay(mesh);
     }
-    this.editOverlay.update(mesh.userData.hem, selectionMode);
+    this.editOverlay.update(mesh.userData.hem, selectionMode, {
+      // Non-destructive modifiers replace the visible render geometry while
+      // Edit Mode still targets the original half-edge cage. Keep only the
+      // selected cage elements visible through that evaluated surface.
+      modifierActive: hasActiveEvaluatedModifiers(mesh)
+    });
   }
 
   getPointerOrigin() {
