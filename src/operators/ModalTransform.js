@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { resolveTransformAxis } from '../core/TransformOrientation.js';
 import { groupSelectedTransformVertices, resolveTransformPivotPoint } from '../core/TransformPivot.js';
 import { getTransformSnapStep, normalizeTransformSnapSettings, resolveMoveSnapAmount, resolveRotateSnapDegrees, resolveScaleSnapFactor } from '../core/TransformSnap.js';
+import { buildProportionalInfluence, normalizeProportionalSettings } from '../core/ProportionalEditing.js';
 
 const AXES = {
   x: new THREE.Vector3(1, 0, 0),
@@ -18,7 +19,7 @@ function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
  * a virtual trackball expressed in the camera's orientation.
  */
 export class ModalTransform {
-  constructor({ document, undoManager, viewport, onChange, status, transformSnapSettings = {} }) {
+  constructor({ document, undoManager, viewport, onChange, status, transformSnapSettings = {}, proportionalSettings = {} }) {
     this.document = document;
     this.undoManager = undoManager;
     this.viewport = viewport;
@@ -36,6 +37,9 @@ export class ModalTransform {
     this.original = null;
     this.vertexIds = [];
     this.originalVertices = [];
+    this.sourcePositions = [];
+    this.selectedGroups = [];
+    this.proportionalInfluencedCount = 0;
     this.transformGroups = [];
     this.individualPivotWorlds = [];
     this.editPivot = new THREE.Vector3();
@@ -45,6 +49,7 @@ export class ModalTransform {
     this.orientation = 'global';
     this.startWorldQuaternion = new THREE.Quaternion();
     this.transformSnapSettings = normalizeTransformSnapSettings(transformSnapSettings);
+    this.proportionalSettings = normalizeProportionalSettings(proportionalSettings);
   }
 
   async begin(type, pointer = null) {
@@ -79,47 +84,17 @@ export class ModalTransform {
         this.object = null;
         return false;
       }
-      this.originalVertices = this.vertexIds.map(id => [...hem.positions[id]]);
-      const mode = this.document.pivot || 'median';
-      const groupsForTransform = mode === 'individual'
-        ? selectedGroups
-        : [this.vertexIds];
-      this.transformGroups = groupsForTransform.map(vertexGroup => {
-        const originalVertices = vertexGroup.map(id => [...hem.positions[id]]);
-        const pivot = resolveTransformPivotPoint(originalVertices, mode === 'bounds' ? 'bounds' : 'median') || [0, 0, 0];
-        return {
-          vertexIds: [...vertexGroup],
-          originalVertices,
-          pivotLocal: new THREE.Vector3(...pivot),
-          pivotWorld: new THREE.Vector3()
-        };
-      });
-      if (mode === 'cursor') {
-        const cursorLocal = this.object.worldToLocal(this.document.cursor.clone());
-        this.transformGroups = [{
-          vertexIds: [...this.vertexIds],
-          originalVertices: this.vertexIds.map(id => [...hem.positions[id]]),
-          pivotLocal: cursorLocal.clone(),
-          pivotWorld: new THREE.Vector3()
-        }];
-      }
-      for (const group of this.transformGroups) {
-        group.pivotWorld.copy(this.object.localToWorld(group.pivotLocal.clone()));
-      }
-      // Pointer-to-world conversion uses one stable selection anchor. Individual
-      // Origins are applied independently around each group's own pivot below.
-      const interactionPivot = mode === 'individual'
-        ? resolveTransformPivotPoint(this.originalVertices, 'median')
-        : this.transformGroups[0].pivotLocal.toArray();
-      this.editPivot.fromArray(interactionPivot || [0, 0, 0]);
-      this.worldPivot.copy(this.object.localToWorld(this.editPivot.clone()));
-      this.individualPivotWorlds = mode === 'individual'
-        ? this.transformGroups.map(group => group.pivotWorld.clone())
-        : [];
+      this.sourcePositions = hem.positions.map(position => [...position]);
+      this.selectedGroups = selectedGroups.map(group => [...group]);
+      this.originalVertices = this.vertexIds.map(id => [...this.sourcePositions[id]]);
+      this.rebuildEditTransformGroups();
       this.original = null;
     } else {
       this.vertexIds = [];
       this.originalVertices = [];
+      this.sourcePositions = [];
+      this.selectedGroups = [];
+      this.proportionalInfluencedCount = 0;
       this.transformGroups = [];
       this.individualPivotWorlds = [];
       const worldPosition = this.object.getWorldPosition(new THREE.Vector3());
@@ -148,9 +123,85 @@ export class ModalTransform {
     const individualNote = this.document.mode === 'edit' && this.document.pivot === 'individual'
       ? ` · ${this.transformGroups.length} connected origin${this.transformGroups.length === 1 ? '' : 's'}`
       : '';
-    this.status?.(`${type.toUpperCase()} · ${this.orientation.toUpperCase()} orientation${individualNote} · drag in the current view · X/Y/Z axis · Shift+axis plane · numeric value · Enter apply · Esc cancel`);
+    const proportionalNote = this.document.mode === 'edit' && this.proportionalSettings.enabled
+      ? ` · PROP ${this.proportionalSettings.radius.toFixed(2)} · ${this.proportionalInfluencedCount} influenced`
+      : '';
+    this.status?.(`${type.toUpperCase()} · ${this.orientation.toUpperCase()} orientation${individualNote}${proportionalNote} · drag in the current view · X/Y/Z axis · Shift+axis plane · numeric value · Enter apply · Esc cancel`);
     this.onChange?.();
     return true;
+  }
+
+  rebuildEditTransformGroups() {
+    if (!this.object || !this.sourcePositions.length || !this.selectedGroups.length) return false;
+    const mode = this.document.pivot || 'median';
+    const seedGroups = mode === 'individual' ? this.selectedGroups : [this.vertexIds];
+    let influenceGroups = seedGroups.map(group => group.map(vertexId => ({ vertexId, weight: 1, distance: 0 })));
+    this.proportionalInfluencedCount = 0;
+
+    if (this.proportionalSettings.enabled) {
+      const worldPositions = this.sourcePositions.map(position =>
+        this.object.localToWorld(new THREE.Vector3(...position)).toArray()
+      );
+      const influence = buildProportionalInfluence({
+        positions: worldPositions,
+        edges: this.object.userData.hem.edges,
+        seedGroups,
+        radius: this.proportionalSettings.radius,
+        falloff: this.proportionalSettings.falloff
+      });
+      if (influence.groups.length === seedGroups.length) {
+        influenceGroups = influence.groups;
+        this.proportionalInfluencedCount = influence.influencedCount;
+      }
+    }
+
+    this.transformGroups = seedGroups.map((selectedIds, groupIndex) => {
+      const influence = influenceGroups[groupIndex] || selectedIds.map(vertexId => ({ vertexId, weight: 1, distance: 0 }));
+      const vertexIds = influence.map(item => item.vertexId);
+      const originalVertices = vertexIds.map(id => [...this.sourcePositions[id]]);
+      const selectedPoints = selectedIds.map(id => this.sourcePositions[id]).filter(Boolean);
+      let pivot = resolveTransformPivotPoint(selectedPoints, mode === 'bounds' ? 'bounds' : 'median') || [0, 0, 0];
+      if (mode === 'cursor') {
+        pivot = this.object.worldToLocal(this.document.cursor.clone()).toArray();
+      }
+      const pivotLocal = new THREE.Vector3(...pivot);
+      return {
+        vertexIds,
+        weights: influence.map(item => item.weight),
+        originalVertices,
+        pivotLocal,
+        pivotWorld: this.object.localToWorld(pivotLocal.clone())
+      };
+    });
+
+    // Pointer-to-world conversion uses one stable selection anchor. Individual
+    // Origins are applied independently around each selected region's pivot.
+    const interactionPivot = mode === 'individual'
+      ? resolveTransformPivotPoint(this.originalVertices, 'median')
+      : this.transformGroups[0]?.pivotLocal.toArray();
+    this.editPivot.fromArray(interactionPivot || [0, 0, 0]);
+    this.worldPivot.copy(this.object.localToWorld(this.editPivot.clone()));
+    this.individualPivotWorlds = mode === 'individual'
+      ? this.transformGroups.map(group => group.pivotWorld.clone())
+      : [];
+    return true;
+  }
+
+  setProportionalSettings(settings = {}) {
+    this.proportionalSettings = normalizeProportionalSettings(settings, this.proportionalSettings);
+    if (this.active && this.document.mode === 'edit') {
+      this.rebuildEditTransformGroups();
+      const hem = this.object?.userData?.hem;
+      if (hem) {
+        this.sourcePositions.forEach((position, id) => {
+          hem.positions[id] = [...position];
+          if (hem.vertices[id]) hem.vertices[id].position = hem.positions[id];
+        });
+      }
+      this.apply();
+    }
+    this.onChange?.();
+    return { ...this.proportionalSettings };
   }
 
   captureViewFrame() {
@@ -355,18 +406,22 @@ export class ModalTransform {
       for (const group of this.transformGroups) {
         const groupPivot = this.document.pivot === 'individual' ? group.pivotWorld : this.worldPivot;
         group.vertexIds.forEach((id, index) => {
+          const weight = Math.max(0, Math.min(1, Number(group.weights[index]) || 0));
           const localPoint = new THREE.Vector3(...group.originalVertices[index]);
           const worldPoint = this.object.localToWorld(localPoint.clone());
           let transformed;
           if (this.type === 'move') {
-            transformed = worldPoint.add(delta);
+            transformed = worldPoint.addScaledVector(delta, weight);
           } else if (this.type === 'rotate') {
-            transformed = worldPoint.sub(groupPivot).applyQuaternion(rotation).add(groupPivot);
+            const weightedRotation = new THREE.Quaternion().identity().slerp(rotation, weight);
+            transformed = worldPoint.sub(groupPivot).applyQuaternion(weightedRotation).add(groupPivot);
           } else {
+            const effectiveFactor = 1 + (factor - 1) * weight;
             const offset = worldPoint.sub(groupPivot);
-            transformed = this.scaleWorldOffset(offset, factor).add(groupPivot);
+            transformed = this.scaleWorldOffset(offset, effectiveFactor).add(groupPivot);
           }
           hem.positions[id] = this.object.worldToLocal(transformed).toArray();
+          if (hem.vertices[id]) hem.vertices[id].position = hem.positions[id];
         });
       }
       this.document.updateMesh(this.object);
@@ -472,7 +527,10 @@ export class ModalTransform {
       planeBasis,
       ringBasis,
       orientation: this.orientation,
-      pivotMode: this.document.pivot || 'median'
+      pivotMode: this.document.pivot || 'median',
+      proportional: this.document.mode === 'edit' && this.proportionalSettings.enabled,
+      proportionalRadius: this.proportionalSettings.radius,
+      proportionalInfluencedCount: this.proportionalInfluencedCount
     };
   }
 
@@ -533,6 +591,9 @@ export class ModalTransform {
     this.original = null;
     this.vertexIds = [];
     this.originalVertices = [];
+    this.sourcePositions = [];
+    this.selectedGroups = [];
+    this.proportionalInfluencedCount = 0;
     this.transformGroups = [];
     this.individualPivotWorlds = [];
     this.editPivot.set(0, 0, 0);

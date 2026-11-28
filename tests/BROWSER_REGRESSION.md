@@ -260,3 +260,15 @@ This procedure validates browser interaction for the starter cube. The automated
 - Enable touch Add to Selection and select two opposite cube faces. Confirm Face Bevel chooses Multi-Region, apply it, rotate the two raised caps, and start another mesh operation. Both islands must remain valid and editable.
 - Repeat with three or more bevel segments and a non-default profile. Confirm the transition bands remain visually continuous and the topology validator reports zero non-planar, self-intersecting or triangulation-failure faces.
 - Confirm Cancel restores the pre-bevel mesh. Confirm Apply followed by Undo/Redo restores the beveled/rotated result transactionally. Desktop Chrome/Edge remains deferred until PC access is available.
+
+
+## v0.1.57 — Proportional Editing
+
+1. In Edit Mode, select one vertex on a cube, press `O`, and confirm the Select menu shows Proportional Editing ON. Start `G`, move the vertex, and confirm nearby connected unselected vertices move by smaller amounts while selected vertices move fully. The readout shows the active radius and influenced-vertex count.
+2. Change the radius with the desktop mouse wheel during a transform, or with the mobile Proportional radius slider in the numeric pad. Confirm the preview changes immediately without accumulating drift. A smaller radius should influence fewer vertices; a larger radius should influence more.
+3. Test `R` and `S` with proportional editing enabled. Confirm nearby vertices follow a smooth partial rotation/scale rather than snapping to the full transform. Confirm the same operation without proportional editing behaves as before.
+4. Select a face or edge and repeat; the full selected region must remain weight 1 while surrounding connected vertices receive falloff. Repeat in Vertex, Edge and Face Select.
+5. Select two disconnected islands on one mesh with Add to Selection. Confirm each island influences only vertices reachable along its own mesh-edge paths; nearby vertices on a disconnected shell must not move. Repeat with Pivot Point set to Individual Origins and confirm the islands retain independent pivots.
+6. Toggle proportional editing off with `O` or `Select ▾`; confirm the transform returns to selected-only behavior. Confirm the preference remains after refreshing the page.
+7. Cancel with `Esc` and verify every source vertex is restored. Apply with `Enter`, Undo once and Redo once; verify the complete proportional deformation is one transaction.
+8. Confirm Object Mode `G/R/S` is unchanged, and radius changes never alter topology, vertex count, face count or edge connectivity.

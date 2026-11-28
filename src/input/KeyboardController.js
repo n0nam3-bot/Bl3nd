@@ -53,6 +53,7 @@ export class KeyboardController {
     if ((event.ctrlKey||event.metaKey) && key==='b') { event.preventDefault(); if(doc.mode==='edit') await this.dispatch('mesh.bevel'); return; }
     if ((event.ctrlKey||event.metaKey) && key==='r') { event.preventDefault(); if(doc.mode==='edit') await this.dispatch('mesh.loop_cut'); return; }
     if (this.modal.active) {
+      if (key==='o' && doc.mode==='edit') { event.preventDefault(); await this.dispatch('transform.proportional_toggle'); return; }
       if (key===',') { event.preventDefault(); await this.dispatch('transform.modal_orientation_toggle'); return; }
       if (key==='escape') { event.preventDefault(); await this.dispatch('transform.modal_cancel'); return; }
       if (key==='enter') { event.preventDefault(); await this.dispatch('transform.modal_confirm'); return; }
@@ -64,6 +65,7 @@ export class KeyboardController {
     if (key==='escape' && this.viewport.selectionTool && this.viewport.selectionTool !== 'tap') { event.preventDefault(); await this.dispatch('selection.tool.set',{tool:'tap'}); return; }
     if (event.key==='Tab') { event.preventDefault(); await this.dispatch('mode.toggle_edit'); return; }
     if (event.shiftKey && key==='a') { event.preventDefault(); this.ui.togglePie('add'); return; }
+    if (doc.mode==='edit' && key==='o' && !event.ctrlKey && !event.metaKey && !event.altKey) { event.preventDefault(); await this.dispatch('transform.proportional_toggle'); return; }
     if (doc.mode==='edit' && key==='a' && !event.ctrlKey && !event.metaKey) { event.preventDefault(); await this.dispatch(event.altKey?'mesh.clear_selection':'mesh.select_all'); return; }
     if (doc.mode==='edit' && (event.ctrlKey||event.metaKey) && key==='i') { event.preventDefault(); await this.dispatch('mesh.invert_selection'); return; }
     if (!event.ctrlKey && !event.metaKey && !event.altKey && key==='z') { this.ui.togglePie('shading'); return; }

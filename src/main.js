@@ -4,6 +4,7 @@ import { CommandBus } from './core/CommandBus.js';
 import { SceneDocument } from './core/SceneDocument.js';
 import { buildMoveReadout } from './core/TransformReadout.js';
 import { getTransformSnapSettingKeys, getTransformSnapStep, normalizeTransformSnapSettings } from './core/TransformSnap.js';
+import { normalizeProportionalSettings } from './core/ProportionalEditing.js';
 import { UndoManager } from './core/UndoManager.js';
 import { MeshOperators } from './operators/MeshOperators.js';
 import { SelectionOperators } from './operators/SelectionOperators.js';
@@ -26,6 +27,7 @@ const loading = window.Bl3ndLoading;
 function loadingProgress(value, message) { loading?.update(value, message); }
 
 const MOVE_SNAP_STORAGE_KEY = 'bl3nd-move-snap-v1';
+const PROPORTIONAL_STORAGE_KEY = 'bl3nd-proportional-edit-v1';
 let transformSnapSettingsOpen = false;
 const formatSnapStep = (value, type = 'move') => `${Number(Number(value).toPrecision(6)).toString()}${type === 'rotate' ? '°' : type === 'scale' ? '×' : ''}`;
 function loadTransformSnapSettings() {
@@ -34,6 +36,14 @@ function loadTransformSnapSettings() {
 }
 function persistTransformSnapSettings(settings) {
   try { localStorage.setItem(MOVE_SNAP_STORAGE_KEY, JSON.stringify(settings)); }
+  catch { /* Browser storage may be unavailable; in-memory settings still work. */ }
+}
+function loadProportionalSettings() {
+  try { return normalizeProportionalSettings(JSON.parse(localStorage.getItem(PROPORTIONAL_STORAGE_KEY) || '{}')); }
+  catch { return normalizeProportionalSettings(); }
+}
+function persistProportionalSettings(settings) {
+  try { localStorage.setItem(PROPORTIONAL_STORAGE_KEY, JSON.stringify(settings)); }
   catch { /* Browser storage may be unavailable; in-memory settings still work. */ }
 }
 
@@ -76,7 +86,7 @@ const undoManager = new UndoManager({
   status,
   onRestore: async snapshot => { await sceneDocument.restore(snapshot); await reapplyModifiers(); refresh(); }
 });
-const modalTransform = new ModalTransform({ document: sceneDocument, undoManager, viewport, status, transformSnapSettings: loadTransformSnapSettings(), onChange: () => ui?.refreshModal() });
+const modalTransform = new ModalTransform({ document: sceneDocument, undoManager, viewport, status, transformSnapSettings: loadTransformSnapSettings(), proportionalSettings: loadProportionalSettings(), onChange: () => ui?.refreshModal() });
 const loopCutModal = new LoopCutModal({ document: sceneDocument, undoManager, viewport, status, onChange: () => { refresh(); ui?.refreshModal(); } });
 const bevelModal = new BevelModal({ document: sceneDocument, undoManager, viewport, status, onChange: () => { refresh(); ui?.refreshModal(); } });
 const faceOperationModal = new FaceOperationModal({ document: sceneDocument, undoManager, viewport, status, onChange: () => { refresh(); ui?.refreshModal(); } });
@@ -554,6 +564,18 @@ function registerCommands() {
     persistTransformSnapSettings(next);
     return next;
   }, { recordUndo: false });
+  commandBus.register('transform.proportional_settings', ({ settings }) => {
+    const next = modalTransform.setProportionalSettings(settings);
+    persistProportionalSettings(next);
+    refresh();
+    return next;
+  }, { recordUndo: false });
+  commandBus.register('transform.proportional_toggle', () => {
+    const next = modalTransform.setProportionalSettings({ enabled: !modalTransform.proportionalSettings.enabled });
+    persistProportionalSettings(next);
+    refresh();
+    return next.enabled;
+  }, { recordUndo: false });
   commandBus.register('cursor.set', ({ point }) => { sceneDocument.cursor.fromArray(point); refreshCursor(); return true; }, { recordUndo: false });
   commandBus.register('pivot.set', ({ pivot }) => {
     if (!['median', 'bounds', 'individual', 'cursor'].includes(pivot)) return false;
@@ -634,6 +656,12 @@ function refreshModifiers() {
 
 function refresh() {
   $('#pivot-select').value = ['median', 'bounds', 'individual', 'cursor'].includes(sceneDocument.pivot) ? sceneDocument.pivot : 'median';
+  const proportionalEnabled = $('#proportional-editing-enabled');
+  const proportionalRadius = $('#proportional-editing-radius');
+  if (proportionalEnabled) { proportionalEnabled.checked = modalTransform.proportionalSettings.enabled; proportionalEnabled.disabled = sceneDocument.mode !== 'edit'; }
+  if (proportionalRadius) { proportionalRadius.value = String(Math.min(25, Math.max(0.1, modalTransform.proportionalSettings.radius))); proportionalRadius.disabled = sceneDocument.mode !== 'edit'; }
+  const proportionalRadiusLabel = $('#proportional-editing-radius-value');
+  if (proportionalRadiusLabel) proportionalRadiusLabel.textContent = modalTransform.proportionalSettings.radius.toFixed(2);
   $('#object-mode-btn').classList.toggle('active',sceneDocument.mode==='object');
   $('#edit-mode-btn').classList.toggle('active',sceneDocument.mode==='edit');
   $('#selection-vertex').classList.toggle('active',sceneDocument.selectionMode==='vertex');
@@ -648,8 +676,8 @@ function refresh() {
   viewport.updateEditOverlay(editing ? sceneDocument.activeObject : null, sceneDocument.selectionMode);
   const hintDesktop = $('.hint-desktop'), hintMobile = $('.hint-mobile');
   if (editing) {
-    hintDesktop.textContent = 'Edit: Click topology · Alt+L loop · Ctrl+Alt+L ring · Ctrl+B bevel · Ctrl+R loop cut · X delete';
-    hintMobile.textContent = 'Edit: Tap topology · Select ▾ for region/Loop/Ring · Edit Mesh panel for Bevel / Loop Cut';
+    hintDesktop.textContent = 'Edit: Click topology · O proportional · Alt+L loop · Ctrl+Alt+L ring · Ctrl+B bevel · Ctrl+R loop cut · X delete';
+    hintMobile.textContent = 'Edit: Tap topology · Select ▾ for tools / proportional · Edit Mesh panel for Bevel / Loop Cut';
   } else {
     hintDesktop.textContent = 'Drag to orbit · Right-drag to pan · Scroll to zoom · Click to select · G/R/S then drag to transform';
     hintMobile.textContent = 'One finger: orbit · Two fingers: pan/zoom · Long press: 3D Cursor · G/R/S: transform';
@@ -673,10 +701,10 @@ ui = {
     const entries=kind==='shading'?
       [['Solid','shade_solid'],['Wireframe','shade_wire'],['Material','shade_material'],['Rendered','shade_render']]:
       kind==='selection'?
-      [['Click Select','tool_tap'],['Box Select (B)','tool_box'],['Circle Select (C)','tool_circle'],['Lasso Select (L)','tool_lasso'],['Edge Loop (Alt+L)','edge_loop'],['Edge Ring (Ctrl+Alt+L)','edge_ring'],['Select All','select_all'],['Deselect All','clear_selection'],['Invert','invert_selection'],['Delete Selected (X)','delete_selected'],['Dissolve Selected (Shift+X)','dissolve_selected']]:
+      [['Click Select','tool_tap'],['Box Select (B)','tool_box'],['Circle Select (C)','tool_circle'],['Lasso Select (L)','tool_lasso'],['Proportional Editing · '+(modalTransform.proportionalSettings.enabled?'ON':'OFF')+' (O)','toggle_proportional'],['Edge Loop (Alt+L)','edge_loop'],['Edge Ring (Ctrl+Alt+L)','edge_ring'],['Select All','select_all'],['Deselect All','clear_selection'],['Invert','invert_selection'],['Delete Selected (X)','delete_selected'],['Dissolve Selected (Shift+X)','dissolve_selected']]:
       [['Cube','add_cube'],['UV Sphere','add_sphere'],['Cylinder','add_cylinder'],['Plane','add_plane'],['Edit Mode','toggle_mode'],['3D Cursor','cursor_center']];
     menu.replaceChildren();
-    for(const [label,command] of entries){const button=document.createElement('button');button.textContent=label;button.dataset.command=command;menu.append(button);}
+    for(const [label,command] of entries){const button=document.createElement('button');button.textContent=label;button.dataset.command=command;if(command==='toggle_proportional' && modalTransform.proportionalSettings.enabled)button.classList.add('is-enabled');menu.append(button);}
     menu.dataset.kind=kind; menu.hidden=false;
   },
   pointerCenter(){const rect=$('#viewport').getBoundingClientRect();return{x:rect.left+rect.width/2,y:rect.top+rect.height/2};},
@@ -693,6 +721,11 @@ ui = {
     const readout=$('#modal-readout'),pad=$('#numeric-pad'),padTitle=pad.querySelector('.pad-title');
     const axisButtons=pad.querySelectorAll('[data-axis]');
     const orientationButton=$('#pad-transform-orientation');
+    const proportionalControls=$('#pad-proportional-controls');
+    const proportionalToggle=$('#pad-proportional-toggle');
+    const proportionalRadius=$('#pad-proportional-radius');
+    const proportionalRadiusValue=$('#pad-proportional-radius-value');
+    proportionalControls.hidden=true;
     const snapControls=$('#pad-transform-snap-controls');
     const snapButton=$('#pad-transform-snap-toggle');
     const snapSettingsButton=$('#pad-transform-snap-settings-toggle');
@@ -831,6 +864,9 @@ ui = {
     negativeKey.hidden=false;
     if(!modalTransform.active){readout.hidden=true;pad.hidden=true;snapControls.hidden=true;snapSettingsPanel.hidden=true;transformSnapSettingsOpen=false;return;}
     const axis=modalTransform.axis?` · ${modalTransform.orientation.toUpperCase()} ${modalTransform.axis.toUpperCase()} axis`:modalTransform.planeNormal?` · ${modalTransform.orientation.toUpperCase()} ${modalTransform.planeNormal.toUpperCase()} plane`:` · ${modalTransform.orientation.toUpperCase()} orientation`;
+    const proportionalReadout = sceneDocument.mode === 'edit' && modalTransform.proportionalSettings.enabled
+      ? ` · PROP r ${modalTransform.proportionalSettings.radius.toFixed(2)} · ${modalTransform.proportionalInfluencedCount} influenced`
+      : '';
     let moveReadout=null;
     let transformPadValue='0';
     if(modalTransform.type==='move'){
@@ -857,7 +893,7 @@ ui = {
         ? numeric ? (snapSettings.enabled?' · EXACT INPUT (SNAP BYPASSED)':' · EXACT INPUT')
           : snapSettings.enabled ? ` · SNAP ${formatSnapStep(activeSnapStep)}` : ' · SNAP OFF'
         : '';
-      readout.textContent=`MOVE${axis} · ${numeric?`VALUE ${modalTransform.numeric}`:primaryLabel}${snapFeedback} · ${moveReadout.targetText} · Enter apply / Esc cancel`;
+      readout.textContent=`MOVE${axis} · ${numeric?`VALUE ${modalTransform.numeric}`:primaryLabel}${snapFeedback}${proportionalReadout} · ${moveReadout.targetText} · Enter apply / Esc cancel`;
       padTitle.textContent=!numeric && primaryPosition
         ? `${positionKind} ${moveReadout.positionAxis} POSITION`
         : numeric ? 'MOVE INPUT · WORLD UNITS' : 'MOVE DISTANCE · WORLD UNITS';
@@ -883,16 +919,24 @@ ui = {
         const angle=modalTransform.rotationPointerDegrees();
         transformPadValue=modalTransform.numeric || (angle===null?'TRACKBALL':`${angle.toFixed(2)}°`);
         const angleReadout=modalTransform.numeric ? `VALUE ${modalTransform.numeric}` : angle===null ? 'TRACKBALL' : `ANGLE ${angle.toFixed(2)}°`;
-        readout.textContent=`ROTATE${axis} · ${angleReadout}${snapFeedback} · , switches Global/Local · Enter apply / Esc cancel`;
+        readout.textContent=`ROTATE${axis} · ${angleReadout}${snapFeedback}${proportionalReadout} · , switches Global/Local · Enter apply / Esc cancel`;
         padTitle.textContent='ROTATION · DEGREES';
       }else{
         const factor=modalTransform.scaleFactor(numeric);
         transformPadValue=modalTransform.numeric || `${factor.toFixed(3)}×`;
-        readout.textContent=`SCALE${axis} · ${numeric?`VALUE ${modalTransform.numeric}`:`FACTOR ${factor.toFixed(3)}×`}${snapFeedback} · , switches Global/Local · Enter apply / Esc cancel`;
+        readout.textContent=`SCALE${axis} · ${numeric?`VALUE ${modalTransform.numeric}`:`FACTOR ${factor.toFixed(3)}×`}${snapFeedback}${proportionalReadout} · , switches Global/Local · Enter apply / Esc cancel`;
         padTitle.textContent='SCALE FACTOR';
       }
     }
-    pad.hidden=!capabilities.tier.includes('Mobile'); orientationButton.hidden=false; orientationButton.textContent=`${modalTransform.orientation.toUpperCase()} AXES · SWITCH TO ${modalTransform.orientation==='global'?'LOCAL':'GLOBAL'}`; orientationButton.setAttribute('aria-label',`Current orientation: ${modalTransform.orientation}. Switch to ${modalTransform.orientation==='global'?'Local':'Global'}.`); orientationButton.setAttribute('aria-pressed',String(modalTransform.orientation==='local')); $('#pad-value').textContent=transformPadValue;
+    pad.hidden=!capabilities.tier.includes('Mobile');
+    proportionalControls.hidden=!capabilities.tier.includes('Mobile') || sceneDocument.mode!=='edit';
+    proportionalToggle.textContent=modalTransform.proportionalSettings.enabled?'PROPORTIONAL · ON':'PROPORTIONAL · OFF';
+    proportionalToggle.classList.toggle('is-enabled',modalTransform.proportionalSettings.enabled);
+    proportionalToggle.setAttribute('aria-pressed',String(modalTransform.proportionalSettings.enabled));
+    proportionalRadius.hidden=!modalTransform.proportionalSettings.enabled;
+    proportionalRadius.value=String(Math.min(25,Math.max(0.1,modalTransform.proportionalSettings.radius)));
+    proportionalRadiusValue.textContent=modalTransform.proportionalSettings.radius.toFixed(2);
+    orientationButton.hidden=false; orientationButton.textContent=`${modalTransform.orientation.toUpperCase()} AXES · SWITCH TO ${modalTransform.orientation==='global'?'LOCAL':'GLOBAL'}`; orientationButton.setAttribute('aria-label',`Current orientation: ${modalTransform.orientation}. Switch to ${modalTransform.orientation==='global'?'Local':'Global'}.`); orientationButton.setAttribute('aria-pressed',String(modalTransform.orientation==='local')); $('#pad-value').textContent=transformPadValue;
   }
 };
 loadingProgress(73, 'Building the workspace panels and editing controls…');
@@ -931,6 +975,15 @@ $('#bevel-panel-btn').addEventListener('click',()=>run('mesh.bevel'));
 $('#validate-topology-btn').addEventListener('click',()=>run('mesh.validate_topology'));
 $('#repair-topology-btn').addEventListener('click',()=>run('mesh.repair_topology')); $('#loop-cut-btn').addEventListener('click',()=>run('mesh.loop_cut'));
 $('#frame-btn').addEventListener('click',()=>run('view.frame'));
+$('#proportional-editing-enabled').addEventListener('change',event=>run('transform.proportional_settings',{settings:{enabled:event.target.checked}}));
+$('#proportional-editing-radius').addEventListener('input',event=>{
+  const radius=Number(event.target.value);$('#proportional-editing-radius-value').textContent=radius.toFixed(2);
+  run('transform.proportional_settings',{settings:{radius}});
+});
+$('#pad-proportional-radius').addEventListener('input',event=>{
+  const radius=Number(event.target.value);$('#pad-proportional-radius-value').textContent=radius.toFixed(2);
+  run('transform.proportional_settings',{settings:{radius}});
+});
 $('#pivot-select').addEventListener('change',event=>run('pivot.set',{pivot:event.target.value}));
 $('#transform-snap-enabled').addEventListener('change',event=>run('transform.snap_settings',{settings:{enabled:event.target.checked}}));
 const mobileSnapInputRoles=[
@@ -978,6 +1031,7 @@ $('#pie-menu').addEventListener('click',async event=>{
   else if(command==='dissolve_selected') await run('mesh.dissolve');
   else if(command==='edge_loop') await run('mesh.select_edge_loop');
   else if(command==='edge_ring') await run('mesh.select_edge_ring');
+  else if(command==='toggle_proportional') await run('transform.proportional_toggle');
   else if(command.startsWith('shade_')){
     await run('shading.set',{mode:command.slice(6)});
   }
@@ -994,6 +1048,7 @@ $('#numeric-pad').addEventListener('click',async event=>{
     return;
   }
   if(modalTransform.active && event.target.closest('#pad-transform-orientation')){await run('transform.modal_orientation_toggle');return;}
+  if(modalTransform.active && event.target.closest('#pad-proportional-toggle')){await run('transform.proportional_toggle');return;}
   if(faceOperationModal.active){
     const faceKeyButton=event.target.closest('button[data-key]');if(!faceKeyButton)return;const faceKey=faceKeyButton.dataset.key;
     if(faceKey==='enter'){await run('mesh.face_operation_confirm');return;}
@@ -1040,6 +1095,12 @@ const viewportCanvas=viewport.renderer.domElement;
 viewportCanvas.addEventListener('wheel',event=>{
   if(faceOperationModal.active){event.preventDefault();commandBus.dispatch('mesh.face_operation_nudge',{direction:event.deltaY<0?1:-1});ui.refreshModal();return;}
   if(bevelModal.active){event.preventDefault();commandBus.dispatch('mesh.bevel_nudge',{direction:event.deltaY<0?1:-1});ui.refreshModal();return;}
+  if(modalTransform.active && sceneDocument.mode==='edit' && modalTransform.proportionalSettings.enabled){
+    event.preventDefault();
+    const current=modalTransform.proportionalSettings.radius;
+    const radius=Math.max(0.1,Math.min(25,current*(event.deltaY<0?1.1:1/1.1)));
+    commandBus.dispatch('transform.proportional_settings',{settings:{radius}});return;
+  }
   if(!loopCutModal.active)return;
   event.preventDefault();
   commandBus.dispatch('mesh.loop_cut_count',{delta:event.deltaY<0?1:-1});
