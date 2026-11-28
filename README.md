@@ -127,6 +127,12 @@ When a Move, Rotate or Scale modal is active, you can still drag anywhere on the
 
 
 
+
+### Modifier evaluation safety
+Modifier stacks now run as separate worker stages instead of one monolithic worker message. The Modifiers panel shows the active stage, percent complete and a conservative estimated working-set size. Tap **Cancel** during an evaluation to terminate that worker immediately; the last valid evaluated mesh remains visible and an uncommitted modifier setting is rolled back. The next evaluation starts a fresh worker. Modifier controls are temporarily disabled while a stage is running so settings cannot race the active evaluation. Scene-editing commands, Undo/Redo and Import/Export are held until the job finishes or is cancelled; camera view/navigation remains available.
+
+Before transferring geometry, Bl3nd estimates the largest working set and projected vertex/triangle counts for the full enabled stack. Mobile devices receive lower limits (48 MB / 100,000 vertices / 160,000 triangles on a reported ≤2 GB device; otherwise 96 MB / 180,000 vertices / 300,000 triangles). Desktop profiles receive larger limits, reduced when the reported memory hint is 4 GB or less. The estimate includes topology scratch overhead but cannot guarantee actual browser heap availability. If a stack exceeds the estimated budget, lower Subdivision levels, remove/disable a modifier, or simplify the source mesh. Cancellation and budget rejection do not discard the last valid result or change the editable base cage.
+
 ### Seam-welded Mirror
 
 The Mirror modifier reflects an indexed half-mesh across the selected **X**, **Y** or **Z** plane through the object origin. Its **Merge Distance** is measured in object-local units (default `0.001`, adjustable from `0` to `1`). Source vertices within that distance of the center plane are snapped to the plane in the evaluated copy, and their reflected counterparts reuse the same vertex indices. The reflected triangles reverse winding so their normals face outward, and faces already on the center plane are not duplicated. The editable source mesh is never modified. Start with only one side of the model: Mirror does not automatically bisect/delete the opposite half, move the plane, or weld duplicate vertices away from the mirror seam. On Android, open **More → Mods**, add **Mirror**, choose the axis and adjust **Merge Distance**.

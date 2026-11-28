@@ -19,6 +19,7 @@ import { ModifierStack } from './modifiers/ModifierStack.js';
 import { clampSubdivisionLevel, getSubdivisionLevelOptions } from './modifiers/CatmullClark.js';
 import { clampMirrorMergeDistance, normalizeMirrorAxis } from './modifiers/MirrorGeometry.js';
 import { clampSolidifyOffset, clampSolidifyThickness } from './modifiers/SolidifyGeometry.js';
+import { getModifierBudget } from './modifiers/ModifierBudget.js';
 import { Viewport } from './ui/Viewport.js';
 import { ModelIO } from './io/ModelIO.js';
 import { KeyboardController } from './input/KeyboardController.js';
@@ -82,6 +83,49 @@ const capabilities = await detectCapabilities();
 loadingProgress(22, 'Device profile ready · initializing the 3D renderer…');
 
 function status(message) { if (statusEl) statusEl.textContent = message; }
+function syncModifierBusyControls() {
+  const busy = Boolean(modifierStack?.busy);
+  $$('.modifier-add-grid button, .modifier-card button, .modifier-card input, .modifier-card select').forEach(control => {
+    control.disabled = busy;
+  });
+  const cancel = $('#modifier-cancel-btn');
+  if (cancel) cancel.disabled = !busy;
+}
+function updateModifierProgress(info = {}) {
+  const panel = $('#modifier-progress-panel');
+  if (!panel) return;
+  if (info.state === 'running') {
+    panel.hidden = false;
+    const label = $('#modifier-progress-label');
+    const fill = $('#modifier-progress-fill');
+    const bar = $('#modifier-progress-bar');
+    const detail = $('#modifier-progress-detail');
+    const stage = Math.min(info.stageCount || 1, (info.stageIndex || 0) + 1);
+    const count = Math.max(1, info.stageCount || 1);
+    const modifierName = String(info.modifierType || 'modifier').replace(/^./, value => value.toUpperCase());
+    if (label) label.textContent = `${modifierName} · stage ${stage}/${count}`;
+    const isIndeterminate = (info.progress || 0) === 0;
+    if (bar) {
+      bar.classList.toggle('is-indeterminate', isIndeterminate);
+      if (isIndeterminate) { bar.removeAttribute('aria-valuenow'); bar.setAttribute('aria-valuetext', 'Modifier stage is running'); }
+      else { bar.setAttribute('aria-valuenow', String(Math.max(0, Math.min(100, info.progress || 0)))); bar.removeAttribute('aria-valuetext'); }
+    }
+    if (fill) fill.style.width = isIndeterminate ? '32%' : `${Math.max(0, Math.min(100, info.progress || 0))}%`;
+    if (detail) {
+      const estimate = info.estimate;
+      detail.textContent = estimate
+        ? `Device-safe estimate · ${(estimate.estimatedWorkingBytes / (1024 * 1024)).toFixed(1)} MB · ${estimate.estimatedVertices.toLocaleString()} vertices`
+        : 'Processing modifier stage';
+    }
+  } else {
+    panel.hidden = true;
+    const fill = $('#modifier-progress-fill');
+    const bar = $('#modifier-progress-bar');
+    if (fill) fill.style.width = '0%';
+    if (bar) { bar.classList.remove('is-indeterminate'); bar.setAttribute('aria-valuenow', '0'); bar.removeAttribute('aria-valuetext'); }
+  }
+  syncModifierBusyControls();
+}
 function notify(message, type = '') {
   const toast = document.createElement('div'); toast.className = `toast ${type}`; toast.textContent = message;
   toastRegion.appendChild(toast); setTimeout(() => toast.remove(), 3000);
@@ -181,13 +225,25 @@ viewport.onModalTransformPointerMove = point => {
 viewport.onTransformGizmoMove = point => commandBus.dispatch('transform.modal_update', { point });
 viewport.onTransformGizmoEnd = () => run('transform.modal_confirm');
 viewport.onTransformGizmoCancel = () => run('transform.modal_cancel');
-const modifierStack = new ModifierStack({ onStatus: status });
+const modifierStack = new ModifierStack({ onStatus: status, onProgress: updateModifierProgress, budget: getModifierBudget(capabilities) });
+$('#modifier-cancel-btn').addEventListener('click', () => modifierStack.cancel('Cancelled by user. The previous evaluated mesh was kept.'));
+syncModifierBusyControls();
 const modelIO = new ModelIO(sceneDocument, notify);
 loadingProgress(50, 'Scene document, undo history and model I/O are initialized…');
 
 async function run(name, payload = {}) {
+  if (modifierStack.busy && !name.startsWith('view.')) {
+    status('Modifier evaluation is running. Cancel or wait before editing the scene.');
+    return false;
+  }
   try { return await commandBus.dispatch(name, { ...payload, document: sceneDocument }); }
-  catch (error) { console.error(`[Bl3nd command: ${name}]`, error); notify(error?.message || String(error), 'error'); status(`Command failed · ${error?.message || name}`); return false; }
+  catch (error) {
+    if (error?.name === 'AbortError') { status('Modifier evaluation cancelled · previous result kept'); return false; }
+    console.error(`[Bl3nd command: ${name}]`, error);
+    notify(error?.message || String(error), 'error');
+    status(`Command failed · ${error?.message || name}`);
+    return false;
+  }
 }
 
 sceneExplorer = new SceneExplorer($('#panel-explorer'), {
@@ -255,6 +311,12 @@ function initializeEditSelection(hem) {
   if (sceneDocument.selectionMode === 'vertex') hem.vertexSelection = new Set(hem.vertices.map((_, id) => id));
   else if (sceneDocument.selectionMode === 'edge') hem.edgeSelection = new Set(hem.edges.map((_, id) => id));
   else hem.faceSelection = new Set(hem.faces.map((_, id) => id));
+}
+
+function assertStableModelForModifiers() {
+  if (modalTransform.active || loopCutModal.active || bevelModal.active || faceOperationModal.active || viewport.modalOperationActive) {
+    throw new Error('Apply or cancel the active modeling operation before evaluating modifiers.');
+  }
 }
 
 function registerCommands() {
@@ -758,6 +820,7 @@ function registerCommands() {
     sceneDocument.pivot = pivot; refresh(); return true;
   }, { recordUndo: false });
   commandBus.register('modifier.add', async ({ type }) => {
+    assertStableModelForModifiers();
     const mesh = sceneDocument.activeObject; if (!mesh) return notify('Select a mesh before adding a modifier.');
     const modifier = modifierStack.add(mesh, type);
     try {
@@ -770,6 +833,7 @@ function registerCommands() {
     refreshModifiers();
   });
   commandBus.register('modifier.remove', async ({ id }) => {
+    assertStableModelForModifiers();
     const mesh = sceneDocument.activeObject; if (!mesh) return;
     const modifiers = mesh.userData.modifiers || [];
     const index = modifiers.findIndex(item => item.id === id);
@@ -786,6 +850,7 @@ function registerCommands() {
     refreshModifiers();
   });
   commandBus.register('modifier.toggle', async ({ id }) => {
+    assertStableModelForModifiers();
     const mesh = sceneDocument.activeObject; const item = mesh?.userData?.modifiers?.find(m => m.id === id); if (!item) return;
     const previousValue = item.enabled;
     item.enabled = !previousValue;
@@ -799,6 +864,7 @@ function registerCommands() {
     refreshModifiers();
   });
   commandBus.register('modifier.update', async ({ id, field, value }) => {
+    assertStableModelForModifiers();
     const mesh = sceneDocument.activeObject; const item = mesh?.userData.modifiers?.find(m => m.id === id); if (!item) return;
     const previousValue = item[field];
     item[field] = field === 'level'
@@ -951,6 +1017,7 @@ function refreshModifiers() {
     }
     host.append(card);
   }
+  syncModifierBusyControls();
 }
 
 function refresh() {
@@ -1042,8 +1109,8 @@ const PIE_MENU_DEFINITIONS = {
 };
 
 ui = {
-  async undo(){if(loopCutModal.active || bevelModal.active || faceOperationModal.active){notify('Apply or cancel the active mesh operation before undoing.');return;}if(!undoManager.canUndo){notify('Nothing to undo.');return;} await undoManager.undo();refresh();},
-  async redo(){if(loopCutModal.active || bevelModal.active || faceOperationModal.active){notify('Apply or cancel the active mesh operation before redoing.');return;}if(!undoManager.canRedo){notify('Nothing to redo.');return;} await undoManager.redo();refresh();},
+  async undo(){if(modifierStack.busy){notify('Cancel or finish modifier evaluation before Undo.');return;}if(loopCutModal.active || bevelModal.active || faceOperationModal.active){notify('Apply or cancel the active mesh operation before undoing.');return;}if(!undoManager.canUndo){notify('Nothing to undo.');return;} await undoManager.undo();refresh();},
+  async redo(){if(modifierStack.busy){notify('Cancel or finish modifier evaluation before Redo.');return;}if(loopCutModal.active || bevelModal.active || faceOperationModal.active){notify('Apply or cancel the active mesh operation before redoing.');return;}if(!undoManager.canRedo){notify('Nothing to redo.');return;} await undoManager.redo();refresh();},
   get pieMenuOpen(){return radialPieMenu.isOpen;},
   openPie(kind, options={}){
     const definition=PIE_MENU_DEFINITIONS[kind];
@@ -1320,9 +1387,9 @@ $('#undo-btn').addEventListener('click',()=>ui.undo()); $('#redo-btn').addEventL
 syncTransformToolButtons();
 $('#object-mode-btn').addEventListener('click',()=>run('mode.set',{mode:'object'}));
 $('#edit-mode-btn').addEventListener('click',()=>run('mode.set',{mode:'edit'}));
-$('#save-btn').addEventListener('click',async()=>{try{await modelIO.exportFile('glb');}catch(e){notify(e.message,'error');}});
-$('#open-btn').addEventListener('click',()=>$('#file-input').click());
-$('#file-input').addEventListener('change',async event=>{const file=event.target.files?.[0];if(!file)return;try{const meshes=await modelIO.importFile(file);const issues=meshes.reduce((sum,mesh)=>sum+(mesh.userData.hem?.validateTopology().issueCount||0),0);if(issues)notify(`Imported mesh validation found ${issues} topology issue(s). Use Validate Mesh for details.`,'error');refresh();viewport.frame(meshes[0]);scheduleSceneAutosave();}catch(e){notify(e.message,'error');}finally{event.target.value='';}});
+$('#save-btn').addEventListener('click',async()=>{if(modifierStack.busy){notify('Cancel or finish modifier evaluation before Export.');return;}try{await modelIO.exportFile('glb');}catch(e){notify(e.message,'error');}});
+$('#open-btn').addEventListener('click',()=>{if(modifierStack.busy){notify('Cancel or finish modifier evaluation before Import.');return;}$('#file-input').click();});
+$('#file-input').addEventListener('change',async event=>{const file=event.target.files?.[0];if(!file)return;if(modifierStack.busy){notify('Cancel or finish modifier evaluation before Import.');event.target.value='';return;}try{const meshes=await modelIO.importFile(file);const issues=meshes.reduce((sum,mesh)=>sum+(mesh.userData.hem?.validateTopology().issueCount||0),0);if(issues)notify(`Imported mesh validation found ${issues} topology issue(s). Use Validate Mesh for details.`,'error');refresh();viewport.frame(meshes[0]);scheduleSceneAutosave();}catch(e){notify(e.message,'error');}finally{event.target.value='';}});
 $('#add-menu-btn').addEventListener('click',()=>ui.togglePie('add'));
 $('#mobile-add').addEventListener('click',()=>ui.togglePie('add'));
 $('#mobile-proportional').addEventListener('click',()=>run('transform.proportional_toggle'));

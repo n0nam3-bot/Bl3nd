@@ -615,3 +615,19 @@ Full Blender keymap parity is not claimed by this build. Android touch acceptanc
 
 ### Desktop — Chrome / Edge (deferred)
 - Repeat face/edge/vertex X-ray visibility with Solidify, Mirror and Subdivision. Compare selection from front and rear views; ensure selected items remain visible while non-selected geometry stays normally occluded. Verify normal occlusion is restored when modifiers are disabled/removed.
+
+
+## v0.1.84 — Cancellable staged modifier evaluation and mobile memory safeguards
+
+### Android — Chrome / Samsung Internet
+- Add two modifiers to a small cube (for example Mirror then Subdivision). Confirm the Modifiers panel displays a progress card with the current modifier stage, completed-stage percentage and estimated working-set size.
+- Add a deliberately heavier Subdivision level or multi-modifier stack. While it evaluates, tap **Cancel**. Confirm the worker stops promptly, the last valid evaluated mesh remains visible, and the modifier's last accepted settings are restored. Confirm the Cancel control disappears and all modifier controls become tappable again.
+- Start a fresh evaluation after cancelling. Confirm a fresh worker is created, evaluation completes and the progress card closes; cancellation must not leave the worker unusable.
+- Try a stack predicted to exceed the device-safe working-set/vertex/triangle budget. Confirm it is rejected before worker creation with a message showing the estimated size and suggested reductions. Confirm the previous evaluated result remains intact.
+- Run a supported Mirror → Subdivision → Solidify stack. Confirm stages execute in order, progress advances between stages and the final evaluated result matches the same stack order. Toggle/remove one modifier and confirm the stack reevaluates.
+- While a modifier stage is running, verify its add/settings/toggle/remove controls are disabled and the Cancel button remains usable. After success, failure or cancellation, all modifier controls must re-enable.
+- Confirm source cage geometry, Edit Mode selections, local scene recovery, Undo/Redo and GLB export remain unchanged. Reload after `LOCAL · SAVED` and confirm modifier settings restore normally.
+
+### Desktop — Chrome / Edge (deferred)
+- Repeat multi-stage progress, cancellation during a running stage, immediate restart, preflight rejection and stack-order checks. Verify the worker terminates rather than blocking the interface until a large geometry function returns.
+- Confirm desktop receives its larger device budget while low-memory profiles receive lower vertex, triangle and estimated-memory limits. The estimate is a conservative preflight, not a guarantee of browser heap availability.

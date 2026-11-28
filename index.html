@@ -248,7 +248,12 @@
         </section>
         <section class="panel-content" id="panel-modifiers" hidden>
           <div class="panel-heading">NON-DESTRUCTIVE STACK</div>
-          <p class="panel-note">Modifiers are evaluated on a worker thread. The editable base mesh remains unchanged.</p>
+          <p class="panel-note">Modifiers are evaluated in cancellable worker stages. The editable base mesh remains unchanged.</p>
+          <section id="modifier-progress-panel" class="modifier-progress-panel" hidden aria-live="polite">
+            <div class="modifier-progress-heading"><strong id="modifier-progress-label">Preparing modifiers…</strong><button id="modifier-cancel-btn" type="button" disabled>Cancel</button></div>
+            <div id="modifier-progress-bar" class="modifier-progress-bar" role="progressbar" aria-label="Modifier evaluation progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="modifier-progress-fill"></span></div>
+            <small id="modifier-progress-detail">Checking device limits</small>
+          </section>
           <div class="button-grid modifier-add-grid">
             <button data-modifier="subdivision">Subdivision</button><button data-modifier="mirror">Mirror</button><button data-modifier="array">Array</button><button data-modifier="solidify">Solidify</button>
           </div>
@@ -342,7 +347,7 @@
       if ('serviceWorker' in navigator) {
         // Bump this once per app release. The query string changes the worker script URL,
         // while updateViaCache:'none' prevents HTTP cache reuse for the worker and imports.
-        const APP_RELEASE = '0.1.83';
+        const APP_RELEASE = '0.1.84';
         const hadController = Boolean(navigator.serviceWorker.controller);
         let controllerReloaded = false;
         if (hadController) {

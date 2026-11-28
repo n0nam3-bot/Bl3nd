@@ -50,7 +50,7 @@ function createWorkerHarness({ fetchImpl = async () => new FakeResponse('fresh-p
     async match(key) { return cache.match(key); }
   };
   const self = {
-    location: new URL('https://example.test/Bl3nd/sw.js?v=0.1.83'),
+    location: new URL('https://example.test/Bl3nd/sw.js?v=0.1.84'),
     registration: { scope: 'https://example.test/Bl3nd/' },
     clients: { async claim() {} },
     addEventListener(type, listener) { listeners.set(type, listener); },
@@ -67,7 +67,7 @@ function createWorkerHarness({ fetchImpl = async () => new FakeResponse('fresh-p
 }
 
 test('app entry versions the worker URL and checks for updates on startup/foreground return', () => {
-  assert.match(entrySource, /const APP_RELEASE = '0\.1\.83'/);
+  assert.match(entrySource, /const APP_RELEASE = '0\.1\.84'/);
   assert.match(entrySource, /workerURL\.searchParams\.set\('v', APP_RELEASE\)/);
   assert.match(entrySource, /updateViaCache: 'none'/);
   assert.match(entrySource, /serviceWorkerRegistration\.update\(\)/);
@@ -83,13 +83,14 @@ test('new release derives fresh shell/runtime caches and bypasses HTTP cache for
   harness.listeners.get('install')({ waitUntil(promise) { installPromise = promise; } });
   await installPromise;
 
-  assert.ok(harness.openedCaches.includes('bl3nd-shell-0.1.83'));
+  assert.ok(harness.openedCaches.includes('bl3nd-shell-0.1.84'));
   assert.ok(harness.precacheRequests.length > 0);
   assert.ok(harness.precacheRequests.every(request => request.cache === 'reload'));
   assert.ok(harness.precacheRequests.some(request => request.url.endsWith('/Bl3nd/index.html')));
   assert.ok(harness.precacheRequests.some(request => request.url.endsWith('/Bl3nd/src/main.js')));
   assert.ok(harness.precacheRequests.some(request => request.url.endsWith('/Bl3nd/src/modifiers/CatmullClark.js')));
   assert.ok(harness.precacheRequests.some(request => request.url.endsWith('/Bl3nd/src/core/EditOverlayStyle.js')));
+  assert.ok(harness.precacheRequests.some(request => request.url.endsWith('/Bl3nd/src/modifiers/ModifierBudget.js')));
   assert.ok(harness.precacheRequests.some(request => request.url.endsWith('/Bl3nd/src/modifiers/MirrorGeometry.js')));
   assert.ok(harness.precacheRequests.some(request => request.url.endsWith('/Bl3nd/src/modifiers/SolidifyGeometry.js')));
 });
@@ -109,7 +110,7 @@ test('page navigation bypasses HTTP cache, returns the network page and stores a
   assert.equal(harness.fetchCalls.length, 1);
   assert.equal(harness.fetchCalls[0].cache, 'no-store');
   assert.equal(response.body, 'fresh-page');
-  assert.ok(harness.openedCaches.includes('bl3nd-shell-0.1.83'));
+  assert.ok(harness.openedCaches.includes('bl3nd-shell-0.1.84'));
 });
 
 test('offline navigation keeps the last cached app page available', async () => {
@@ -167,4 +168,21 @@ test('modifier add/toggle/remove/update restore previous stack state after worke
   assert.match(mainSource, /item\.enabled = previousValue/);
   assert.match(mainSource, /item\[field\] = previousValue/);
   assert.match(mainSource, /refreshModifiers\(\);\s*throw error/);
+});
+
+
+test('modifier panel exposes staged progress, an explicit cancel action and device-limit feedback', () => {
+  const htmlSource = entrySource;
+  assert.match(htmlSource, /id="modifier-progress-panel"/);
+  assert.match(htmlSource, /id="modifier-cancel-btn"/);
+  assert.match(mainSource, /onProgress: updateModifierProgress/);
+  assert.match(mainSource, /modifierStack\.cancel\('Cancelled by user/);
+  assert.match(mainSource, /getModifierBudget\(capabilities\)/);
+  assert.match(mainSource, /isIndeterminate/);
+  assert.match(styleSource, /modifier-progress-sweep/);
+  assert.match(mainSource, /AbortError/);
+  assert.match(mainSource, /function assertStableModelForModifiers\(\)/);
+  assert.match(mainSource, /Apply or cancel the active modeling operation before evaluating modifiers/);
+  assert.match(styleSource, /\.modifier-progress-panel/);
+  assert.match(styleSource, /@media\(max-width:650px\).*modifier-progress-heading button/s);
 });
