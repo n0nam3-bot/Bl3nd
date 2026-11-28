@@ -241,3 +241,12 @@ This procedure validates browser interaction for the starter cube. The automated
 - On a cube, additive-select opposite faces and repeat Extrude, Inset and Face Bevel. Each should process the two disjoint planar islands separately. Do not expect several adjacent, non-coplanar cube sides to be treated as separate planar islands: they form one connected non-planar group and Extrude/Inset must reject it safely. Face Bevel may use Individual Faces when every polygon independently validates.
 - Select two faces that touch only at one shared vertex, or select islands containing a hole/multiple boundary loops. Extrude, Inset and Multi-Region Face Bevel must reject the complete operation without a partial preview or source mutation.
 - Turn Add to Selection off and confirm ordinary click selection again replaces the old selection. Verify a single connected planar region and existing multi-row/multi-column Face Bevel still work as before. After Apply/Cancel, one-finger orbit and two-finger pan/zoom must recover immediately. Desktop Chrome/Edge remains deferred.
+
+
+## Warped neighboring faces after Edit Mode rotation — v0.1.55
+
+- On a cube, select one face and choose **Individual Origins**. Rotate it around its normal by approximately 45°, then 90°. The selected face and every adjacent side face must remain visible; no whole side quad may disappear as a false opening. The adjacent faces are expected to warp because they share the rotated vertices.
+- Repeat with two opposite faces selected using mobile Add to Selection. Rotate with Individual Origins and inspect all four connecting side faces. Confirm the selected faces remain welded to their side walls and the passive guide still shows one origin per disconnected selected face.
+- Confirm a normal 3D boundary crossing is not incorrectly accepted by the warped-quad fallback: use the automated bow-tie fixture, which must still return no triangles.
+- Orbit around the object and inspect both sides of folded walls. The modeling material is now two-sided, so a folded face should remain visible from either side; this does not repair the shape or prevent extreme self-intersections. Cancel and verify original topology/positions, then Apply and verify one Undo/Redo step.
+- Desktop Chrome/Edge remains deferred until PC access is available.

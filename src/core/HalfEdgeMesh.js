@@ -1,4 +1,5 @@
 import { analyzeFaceRegionBoundary } from './FaceRegionBoundary.js';
+import { triangulateWarpedQuad } from './WarpedQuadTriangulation.js';
 
 function keyFor(a, b) { return a < b ? `${a}:${b}` : `${b}:${a}`; }
 
@@ -654,7 +655,8 @@ export class HalfEdgeMesh {
 
   triangulateFace(faceId) {
     const face = this.faces[faceId];
-    return face ? triangulatePolygon(this.positions, face) || [] : [];
+    if (!face) return [];
+    return triangulatePolygon(this.positions, face) || triangulateWarpedQuad(this.positions, face) || [];
   }
 
   triangleFaceMap() {

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { HalfEdgeMesh } from './HalfEdgeMesh.js';
 
-const DEFAULT_MATERIAL = () => new THREE.MeshStandardMaterial({ color: 0xc8cbd0, roughness: 0.64, metalness: 0.08, flatShading: true });
+const DEFAULT_MATERIAL = () => new THREE.MeshStandardMaterial({ color: 0xc8cbd0, roughness: 0.64, metalness: 0.08, flatShading: true, side: THREE.DoubleSide });
 
 export class SceneDocument {
   constructor(scene) {
@@ -27,7 +27,14 @@ export class SceneDocument {
     const hem = HalfEdgeMesh.fromBufferGeometry(geometry);
     hem.setSelectionMode(this.selectionMode);
     const renderGeometry = this.geometryFromHem(hem);
-    const mesh = new THREE.Mesh(renderGeometry, material || DEFAULT_MATERIAL());
+    const renderMaterial = material || DEFAULT_MATERIAL();
+    // Edit Mode transforms can legitimately fold adjacent polygons through
+    // their shared vertices. Keep both sides visible in the modeling viewport
+    // rather than presenting back-facing folded triangles as missing geometry.
+    for (const item of Array.isArray(renderMaterial) ? renderMaterial : [renderMaterial]) {
+      if (item) { item.side = THREE.DoubleSide; item.needsUpdate = true; }
+    }
+    const mesh = new THREE.Mesh(renderGeometry, renderMaterial);
     mesh.name = name; mesh.position.copy(at); mesh.castShadow = true; mesh.receiveShadow = true;
     mesh.userData.hem = hem; mesh.userData.modifiers = []; mesh.userData.baseMaterialColor = mesh.material.color?.getHex?.() ?? 0xc8cbd0;
     this.content.add(mesh); this.objects.push(mesh); this.setActive(mesh);
@@ -97,7 +104,7 @@ export class SceneDocument {
       hem.vertexSelection = new Set(item.selection?.vertices || []);
       hem.edgeSelection = new Set(item.selection?.edges || []);
       hem.faceSelection = new Set(item.selection?.faces || []);
-      const mesh = new THREE.Mesh(this.geometryFromHem(hem), new THREE.MeshStandardMaterial({ color: item.color ?? 0xc8cbd0, roughness: 0.64, metalness: 0.08, flatShading: true }));
+      const mesh = new THREE.Mesh(this.geometryFromHem(hem), new THREE.MeshStandardMaterial({ color: item.color ?? 0xc8cbd0, roughness: 0.64, metalness: 0.08, flatShading: true, side: THREE.DoubleSide }));
       mesh.name = item.name || 'Mesh'; mesh.position.fromArray(item.position || [0,0,0]); mesh.rotation.fromArray(item.rotation || [0,0,0]); mesh.scale.fromArray(item.scale || [1,1,1]);
       mesh.visible = item.visible !== false; mesh.castShadow = true; mesh.receiveShadow = true;
       mesh.userData.hem = hem; mesh.userData.modifiers = item.modifiers || []; mesh.userData.baseMaterialColor = item.color ?? 0xc8cbd0;
