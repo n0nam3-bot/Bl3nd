@@ -87,8 +87,8 @@ export class KeyboardController {
     if (numpad?.action === 'frame-selection') {
       event.preventDefault(); await this.dispatch('view.frame_selection'); return;
     }
-    if (numpad?.action === 'reserved-projection-toggle') {
-      event.preventDefault(); this.notify?.('Perspective/orthographic toggle is not available yet.'); return;
+    if (numpad?.action === 'toggle-projection') {
+      event.preventDefault(); await this.dispatch('view.toggle_projection'); return;
     }
     if (key==='escape' && this.viewport.selectionTool && this.viewport.selectionTool !== 'tap') { event.preventDefault(); await this.dispatch('selection.tool.set',{tool:'tap'}); return; }
     if (event.key==='Tab') { event.preventDefault(); await this.dispatch('mode.toggle_edit'); return; }

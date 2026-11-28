@@ -4,7 +4,7 @@ This is a manual acceptance run for the deployed Bl3nd app. It checks the real b
 
 ## Build under test
 
-Current deployed baseline before v0.1.64: v0.1.63, `main` commit `81dcba7f09a05756019799f09088ec0a02421b8e`; Pages workflow run `46112111100` succeeded on 2026-11-28 after unpack run `46112098266`. The v0.1.64 package is a pending delta based on that deployed commit.
+Current deployed baseline before v0.1.66: v0.1.65, `main` commit `eaf6accaf2ec1d1989f275c7333d6648e77bbc56`; Pages workflow run `46115270214` succeeded on 2026-11-28 after unpack run `46115259398`. The v0.1.66 package is a pending delta based on that deployed commit.
 
 Open the deployed app only after the latest Pages workflow succeeds:
 
@@ -359,9 +359,22 @@ Full Blender keymap parity is not claimed by this build. Android touch acceptanc
 - Press Numpad `4` and `6` to orbit left/right by 15° per keypress, and `8` / `2` to orbit up/down by 15°. Press `9` to rotate the current view 180°. Confirm the camera keeps the same target and distance and that repeated vertical steps stop at the pole instead of flipping through it.
 - Enter Edit Mode, select a single face, then press Numpad `.`. Confirm the selected region is centered/framed even though only one face is selected. Repeat with one edge, one vertex, and multiple selected elements in each selection mode. In Object Mode, Numpad `.` frames the active object. `Home` continues to frame the full active object regardless of Edit Mode selection.
 - In Edit Mode, press the top-row `1/2/3` keys and confirm they still change Vertex/Edge/Face Select. Press Numpad `1/2/3` and confirm they navigate the view instead. With NumLock off, press Numpad `.` (which some browsers report as `Delete`); it must frame selection and must not delete geometry. The dedicated `Delete` key must still delete the selected topology/object.
-- Confirm `Numpad 5` reports that perspective/orthographic switching is not available yet; it must not alter the camera or mesh. Browser-reserved shortcuts, Ctrl/Meta+Z undo, Ctrl/Meta+Y redo, `Z` shading pie, `Shift+A` Add pie, and modal G/R/S/Bevel/Extrude/Inset/Loop Cut inputs must remain unchanged.
+- The former v0.1.65 expectation that Numpad `5` is unavailable is superseded by v0.1.66 below. Use the v0.1.66 projection-toggle procedure instead; browser-modified Numpad 5 combinations remain unhandled by Bl3nd.
 - Confirm navigation shortcuts are ignored by the active text fields and do not create undo records. Reopen the radial wheels and confirm their keyboard navigation still takes priority while a wheel is open.
 
 ### Android — Chrome
 
 - No new hardware-keyboard requirement is introduced. Confirm the existing bottom actionbar, one-finger orbit, two-finger pan/zoom, touch selection and radial menus still work. PC/numpad acceptance remains deferred until a physical keyboard is available.
+
+
+## v0.1.66 — Perspective / orthographic projection toggle
+
+- On desktop, press unmodified Numpad `5` from the current perspective view. Confirm the camera switches to orthographic without shifting the view target, changing the view direction or visibly jumping the target-plane framing. Press Numpad `5` again and confirm perspective returns with the same target-plane scale and orientation.
+- On desktop and Android, tap the `P` / `O` control beside the viewport axis buttons. Confirm the button changes to `O` in orthographic mode and back to `P` in perspective mode; its title/accessible pressed state must match the active camera.
+- Press Ctrl/Meta/Alt+Numpad `5` and confirm Bl3nd does not consume those browser-modified shortcuts. In orthographic mode, orbit and pan normally and use the mouse wheel or two-finger gesture to zoom. Confirm parallel edges remain parallel while zooming. In perspective mode, confirm normal depth perspective is restored.
+- Resize the browser between portrait/landscape or narrow/wide dimensions while orthographic. Confirm the vertical framing remains stable and the horizontal view widens/narrows with aspect ratio. Then return to perspective and confirm the same visual framing is retained.
+- In both projection modes, use Front/Right/Top axis buttons and the Numpad cardinal/orbit shortcuts. Frame the active object with Home and the selected Edit Mode elements with Numpad `.`. Confirm object/selection framing fits the object without a mode-specific jump.
+- Pick visible faces/edges/vertices and place the 3D Cursor in both modes. Confirm ray picking and cursor placement target the visible geometry rather than a stale camera.
+- Start Move, Rotate and Scale in orthographic mode. Confirm pointer-driven screen movement uses the orthographic world-units-per-pixel scale and is independent of pivot depth; numeric entry, axis constraints, snapping, Apply/Cancel and Undo/Redo remain unchanged. Then switch back to perspective and confirm depth/FOV movement scaling returns.
+- Start Bevel, Extrude, Inset or Loop Cut. Confirm projection switching is not performed during the active modal operation; Apply/Cancel and Undo/Redo remain unaffected.
+- On Android, confirm one-finger orbit, two-finger pan/zoom, selection taps, radial pie menus and the bottom actionbar remain available with the P/O button visible. Desktop numpad hardware acceptance remains pending until a physical keyboard is available.

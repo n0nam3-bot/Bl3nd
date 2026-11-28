@@ -25,10 +25,10 @@ function rotateAroundAxis(vector, axis, angle) {
 
 /**
  * Resolve the supported Blender-inspired numpad navigation keys.
- * Ctrl/Meta + 1/3/7 select the opposite orthographic direction; 5 remains
- * reserved until a perspective/orthographic camera switch is implemented.
+ * Ctrl/Meta + 1/3/7 select the opposite cardinal direction; 5 toggles
+ * perspective/orthographic projection.
  */
-export function resolveNumpadShortcut(code, { ctrlKey = false, metaKey = false } = {}) {
+export function resolveNumpadShortcut(code, { ctrlKey = false, metaKey = false, altKey = false } = {}) {
   const opposite = Boolean(ctrlKey || metaKey);
   const views = {
     Numpad1: opposite ? 'back' : 'front',
@@ -45,7 +45,7 @@ export function resolveNumpadShortcut(code, { ctrlKey = false, metaKey = false }
   };
   if (orbit[code]) return { action: 'orbit', ...orbit[code] };
   if (code === 'NumpadDecimal') return { action: 'frame-selection' };
-  if (code === 'Numpad5') return { action: 'reserved-projection-toggle' };
+  if (code === 'Numpad5' && !ctrlKey && !metaKey && !altKey) return { action: 'toggle-projection' };
   return null;
 }
 

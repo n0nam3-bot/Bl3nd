@@ -3,6 +3,7 @@ import { resolveTransformAxis } from '../core/TransformOrientation.js';
 import { groupSelectedTransformVertices, resolveTransformPivotPoint } from '../core/TransformPivot.js';
 import { getTransformSnapStep, normalizeTransformSnapSettings, resolveMoveSnapAmount, resolveRotateSnapDegrees, resolveScaleSnapFactor } from '../core/TransformSnap.js';
 import { buildProportionalInfluence, normalizeProportionalSettings } from '../core/ProportionalEditing.js';
+import { cameraUnitsPerPixel } from '../core/CameraProjection.js';
 
 const AXES = {
   x: new THREE.Vector3(1, 0, 0),
@@ -230,9 +231,15 @@ export class ModalTransform {
     const up = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion).normalize();
     const forward = camera.getWorldDirection(new THREE.Vector3()).normalize();
     const distance = Math.max(0.01, camera.getWorldPosition(new THREE.Vector3()).distanceTo(this.worldPivot));
-    const fov = THREE.MathUtils.degToRad(camera.fov || 50);
-    const unitsPerPixel = (2 * distance * Math.tan(fov / 2)) /
-      (Math.max(1, rect.height) * Math.max(0.01, camera.zoom || 1));
+    const unitsPerPixel = cameraUnitsPerPixel({
+      projection: camera.isOrthographicCamera ? 'orthographic' : 'perspective',
+      distance,
+      fovDegrees: camera.fov || this.viewport.perspectiveFov || 50,
+      top: camera.top,
+      bottom: camera.bottom,
+      zoom: camera.zoom || 1,
+      pixelHeight: Math.max(1, rect.height)
+    }) || 0.01;
     return {
       camera,
       rect: { left: rect.left, top: rect.top, width: Math.max(1, rect.width), height: Math.max(1, rect.height) },

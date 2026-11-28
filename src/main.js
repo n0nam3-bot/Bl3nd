@@ -85,6 +85,19 @@ try {
 }
 const sceneDocument = new SceneDocument(viewport.scene);
 viewport.setContent(sceneDocument.content);
+function syncProjectionUI(mode = viewport.projectionMode()) {
+  const button = $('#projection-toggle');
+  const orthographic = mode === 'orthographic';
+  if (button) {
+    button.textContent = orthographic ? 'O' : 'P';
+    button.setAttribute('aria-pressed', String(orthographic));
+    button.title = `${orthographic ? 'Orthographic' : 'Perspective'} · tap to switch (Numpad 5)`;
+  }
+  const label = $('#view-label');
+  if (label) label.textContent = `User ${orthographic ? 'Orthographic' : 'Perspective'}`;
+}
+viewport.onProjectionChange = syncProjectionUI;
+syncProjectionUI();
 loadingProgress(43, 'Viewport created · preparing the scene document…');
 
 let ui;
@@ -225,6 +238,7 @@ function registerCommands() {
     refresh(); return true;
   }, { recordUndo: false });
   commandBus.register('view.set', ({ view }) => viewport.setView(view), { recordUndo: false });
+  commandBus.register('view.toggle_projection', () => viewport.toggleProjection(), { recordUndo: false });
   commandBus.register('view.orbit_step', ({ horizontalSteps = 0, verticalSteps = 0 } = {}) =>
     viewport.orbitStep({ horizontalSteps, verticalSteps }), { recordUndo: false });
   commandBus.register('view.frame', () => viewport.frame(sceneDocument.activeObject), { recordUndo: false });
@@ -724,11 +738,11 @@ function refresh() {
   viewport.updateEditOverlay(editing ? sceneDocument.activeObject : null, sceneDocument.selectionMode);
   const hintDesktop = $('.hint-desktop'), hintMobile = $('.hint-mobile');
   if (editing) {
-    hintDesktop.textContent = 'Edit: Click topology · O proportional · Alt+L loop · Ctrl+Alt+L ring · Ctrl+B bevel · Ctrl+R loop cut · X delete · Numpad: orbit/frame';
-    hintMobile.textContent = 'Edit: Tap topology · Prop in the bottom bar toggles proportional G/R/S · adjust radius in its panel or transform pad · Select ▾ for selection tools';
+    hintDesktop.textContent = 'Edit: Click topology · O proportional · Alt+L loop · Ctrl+Alt+L ring · Ctrl+B bevel · Ctrl+R loop cut · X delete · Numpad: views/orbit/frame/projection';
+    hintMobile.textContent = 'Edit: Tap topology · Prop in the bottom bar toggles proportional G/R/S · P/O switches projection · Select ▾ for selection tools';
   } else {
-    hintDesktop.textContent = 'Drag to orbit · Right-drag to pan · Scroll to zoom · Numpad 2/4/6/8 orbit · Numpad . frame · G/R/S transform';
-    hintMobile.textContent = 'One finger: orbit · Two fingers: pan/zoom · Long press: 3D Cursor · G/R/S: transform';
+    hintDesktop.textContent = 'Drag to orbit · Right-drag to pan · Scroll to zoom · Numpad 2/4/6/8 orbit · Numpad 5 / P-O switch projection · Numpad . frame · G/R/S transform';
+    hintMobile.textContent = 'One finger: orbit · Two fingers: pan/zoom · P/O above axes switches projection · Long press: 3D Cursor · G/R/S: transform';
   }
   const stats=sceneDocument.stats(); $('#object-count').textContent=`Objects: ${stats.objects}`;
   $('#mesh-stats').textContent=`Verts ${stats.vertices} · Edges ${stats.edges} · Faces ${stats.faces}`;
@@ -1118,6 +1132,7 @@ for (const [input,setting] of snapStepBindings) {
   });
 }
 $$('[data-view]').forEach(button=>button.addEventListener('click',()=>run('view.set',{view:button.dataset.view})));
+$('#projection-toggle')?.addEventListener('click',()=>run('view.toggle_projection')); 
 $$('[data-modifier]').forEach(button=>button.addEventListener('click',()=>run('modifier.add',{type:button.dataset.modifier})));
 $$('[data-panel]').forEach(button=>button.addEventListener('click',()=>{
   $$('.panel-tab').forEach(item=>item.classList.toggle('active',item===button));

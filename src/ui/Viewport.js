@@ -4,15 +4,17 @@ import { EditModeOverlay } from './EditModeOverlay.js';
 import { chooseSelectionViewDirection } from '../core/SelectionView.js';
 import { buildTransformGuideGeometry } from '../core/TransformGuideGeometry.js';
 import { orbitOffsetBySteps, rotateViewUpByHorizontalSteps } from '../core/ViewportNavigation.js';
+import { orthographicFrustum, orthographicViewHeight, perspectiveDistanceForViewHeight, perspectiveViewHeight } from '../core/CameraProjection.js';
 
 export class Viewport {
-  constructor(container, { pixelRatio = 1.5, onSelect, onCursor, onStatus } = {}) {
-    this.container = container; this.onSelect = onSelect; this.onCursor = onCursor; this.onStatus = onStatus;
+  constructor(container, { pixelRatio = 1.5, onSelect, onCursor, onStatus, onProjectionChange } = {}) {
+    this.container = container; this.onSelect = onSelect; this.onCursor = onCursor; this.onStatus = onStatus; this.onProjectionChange = onProjectionChange;
+    this.perspectiveFov = 48;
     this.editOverlay = null;
     this.selectionTool = 'tap';
     this.onSelectionGestureStart = null;
     this.scene = new THREE.Scene(); this.scene.background = new THREE.Color(0x252a33);
-    this.camera = new THREE.PerspectiveCamera(48, 1, 0.05, 2000); this.camera.up.set(0,0,1); this.camera.position.set(7, -9, 7);
+    this.camera = new THREE.PerspectiveCamera(this.perspectiveFov, 1, 0.05, 2000); this.camera.up.set(0,0,1); this.camera.position.set(7, -9, 7);
     this.renderer = new THREE.WebGLRenderer({ antialias: pixelRatio > 1.1, alpha: false, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, pixelRatio));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -74,7 +76,15 @@ export class Viewport {
 
   resize() {
     const width = Math.max(1, this.container.clientWidth), height = Math.max(1, this.container.clientHeight);
-    this.camera.aspect = width / height; this.camera.updateProjectionMatrix(); this.renderer.setSize(width,height,false);
+    const aspect = width / height;
+    this.viewportAspect = aspect;
+    if (this.camera.isOrthographicCamera) {
+      const baseHeight = this.camera.top - this.camera.bottom;
+      const frustum = orthographicFrustum(baseHeight, aspect);
+      if (frustum) Object.assign(this.camera, frustum);
+      this.camera.aspect = aspect;
+    } else this.camera.aspect = aspect;
+    this.camera.updateProjectionMatrix(); this.renderer.setSize(width,height,false);
     this.updateTransformGuide(this.transformGuideState);
   }
 
@@ -107,9 +117,11 @@ export class Viewport {
     svg.setAttribute('height', String(height));
     this.camera.updateWorldMatrix(true, false);
     const distance = this.camera.getWorldPosition(new THREE.Vector3()).distanceTo(new THREE.Vector3(...state.pivot));
-    const fov = THREE.MathUtils.degToRad(this.camera.fov || 48);
+    const visibleHeight = this.camera.isOrthographicCamera
+      ? orthographicViewHeight(this.camera.top, this.camera.bottom, this.camera.zoom)
+      : perspectiveViewHeight(Math.max(0.01, distance), this.camera.fov || this.perspectiveFov, this.camera.zoom || 1);
     const worldLength = THREE.MathUtils.clamp(
-      (78 * 2 * Math.max(0.01, distance) * Math.tan(fov / 2)) / (height * Math.max(0.01, this.camera.zoom || 1)),
+      (78 * (visibleHeight || 0.1)) / height,
       0.04,
       500
     );
@@ -289,6 +301,75 @@ export class Viewport {
     if (point) this.onCursor?.(point);
   }
 
+  projectionMode() {
+    return this.camera?.isOrthographicCamera ? 'orthographic' : 'perspective';
+  }
+
+  setOrthographicViewHeight(viewHeight) {
+    if (!this.camera?.isOrthographicCamera || !Number.isFinite(viewHeight) || viewHeight <= 1e-8) return false;
+    const frustum = orthographicFrustum(viewHeight, this.viewportAspect || this.camera.aspect || 1);
+    if (!frustum) return false;
+    Object.assign(this.camera, frustum);
+    this.camera.zoom = 1;
+    this.camera.updateProjectionMatrix();
+    return true;
+  }
+
+  /** Switch projection without changing the target, view direction or apparent scale. */
+  toggleProjection() {
+    if (this.modalOperationActive || this.controls?.enabled === false) {
+      this.onStatus?.('Finish or cancel the active operation before changing projection.');
+      return false;
+    }
+    const previous = this.camera;
+    const target = this.controls.target.clone();
+    const offset = previous.position.clone().sub(target);
+    const distance = Math.max(0.15, offset.length());
+    const direction = offset.lengthSq() > 1e-12 ? offset.normalize() : new THREE.Vector3(0, -1, 0);
+    const up = previous.up.clone();
+    const quaternion = previous.quaternion.clone();
+    const aspect = previous.aspect || this.viewportAspect || Math.max(1, this.container.clientWidth) / Math.max(1, this.container.clientHeight);
+    const near = Math.max(0.001, previous.near || 0.05);
+    const far = Math.max(near + 1, previous.far || 2000);
+    let next;
+
+    if (previous.isPerspectiveCamera) {
+      const viewHeight = perspectiveViewHeight(distance, previous.fov || this.perspectiveFov, previous.zoom || 1);
+      const frustum = orthographicFrustum(viewHeight, aspect);
+      if (!frustum) return false;
+      next = new THREE.OrthographicCamera(frustum.left, frustum.right, frustum.top, frustum.bottom, near, far);
+      next.zoom = 1;
+      next.aspect = aspect;
+      next.position.copy(previous.position);
+      next.up.copy(up);
+      next.quaternion.copy(quaternion);
+    } else {
+      const viewHeight = orthographicViewHeight(previous.top, previous.bottom, previous.zoom || 1);
+      const perspectiveZoom = 1;
+      const nextDistance = perspectiveDistanceForViewHeight(viewHeight, this.perspectiveFov, perspectiveZoom);
+      if (!Number.isFinite(nextDistance)) return false;
+      next = new THREE.PerspectiveCamera(this.perspectiveFov, aspect, near, far);
+      next.position.copy(target).addScaledVector(direction, Math.max(this.controls.minDistance || 0.15, nextDistance));
+      next.up.copy(up);
+      next.quaternion.copy(quaternion);
+    }
+
+    next.updateProjectionMatrix();
+    next.updateMatrixWorld(true);
+    this.camera = next;
+    // OrbitControls exposes its camera as a replaceable public object; the DOM
+    // listeners and damping state remain intact while subsequent updates use
+    // the new camera's perspective/orthographic branch.
+    this.controls.object = next;
+    this.controls.target.copy(target);
+    this.controls.update();
+    this.updateTransformGuide(this.transformGuideState);
+    const mode = this.projectionMode();
+    this.onProjectionChange?.(mode);
+    this.onStatus?.(`${mode === 'orthographic' ? 'Orthographic' : 'Perspective'} projection`);
+    return true;
+  }
+
   setView(view) {
     const target = this.controls.target.clone(); const distance = this.camera.position.distanceTo(target) || 10;
     const vectors = { front:new THREE.Vector3(0,-1,0), back:new THREE.Vector3(0,1,0), right:new THREE.Vector3(1,0,0), left:new THREE.Vector3(-1,0,0), top:new THREE.Vector3(0,0,1), bottom:new THREE.Vector3(0,0,-1) };
@@ -316,8 +397,12 @@ export class Viewport {
     const box = new THREE.Box3().setFromObject(object); const sphere = box.getBoundingSphere(new THREE.Sphere());
     const target = sphere.center; const radius = Math.max(1,sphere.radius);
     const direction = this.camera.position.clone().sub(this.controls.target).normalize();
-    this.controls.target.copy(target); this.camera.position.copy(target).addScaledVector(direction,radius*3.1);
-    this.camera.near = Math.max(0.01,radius/100); this.camera.far = radius*1000; this.camera.updateProjectionMatrix(); this.controls.update();
+    const fitDistance = radius * 3.1;
+    this.controls.target.copy(target); this.camera.position.copy(target).addScaledVector(direction,fitDistance);
+    this.camera.near = Math.max(0.01,radius/100); this.camera.far = radius*1000;
+    if (this.camera.isOrthographicCamera) this.setOrthographicViewHeight(perspectiveViewHeight(fitDistance, this.perspectiveFov));
+    else this.camera.updateProjectionMatrix();
+    this.camera.lookAt(target); this.controls.update();
   }
 
   /**
@@ -391,7 +476,7 @@ export class Viewport {
     const currentDirection = this.camera.position.clone().sub(this.controls.target).normalize();
     const viewDirection = new THREE.Vector3(...chooseSelectionViewDirection(faceSamples, currentDirection.toArray()));
 
-    const verticalFov = THREE.MathUtils.degToRad(this.camera.fov);
+    const verticalFov = THREE.MathUtils.degToRad(this.perspectiveFov);
     const horizontalFov = 2 * Math.atan(Math.tan(verticalFov / 2) * Math.max(0.1, this.camera.aspect));
     const limitingHalfFov = Math.max(0.05, Math.min(verticalFov, horizontalFov) / 2);
     const distance = radius / Math.sin(limitingHalfFov) * 1.12;
@@ -402,7 +487,8 @@ export class Viewport {
     this.camera.position.copy(target).addScaledVector(viewDirection, distance);
     this.camera.near = Math.max(0.01, radius / 100);
     this.camera.far = Math.max(2000, radius * 1000);
-    this.camera.updateProjectionMatrix();
+    if (this.camera.isOrthographicCamera) this.setOrthographicViewHeight(perspectiveViewHeight(distance, this.perspectiveFov));
+    else this.camera.updateProjectionMatrix();
     this.camera.lookAt(target);
     this.controls.update();
     return true;

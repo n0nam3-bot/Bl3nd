@@ -26,9 +26,9 @@ function makeController(mode = 'edit') {
   return { controller, calls, document, listeners };
 }
 
-function keyEvent({ key, code, ctrlKey = false, metaKey = false, shiftKey = false } = {}) {
+function keyEvent({ key, code, ctrlKey = false, metaKey = false, altKey = false, shiftKey = false } = {}) {
   return {
-    key, code, ctrlKey, metaKey, shiftKey, target: null,
+    key, code, ctrlKey, metaKey, altKey, shiftKey, target: null,
     prevented: false,
     preventDefault() { this.prevented = true; }
   };
@@ -80,5 +80,25 @@ test('the regular Delete key still invokes delete and ordinary digit keys remain
   await controller.onKeyDown(digitEvent);
   assert.deepEqual(calls.map(call => call.name), ['mesh.delete', 'mesh.selection_mode']);
   assert.equal(calls[1].payload.mode, 'edge');
+  controller.dispose();
+});
+
+
+test('Numpad 5 toggles camera projection without creating a scene command', async () => {
+  const { controller, calls } = makeController('edit');
+  const event = keyEvent({ key: '5', code: 'Numpad5' });
+  await controller.onKeyDown(event);
+  assert.equal(event.prevented, true);
+  assert.deepEqual(calls.map(call => call.name), ['view.toggle_projection']);
+  controller.dispose();
+});
+
+
+test('modified Numpad 5 is left to browser shortcuts instead of toggling projection', async () => {
+  const { controller, calls } = makeController('object');
+  const event = keyEvent({ key: '5', code: 'Numpad5', ctrlKey: true });
+  await controller.onKeyDown(event);
+  assert.equal(event.prevented, false);
+  assert.equal(calls.length, 0);
   controller.dispose();
 });

@@ -22,7 +22,10 @@ test('numpad orbit directions, 180-degree opposite orbit and frame selection are
   assert.deepEqual(resolveNumpadShortcut('Numpad8'), { action: 'orbit', horizontalSteps: 0, verticalSteps: -1 });
   assert.deepEqual(resolveNumpadShortcut('Numpad9'), { action: 'orbit', horizontalSteps: 12, verticalSteps: 0 });
   assert.deepEqual(resolveNumpadShortcut('NumpadDecimal'), { action: 'frame-selection' });
-  assert.deepEqual(resolveNumpadShortcut('Numpad5'), { action: 'reserved-projection-toggle' });
+  assert.deepEqual(resolveNumpadShortcut('Numpad5'), { action: 'toggle-projection' });
+  assert.equal(resolveNumpadShortcut('Numpad5', { ctrlKey: true }), null);
+  assert.equal(resolveNumpadShortcut('Numpad5', { metaKey: true }), null);
+  assert.equal(resolveNumpadShortcut('Numpad5', { altKey: true }), null);
   assert.equal(resolveNumpadShortcut('Numpad0'), null);
   assert.equal(resolveNumpadShortcut('Digit1'), null);
 });
