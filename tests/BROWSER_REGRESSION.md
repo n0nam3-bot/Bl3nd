@@ -443,3 +443,15 @@ Full Blender keymap parity is not claimed by this build. Android touch acceptanc
 
 ### Desktop — Chrome / Edge (deferred)
 - Repeat axis-arrow Move/Scale and axis-ring Rotate with a mouse. Confirm a drag-release is one transaction, a click-only selects a constraint without committing, and the center handle provides free transforms. Confirm ordinary viewport dragging, Shift plane constraints, numeric input, Enter/Esc, snap settings, Undo/Redo and object picking are unchanged.
+
+## v0.1.72 — Mobile viewport drag passthrough during G/R/S
+
+### Android — Chrome
+- Tap Move, Rotate or Scale from the bottom actionbar. Without touching a gizmo arrow/ring/center, press on an ordinary empty area of the viewport and drag. Confirm the object preview updates continuously from the finger movement; numeric keypad entry is optional, not required.
+- Repeat the blank-area drag on top of the grid, in front of/behind the selected object, and near the viewport edges. Confirm the camera does not orbit and normal object picking does not occur while the modal is active.
+- Drag the red/green/blue arrow or rotation-ring handle. Confirm the gizmo remains interactive and commits on release. Tap a handle without dragging and confirm it only selects the constraint.
+- Confirm the numeric pad still accepts typed values, Enter applies, Escape cancels, and after Apply/Cancel one-finger orbit and two-finger pan/zoom work again.
+
+### Desktop — Chrome / Edge
+- Confirm ordinary viewport drags still adjust an active G/R/S modal while visible SVG gizmo handles independently capture axis/center drags. Clicks outside the handles must reach the renderer canvas; clicks on handles must reach only the gizmo action.
+

@@ -1,5 +1,5 @@
-const SHELL_CACHE = 'bl3nd-shell-v68';
-const RUNTIME_CACHE = 'bl3nd-runtime-v68';
+const SHELL_CACHE = 'bl3nd-shell-v69';
+const RUNTIME_CACHE = 'bl3nd-runtime-v69';
 const APP_SHELL = [
   './', './index.html', './manifest.json', './src/styles.css',
   './src/main.js', './src/core/DeviceCapabilities.js', './src/core/CommandBus.js', './src/core/ObjectSelection.js',

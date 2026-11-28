@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { isTransformGizmoDrag, resolveTransformGizmoHandle } from '../src/core/TransformGizmoInput.js';
+import { isTransformGizmoDrag, resolveTransformGizmoHandle, resolveTransformGuidePointerEvents } from '../src/core/TransformGizmoInput.js';
 
 test('axis handles accept only the three canonical axes', () => {
   for (const axis of ['x', 'y', 'z']) {
@@ -35,4 +35,17 @@ test('invalid pointer positions or thresholds do not count as drags', () => {
   assert.equal(isTransformGizmoDrag({ x: NaN, y: 0 }, { x: 10, y: 10 }), false);
   assert.equal(isTransformGizmoDrag({ x: 0, y: 0 }, { x: 10, y: Infinity }), false);
   assert.equal(isTransformGizmoDrag({ x: 0, y: 0 }, { x: 10, y: 10 }, -1), false);
+});
+
+test('the full-size SVG guide passes blank-area pointer input through to the viewport', () => {
+  assert.equal(resolveTransformGuidePointerEvents({ dataset: {} }), 'none');
+  assert.equal(resolveTransformGuidePointerEvents({ dataset: { label: 'axis badge' } }), 'none');
+});
+
+test('only explicit gizmo handles remain pointer targets above the canvas', () => {
+  for (const axis of ['x', 'y', 'z']) {
+    assert.equal(resolveTransformGuidePointerEvents({ dataset: { gizmoHandle: 'axis', axis, gizmoHit: '' } }), 'stroke');
+  }
+  assert.equal(resolveTransformGuidePointerEvents({ dataset: { gizmoHandle: 'free', gizmoHit: '' } }), 'all');
+  assert.equal(resolveTransformGuidePointerEvents({ dataset: { gizmoHandle: 'axis', axis: 'w', gizmoHit: '' } }), 'none');
 });

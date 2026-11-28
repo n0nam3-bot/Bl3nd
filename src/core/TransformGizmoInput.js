@@ -11,6 +11,16 @@ export function resolveTransformGizmoHandle(target) {
   return null;
 }
 
+/**
+ * Keep the full-size SVG overlay transparent to ordinary viewport gestures.
+ * Only explicit gizmo handles may receive pointer input.
+ */
+export function resolveTransformGuidePointerEvents(target) {
+  const handle = resolveTransformGizmoHandle(target);
+  if (!handle) return 'none';
+  return handle.kind === 'free' ? 'all' : 'stroke';
+}
+
 /** Ignore pointer jitter; only a real drag should auto-apply a gizmo transform. */
 export function isTransformGizmoDrag(start, current, threshold = 3) {
   const sx = Number(start?.x), sy = Number(start?.y);

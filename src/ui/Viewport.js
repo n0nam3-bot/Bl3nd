@@ -3,7 +3,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { EditModeOverlay } from './EditModeOverlay.js';
 import { chooseSelectionViewDirection } from '../core/SelectionView.js';
 import { buildTransformGuideGeometry } from '../core/TransformGuideGeometry.js';
-import { isTransformGizmoDrag, resolveTransformGizmoHandle } from '../core/TransformGizmoInput.js';
+import { isTransformGizmoDrag, resolveTransformGizmoHandle, resolveTransformGuidePointerEvents } from '../core/TransformGizmoInput.js';
 import { orbitOffsetBySteps, rotateViewUpByHorizontalSteps } from '../core/ViewportNavigation.js';
 import { orthographicFrustum, orthographicViewHeight, perspectiveDistanceForViewHeight, perspectiveViewHeight } from '../core/CameraProjection.js';
 
@@ -232,11 +232,13 @@ export class Viewport {
 
     svg.innerHTML = elements.join('');
     svg.querySelectorAll('*').forEach(element => {
-      element.style.pointerEvents = element.hasAttribute('data-gizmo-hit') ? 'stroke' : 'none';
-      if (element.dataset.gizmoHandle === 'free') element.style.pointerEvents = 'all';
+      element.style.pointerEvents = resolveTransformGuidePointerEvents(element);
       if (element.dataset.gizmoHandle) element.style.cursor = element.dataset.gizmoHandle === 'free' ? 'move' : 'grab';
     });
-    svg.style.pointerEvents = 'auto';
+    // The SVG spans the entire viewport. It must never become the pointer target
+    // itself: blank-area drags belong to the renderer canvas/modal transform;
+    // only the explicit SVG handles above may override this pointer transparency.
+    svg.style.pointerEvents = 'none';
     svg.removeAttribute('hidden');
   }
 
