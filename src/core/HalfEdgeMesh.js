@@ -1120,7 +1120,16 @@ export class HalfEdgeMesh {
         const next = (index + 1) % boundary.length;
         const wall = [lower[index], lower[next], upper[next], upper[index]];
         if (!wall.every(Number.isInteger)) return fail('Face Bevel could not construct a complete segmented perimeter wall.');
-        nextFaces.push(wall);
+        // The viewport already renders every perimeter quad as these two
+        // triangles. Store that diagonal in editable topology as well: a later
+        // Edit Mode rotation can twist the cross-section, but each transition
+        // triangle remains a valid planar face instead of becoming one invalid
+        // non-planar/self-crossing quad.
+        const wallTriangles = triangulatePolygon(nextPositions, wall);
+        if (!wallTriangles?.length || wallTriangles.some(triangle => triangle.length !== 3)) {
+          return fail('Face Bevel could not safely triangulate a segmented perimeter wall.');
+        }
+        nextFaces.push(...wallTriangles);
       }
     }
 
@@ -1181,7 +1190,7 @@ export class HalfEdgeMesh {
       reflexCorners: loop.concaveVertexIds.length,
       collinearCorners: loop.collinearVertexIds.length,
       insertedVertices: used.length + boundary.length * (segments - 1),
-      createdFaces: boundary.length * segments,
+      createdFaces: boundary.length * segments * 2,
       segments,
       profile,
       topology: report

@@ -102,7 +102,7 @@ test('Face Bevel raises a convex cube face and creates a validated mitered perim
   assert.equal(result.selectedFaces, 1);
   assert.equal(result.boundaryEdges, 4);
   assert.equal(result.insertedVertices, 4);
-  assert.equal(result.createdFaces, 4);
+  assert.equal(result.createdFaces, 8);
   assert.equal(result.convexCorners, 4);
   assert.ok(Math.abs(result.width - 0.225) < 1e-10);
   assert.ok(Math.abs(result.height - result.width) < 1e-12);
@@ -113,7 +113,7 @@ test('Face Bevel raises a convex cube face and creates a validated mitered perim
     [0.775,0.775,1.225], [-0.775,0.775,1.225]
   ];
   raised.forEach((point, index) => point.forEach((value, axis) => assert.ok(Math.abs(value - expected[index][axis]) < 1e-10)));
-  assert.equal(mesh.faces.length, 10);
+  assert.equal(mesh.faces.length, 14);
   assert.equal(mesh.faceSelection.size, 1);
   assert.equal(mesh.validateTopology().valid, true);
   assert.notEqual(snapshot(mesh), before);
@@ -148,7 +148,7 @@ test('multi-row and multi-column planar grids bevel without orphaned interior so
     assert.equal(result.changed, true, `${width}x${height}: ${result.reason}`);
     assert.equal(result.selectedFaces, width * height);
     assert.equal(result.boundaryEdges, 2 * width + 2 * height);
-    assert.equal(result.createdFaces, result.boundaryEdges * segments);
+    assert.equal(result.createdFaces, result.boundaryEdges * segments * 2);
     assert.equal(result.heightAmount, 0.6);
     assert.ok(Math.abs(result.height / result.width - 3) < 1e-10);
     assert.equal(result.topology.counts.isolatedVertices, 0);
@@ -172,7 +172,7 @@ test('Face Bevel follows a rotated region normal and keeps bevel walls planar', 
   assert.ok(Math.abs(result.normal[1] + Math.sin(angle)) < 1e-10);
   assert.ok(Math.abs(result.normal[2] - Math.cos(angle)) < 1e-10);
   assert.equal(mesh.validateTopology().valid, true);
-  assert.equal(mesh.faces.length, 5);
+  assert.equal(mesh.faces.length, 9);
 });
 
 test('Face Bevel preserves reversed region winding', () => {
@@ -199,7 +199,7 @@ test('concave L-shaped face region bevels with a validated reflex miter and weld
   assert.equal(result.changed, true, result.reason);
   assert.equal(result.reflexCorners, 1);
   assert.equal(result.boundaryEdges, 8);
-  assert.equal(result.createdFaces, 8);
+  assert.equal(result.createdFaces, 16);
   assert.equal(mesh.validateTopology().valid, true);
   const selected = new Set(mesh.faceSelection);
   const innerSeams = mesh.edges.filter(edge => edge.halfEdges.length === 2 &&
@@ -216,7 +216,7 @@ test('two-reflex U-shaped region bevels when the inner boundary remains simple',
   assert.equal(result.changed, true, result.reason);
   assert.equal(result.reflexCorners, 2);
   assert.equal(result.boundaryEdges, 16);
-  assert.equal(result.createdFaces, 16);
+  assert.equal(result.createdFaces, 32);
   assert.equal(mesh.validateTopology().valid, true);
 });
 
@@ -359,7 +359,7 @@ test('Face Bevel supports one through eight segments with valid profile candidat
       assert.equal(result.changed, true, `segments=${segments}, profile=${profile}: ${result.reason}`);
       assert.equal(result.segments, segments);
       assert.equal(result.profile, profile);
-      assert.equal(result.createdFaces, 4 * segments);
+      assert.equal(result.createdFaces, 8 * segments);
       assert.equal(result.insertedVertices, 4 * segments);
       assert.equal(mesh.validateTopology().valid, true);
       assert.ok(mesh.faces.every((_, faceId) => mesh.triangulateFace(faceId).length > 0));
@@ -387,7 +387,7 @@ test('segmented concave L/U Face Bevel preserves reflex corners and welded inter
         const result = mesh.bevelSelectedFaceRegion({ amount: 0.1, segments, profile });
         assert.equal(result.changed, true, `segments=${segments}, profile=${profile}: ${result.reason}`);
         assert.equal(result.reflexCorners, reflexCorners);
-        assert.equal(result.createdFaces, result.boundaryEdges * segments);
+        assert.equal(result.createdFaces, result.boundaryEdges * segments * 2);
         assert.equal(mesh.validateTopology().valid, true);
         assert.ok(mesh.faces.every((_, faceId) => mesh.triangulateFace(faceId).length > 0));
         const selected = new Set(mesh.faceSelection);
@@ -424,7 +424,7 @@ test('Face Bevel modal previews from immutable source and applies amount updates
   assert.equal(session.mesh.userData.hem.validateTopology().valid, true);
   assert.equal(modal.setSegments(4), true, modal.lastError);
   assert.equal(modal.lastResult.segments, 4);
-  assert.equal(modal.lastResult.createdFaces, 16);
+  assert.equal(modal.lastResult.createdFaces, 32);
   assert.equal(modal.lastResult.insertedVertices, 16);
   assert.equal(modal.setProfile(0.8), true, modal.lastError);
   assert.equal(modal.lastResult.profile, 0.8);

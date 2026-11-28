@@ -4,7 +4,7 @@ This is a manual acceptance run for the deployed Bl3nd app. It checks the real b
 
 ## Build under test
 
-Current package baseline before v0.1.53: v0.1.52, `main` commit `2c3fa9dd569f7e220fd4acbd07c9ff78849797c3`; Pages workflow run `46091874557` succeeded on 2026-11-28.
+Current deployed baseline before v0.1.56: v0.1.55, `main` commit `55a5356e2b2acc80a692d5d1b5a167830f47237d`; Pages workflow run `46101370254` succeeded on 2026-11-28. The v0.1.56 package is a pending delta based on that deployed commit.
 
 Open the deployed app only after the latest Pages workflow succeeds:
 
@@ -250,3 +250,13 @@ This procedure validates browser interaction for the starter cube. The automated
 - Confirm a normal 3D boundary crossing is not incorrectly accepted by the warped-quad fallback: use the automated bow-tie fixture, which must still return no triangles.
 - Orbit around the object and inspect both sides of folded walls. The modeling material is now two-sided, so a folded face should remain visible from either side; this does not repair the shape or prevent extreme self-intersections. Cancel and verify original topology/positions, then Apply and verify one Undo/Redo step.
 - Desktop Chrome/Edge remains deferred until PC access is available.
+
+
+## Face Bevel transition topology after rotation — v0.1.56 (browser acceptance pending)
+
+- On a cube, select one face, run Face Bevel in Region mode, and apply it. Select the raised cap and rotate it around its normal by 45°, then 90°. Confirm the bevel perimeter remains connected, no warning badge or Safe Repair issue count appears, and another edit operation can be started normally.
+- On a subdivided plane, select a connected 2×1 or 2×2 face region and bevel it in Region mode. Rotate the complete raised region by 45° and confirm the shared inner seams stay welded and the transition strips remain clean.
+- Repeat with a multi-face selection using Individual Faces mode. Bevel the selected panels, rotate the selected caps, then change selection mode and start another operation. The app must not become blocked by non-planar/self-intersecting transition-wall warnings.
+- Enable touch Add to Selection and select two opposite cube faces. Confirm Face Bevel chooses Multi-Region, apply it, rotate the two raised caps, and start another mesh operation. Both islands must remain valid and editable.
+- Repeat with three or more bevel segments and a non-default profile. Confirm the transition bands remain visually continuous and the topology validator reports zero non-planar, self-intersecting or triangulation-failure faces.
+- Confirm Cancel restores the pre-bevel mesh. Confirm Apply followed by Undo/Redo restores the beveled/rotated result transactionally. Desktop Chrome/Edge remains deferred until PC access is available.
