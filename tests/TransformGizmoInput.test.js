@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { isTransformGizmoDrag, resolveTransformGizmoHandle, resolveTransformGuidePointerEvents } from '../src/core/TransformGizmoInput.js';
+import { isTransformGizmoDrag, isTransformPointerOwner, resolveTransformGizmoHandle, resolveTransformGuidePointerEvents } from '../src/core/TransformGizmoInput.js';
 
 test('axis handles accept only the three canonical axes', () => {
   for (const axis of ['x', 'y', 'z']) {
@@ -48,4 +48,15 @@ test('only explicit gizmo handles remain pointer targets above the canvas', () =
   }
   assert.equal(resolveTransformGuidePointerEvents({ dataset: { gizmoHandle: 'free', gizmoHit: '' } }), 'all');
   assert.equal(resolveTransformGuidePointerEvents({ dataset: { gizmoHandle: 'axis', axis: 'w', gizmoHit: '' } }), 'none');
+});
+
+
+test('modal viewport drags remain owned by their initiating pointer ID', () => {
+  assert.equal(isTransformPointerOwner(7, { pointerId: 7 }), true);
+  // The same pointer remains valid when a browser retargets the event to SVG/UI.
+  assert.equal(isTransformPointerOwner(7, { pointerId: 7, target: { id: 'transform-guide' } }), true);
+  assert.equal(isTransformPointerOwner(7, { pointerId: 8 }), false);
+  assert.equal(isTransformPointerOwner(0, { pointerId: 0 }), true);
+  assert.equal(isTransformPointerOwner(null, { pointerId: 0 }), false);
+  assert.equal(isTransformPointerOwner(7, {}), false);
 });

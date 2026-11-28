@@ -3,7 +3,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { EditModeOverlay } from './EditModeOverlay.js';
 import { chooseSelectionViewDirection } from '../core/SelectionView.js';
 import { buildTransformGuideGeometry } from '../core/TransformGuideGeometry.js';
-import { isTransformGizmoDrag, resolveTransformGizmoHandle, resolveTransformGuidePointerEvents } from '../core/TransformGizmoInput.js';
+import { isTransformGizmoDrag, isTransformPointerOwner, resolveTransformGizmoHandle, resolveTransformGuidePointerEvents } from '../core/TransformGizmoInput.js';
 import { orbitOffsetBySteps, rotateViewUpByHorizontalSteps } from '../core/ViewportNavigation.js';
 import { orthographicFrustum, orthographicViewHeight, perspectiveDistanceForViewHeight, perspectiveViewHeight } from '../core/CameraProjection.js';
 
@@ -32,9 +32,22 @@ export class Viewport {
     this.transformGuidePointerMove = event => this.onTransformGuidePointerMove(event);
     this.transformGuidePointerUp = event => this.onTransformGuidePointerUp(event);
     this.transformGuidePointerCancel = event => this.onTransformGuidePointerCancel(event);
+    this.modalTransformPointerId = null;
+    this.modalTransformPointerMove = event => {
+      if (!this.modalOperationActive || !isTransformPointerOwner(this.modalTransformPointerId, event)) return;
+      event.preventDefault();
+      this.onModalTransformPointerMove?.({ x: event.clientX, y: event.clientY }, event);
+    };
+    this.modalTransformPointerEnd = event => {
+      if (isTransformPointerOwner(this.modalTransformPointerId, event)) this.modalTransformPointerId = null;
+    };
     window.addEventListener('pointermove', this.transformGuidePointerMove, { passive: false });
+    // Capture at window level so another overlay cannot swallow a viewport drag.
+    window.addEventListener('pointermove', this.modalTransformPointerMove, { capture: true, passive: false });
     window.addEventListener('pointerup', this.transformGuidePointerUp);
+    window.addEventListener('pointerup', this.modalTransformPointerEnd, true);
     window.addEventListener('pointercancel', this.transformGuidePointerCancel);
+    window.addEventListener('pointercancel', this.modalTransformPointerEnd, true);
     this.container.appendChild(this.transformGuideSvg);
     this.transformGuideState = null;
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
@@ -304,6 +317,12 @@ export class Viewport {
   onPointerDown(event) {
     this.lastPointer = { x: event.clientX, y: event.clientY };
     if (this.modalOperationActive) {
+      // Own the pointer by ID, not by its current DOM target. Some mobile
+      // browsers retarget captured moves while a full-screen SVG guide is open.
+      this.modalTransformPointerId = event.pointerId;
+      // Start the free/constrained drag at the actual viewport touch, not at
+      // the toolbar's earlier pointer origin from when the modal was launched.
+      this.onModalTransformPointerStart?.({ x: event.clientX, y: event.clientY }, event);
       this.onModalPointerStart?.(event);
       event.preventDefault();
       try { this.renderer.domElement.setPointerCapture(event.pointerId); } catch { /* capture is unavailable for some synthetic pointers */ }
@@ -574,5 +593,5 @@ export class Viewport {
     requestAnimationFrame(this.animate); this.controls.update(); this.renderer.render(this.scene,this.camera);
   };
 
-  dispose() { this.running=false; this.clearEditOverlay(); this.transformGuideSvg?.remove(); window.removeEventListener('pointermove', this.trackPointer); window.removeEventListener('pointermove', this.transformGuidePointerMove); window.removeEventListener('pointerup', this.transformGuidePointerUp); window.removeEventListener('pointercancel', this.transformGuidePointerCancel); this.resizeObserver?.disconnect(); this.controls.dispose(); this.renderer.dispose(); this.renderer.domElement.remove(); }
+  dispose() { this.running=false; this.clearEditOverlay(); this.transformGuideSvg?.remove(); window.removeEventListener('pointermove', this.trackPointer); window.removeEventListener('pointermove', this.transformGuidePointerMove); window.removeEventListener('pointermove', this.modalTransformPointerMove, true); window.removeEventListener('pointerup', this.transformGuidePointerUp); window.removeEventListener('pointerup', this.modalTransformPointerEnd, true); window.removeEventListener('pointercancel', this.transformGuidePointerCancel); window.removeEventListener('pointercancel', this.modalTransformPointerEnd, true); this.resizeObserver?.disconnect(); this.controls.dispose(); this.renderer.dispose(); this.renderer.domElement.remove(); }
 }

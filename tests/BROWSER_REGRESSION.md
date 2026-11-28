@@ -4,7 +4,7 @@ This is a manual acceptance run for the deployed Bl3nd app. It checks the real b
 
 ## Build under test
 
-Current repository baseline before v0.1.71: v0.1.70 source, `main` commit `90c38ed135bfdc8a63271e9c865e964e9bb1164d`. The owner reports the v0.1.70 mobile Multi workflow works for Move and Rotate; Scale was not explicitly confirmed.
+Current repository baseline before v0.1.73: v0.1.72 source, `main` commit `e8c6ed33ccc37813b140a584a9281ebd592c812e`; Pages workflow run #80 succeeded. The owner reports that blank-area Move/Rotate/Scale drags still do nothing on Android after v0.1.72, so the v0.1.73 pointer-origin re-anchoring and capture-phase pointer-ID routing fix needs live retesting.
 
 Open the deployed app only after the latest Pages workflow succeeds:
 
@@ -455,3 +455,16 @@ Full Blender keymap parity is not claimed by this build. Android touch acceptanc
 ### Desktop — Chrome / Edge
 - Confirm ordinary viewport drags still adjust an active G/R/S modal while visible SVG gizmo handles independently capture axis/center drags. Clicks outside the handles must reach the renderer canvas; clicks on handles must reach only the gizmo action.
 
+
+
+## v0.1.73 — Free viewport G/R/S pointer ownership
+
+### Android — Chrome / Samsung Internet
+- With an object selected, tap Move. Touch an ordinary empty grid area well away from the center/axis handles and drag in two different directions. Confirm the object preview follows the finger freely in the camera-facing view plane; it must not require an arrow or numeric entry.
+- Repeat for Rotate: drag an ordinary empty viewport area and confirm the free trackball preview responds. Repeat for Scale and confirm uniform scaling responds from the same blank-area gesture.
+- Repeat all three operations in Edit Mode with a selected vertex/edge/face. Confirm proportional settings still apply and no camera orbit or picking happens during the modal drag.
+- Start a blank-area drag and move across the projected gizmo/guide area and toward the viewport edge. Confirm the same initiating pointer continues to update the transform even if the browser changes the event target. Release the finger, then use Apply/Enter to commit or Cancel/Esc to restore.
+- Confirm axis arrows/rings remain constrained to X/Y/Z and still release-to-apply. The center handle remains the direct free-transform handle. Verify one undo restores each committed operation and orbit resumes after Apply/Cancel.
+
+### Desktop — Chrome / Edge
+- Repeat blank-viewport free Move, trackball Rotate and uniform Scale with a mouse. Move the pointer across the visible guide and outside the canvas before releasing; confirm the initiating pointer still updates the modal. Confirm axis arrows/rings and keyboard numeric input remain unchanged.

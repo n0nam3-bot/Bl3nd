@@ -22,6 +22,11 @@ export function resolveTransformGuidePointerEvents(target) {
 }
 
 /** Ignore pointer jitter; only a real drag should auto-apply a gizmo transform. */
+/** Match a viewport-originated modal drag even if the browser retargets moves. */
+export function isTransformPointerOwner(pointerId, event) {
+  return Number.isInteger(pointerId) && pointerId >= 0 && Number.isInteger(event?.pointerId) && event.pointerId === pointerId;
+}
+
 export function isTransformGizmoDrag(start, current, threshold = 3) {
   const sx = Number(start?.x), sy = Number(start?.y);
   const cx = Number(current?.x), cy = Number(current?.y);
