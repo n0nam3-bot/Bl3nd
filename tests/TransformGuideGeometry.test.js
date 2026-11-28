@@ -92,3 +92,53 @@ test('rotation gizmo omits invalid individual axis rings without losing valid ri
   });
   assert.deepEqual(guide.axisRings.map(ring => ring.axis), ['x', 'z']);
 });
+
+test('Move and Scale gizmo plane handles expose XY, YZ and XZ squares between matching axes', () => {
+  const guide = buildTransformGuideGeometry({
+    pivot: [1, 2, 3],
+    axes: { x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1] },
+    planeHandles: [
+      { plane: 'xy', normal: 'z', u: [1, 0, 0], v: [0, 1, 0] },
+      { plane: 'yz', normal: 'x', u: [0, 1, 0], v: [0, 0, 1] },
+      { plane: 'xz', normal: 'y', u: [1, 0, 0], v: [0, 0, 1] }
+    ],
+    worldLength: 2
+  });
+  assert.deepEqual(guide.planeHandles.map(handle => [handle.plane, handle.normal]), [
+    ['xy', 'z'], ['yz', 'x'], ['xz', 'y']
+  ]);
+  for (const handle of guide.planeHandles) {
+    assert.equal(handle.corners.length, 4);
+    const center = handle.corners.reduce((sum, point) => sum.map((value, index) => value + point[index] / 4), [0, 0, 0]);
+    center.forEach((value, index) => close(value, handle.center[index]));
+    assert.ok(handle.center.every(Number.isFinite));
+    assert.ok(handle.corners.every(point => point.every(Number.isFinite)));
+  }
+});
+
+test('transform guide marks only the selected plane square as active', () => {
+  const guide = buildTransformGuideGeometry({
+    pivot: [0, 0, 0], axes: { x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1] },
+    planeHandles: [
+      { plane: 'xy', normal: 'z', u: [1, 0, 0], v: [0, 1, 0] },
+      { plane: 'yz', normal: 'x', u: [0, 1, 0], v: [0, 0, 1] }
+    ],
+    activePlane: 'yz', worldLength: 1
+  });
+  assert.deepEqual(guide.planeHandles.map(handle => handle.active), [false, true]);
+  assert.equal(guide.activePlane, 'yz');
+});
+
+test('transform guide rejects malformed plane definitions without losing valid squares', () => {
+  const guide = buildTransformGuideGeometry({
+    pivot: [0, 0, 0], axes: { x: [1, 0, 0] },
+    planeHandles: [
+      { plane: 'xy', normal: 'z', u: [1, 0, 0], v: [0, 1, 0] },
+      { plane: 'xx', normal: 'z', u: [1, 0, 0], v: [0, 1, 0] },
+      { plane: 'xz', normal: 'y', u: [0, 0, 0], v: [0, 0, 1] }
+    ],
+    activePlane: 'invalid', worldLength: 1
+  });
+  assert.deepEqual(guide.planeHandles.map(handle => handle.plane), ['xy']);
+  assert.equal(guide.activePlane, null);
+});

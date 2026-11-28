@@ -527,7 +527,8 @@ export class ModalTransform {
       this.arcballStart = this.mapArcball(this.startPointer);
     }
     this.apply();
-    this.status?.(`${this.type.toUpperCase()} · ${this.orientation.toUpperCase()} ${plane ? `${axis.toUpperCase()} plane` : `${axis.toUpperCase()} axis`} · Enter apply / Esc cancel`);
+    const planeLabel = ({ x: 'YZ', y: 'XZ', z: 'XY' })[axis];
+    this.status?.(`${this.type.toUpperCase()} · ${this.orientation.toUpperCase()} ${plane ? `${planeLabel} plane` : `${axis.toUpperCase()} axis`} · Enter apply / Esc cancel`);
     this.onChange?.();
   }
 
@@ -607,6 +608,17 @@ export class ModalTransform {
         }))
       : null;
 
+    const planeHandles = ['move', 'scale'].includes(this.type)
+      ? [
+          { plane: 'xy', normal: 'z', u: this.axisVector('x').toArray(), v: this.axisVector('y').toArray() },
+          { plane: 'yz', normal: 'x', u: this.axisVector('y').toArray(), v: this.axisVector('z').toArray() },
+          { plane: 'xz', normal: 'y', u: this.axisVector('x').toArray(), v: this.axisVector('z').toArray() }
+        ]
+      : [];
+    const activePlane = this.planeNormal
+      ? ({ x: 'yz', y: 'xz', z: 'xy' })[this.planeNormal] || null
+      : null;
+
     const editIndividual = this.document.mode === 'edit' && this.document.pivot === 'individual';
     const objectIndividual = this.document.mode === 'object' && this.document.pivot === 'individual';
     const pivotMarkers = editIndividual
@@ -630,7 +642,9 @@ export class ModalTransform {
       regionCount: pivotMarkers.length,
       pivotMarkerLabel: objectIndividual ? 'OBJECT' : 'REGION',
       axes,
-      activeAxis: this.axis || this.planeNormal,
+      activeAxis: this.axis,
+      activePlane,
+      planeHandles,
       planeBasis,
       axisRingBases,
       orientation: this.orientation,

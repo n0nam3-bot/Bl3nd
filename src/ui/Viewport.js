@@ -210,6 +210,21 @@ export class Viewport {
       elements.push(`<line x1="${(center.x + ux * 12).toFixed(2)}" y1="${(center.y + uy * 12).toFixed(2)}" x2="${tip.x.toFixed(2)}" y2="${tip.y.toFixed(2)}" stroke="transparent" stroke-width="24" stroke-linecap="round" data-gizmo-hit data-gizmo-handle="axis" data-axis="${name}"/>`);
     }
 
+    const planeColors = { xy: colors.z, yz: colors.x, xz: colors.y };
+    for (const handle of guide.planeHandles || []) {
+      const corners = handle.corners.map(project);
+      if (!corners.every(Boolean)) continue;
+      const centerPoint = project(handle.center);
+      const points = corners.map(pointString).join(' ');
+      const color = planeColors[handle.plane] || '#ffd08a';
+      const active = Boolean(handle.active || guide.activePlane === handle.plane);
+      elements.push(`<polygon points="${points}" fill="${color}" fill-opacity="${active ? 0.48 : 0.22}" stroke="${color}" stroke-opacity="${active ? 1 : 0.78}" stroke-width="${active ? 2 : 1.3}" stroke-linejoin="round"/>`);
+      if (centerPoint) elements.push(`<text x="${centerPoint.x.toFixed(2)}" y="${centerPoint.y.toFixed(2)}" text-anchor="middle" dominant-baseline="central" fill="#17202a" fill-opacity="0.94" font-size="8" font-weight="900">${handle.plane.toUpperCase()}</text>`);
+      // Expanded transparent outline gives the small plane square a forgiving
+      // touch target without obscuring the visible axis/ring geometry.
+      elements.push(`<polygon points="${points}" fill="transparent" stroke="transparent" stroke-width="16" stroke-linejoin="round" data-gizmo-hit data-gizmo-handle="plane" data-plane="${handle.plane}"/>`);
+    }
+
     for (const ring of guide.axisRings || []) {
       const ringPoints = ring.points.map(project);
       if (!ringPoints.every(Boolean)) continue;

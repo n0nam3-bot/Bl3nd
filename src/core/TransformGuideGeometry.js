@@ -44,6 +44,8 @@ export function buildTransformGuideGeometry({
   pivot,
   axes,
   activeAxis = null,
+  planeHandles = [],
+  activePlane = null,
   planeBasis = null,
   ringBasis = null,
   axisRingBases = null,
@@ -77,6 +79,26 @@ export function buildTransformGuideGeometry({
     addScaled(addScaled(origin, plane.u, -planeExtent), plane.v, planeExtent)
   ] : [];
 
+  const validPlaneHandles = Array.isArray(planeHandles) ? planeHandles.flatMap(definition => {
+    const name = String(definition?.plane || '').toLowerCase();
+    const normal = String(definition?.normal || '').toLowerCase();
+    if (!['xy', 'yz', 'xz'].includes(name) || !AXIS_NAMES.includes(normal)) return [];
+    const basis = normalizedBasis({ u: definition.u, v: definition.v });
+    if (!basis) return [];
+    // Keep the square visibly between the two corresponding axis arrows.
+    // Its visual footprint is ~22px at the default 78px guide length; the
+    // viewport adds a larger transparent stroke for touch hit testing.
+    const center = addScaled(addScaled(origin, basis.u, length * 0.26), basis.v, length * 0.26);
+    const halfExtent = length * 0.14;
+    const corners = [
+      addScaled(addScaled(center, basis.u, -halfExtent), basis.v, -halfExtent),
+      addScaled(addScaled(center, basis.u, halfExtent), basis.v, -halfExtent),
+      addScaled(addScaled(center, basis.u, halfExtent), basis.v, halfExtent),
+      addScaled(addScaled(center, basis.u, -halfExtent), basis.v, halfExtent)
+    ];
+    return [{ plane: name, normal, center, corners, active: name === activePlane }];
+  }) : [];
+
   const ring = normalizedBasis(ringBasis);
   const radius = Number.isFinite(Number(ringRadius)) && Number(ringRadius) > 0
     ? Number(ringRadius)
@@ -102,6 +124,8 @@ export function buildTransformGuideGeometry({
     activeAxis: AXIS_NAMES.includes(activeAxis) ? activeAxis : null,
     axisLines,
     planeCorners,
+    planeHandles: validPlaneHandles,
+    activePlane: ['xy', 'yz', 'xz'].includes(activePlane) ? activePlane : null,
     ringPoints,
     axisRings,
     worldLength: length

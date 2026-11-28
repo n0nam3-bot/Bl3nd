@@ -468,3 +468,15 @@ Full Blender keymap parity is not claimed by this build. Android touch acceptanc
 
 ### Desktop — Chrome / Edge
 - Repeat blank-viewport free Move, trackball Rotate and uniform Scale with a mouse. Move the pointer across the visible guide and outside the canvas before releasing; confirm the initiating pointer still updates the modal. Confirm axis arrows/rings and keyboard numeric input remain unchanged.
+
+
+## v0.1.74 — Move/Scale plane-square gizmo handles
+
+### Android — Chrome / Samsung Internet
+- Start Move and confirm three small square handles appear between the corresponding axis arrows. Drag XY, YZ and XZ separately; motion must remain within only the selected plane and the selected square must highlight.
+- Repeat with Scale; each square must scale in its named plane and leave the perpendicular component unchanged. Confirm a square remains easy to grab on a phone and does not prevent dragging a nearby axis arrow or center handle.
+- Repeat with Global and Local orientation, in Object Mode and Edit Mode, including a multi-object selection and proportional Edit Mode selection. Confirm the squares follow the current orientation and still operate on the existing modal transform transaction.
+- Confirm release commits one undo step, Undo restores the prior state, Esc cancels, and a blank-area drag still performs free Move/Rotate/Scale. Rotate should continue showing only its three axis rings (no plane squares).
+
+### Desktop — Chrome / Edge (deferred)
+- Repeat each Move/Scale plane square with a mouse and compare with Shift+X/Y/Z keyboard plane constraints. Verify plane hit targets do not steal neighboring axis/ring/center handle clicks and verify numeric entry, snapping, Enter/Esc, Undo/Redo and viewport navigation.

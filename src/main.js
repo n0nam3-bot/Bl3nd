@@ -111,9 +111,9 @@ viewport.onModalPointerStart = event => faceOperationModal.setPointerAnchor({ x:
 const commandBus = new CommandBus({ undoManager, status });
 viewport.onTransformGizmoStart = ({ handle, point }) => {
   if (!modalTransform.active) return false;
-  return handle.kind === 'free'
-    ? modalTransform.setFreeConstraint(point)
-    : (modalTransform.setAxis(handle.axis, false, point), true);
+  if (handle.kind === 'free') return modalTransform.setFreeConstraint(point);
+  if (handle.kind === 'plane') return (modalTransform.setAxis(handle.axis, true, point), true);
+  return (modalTransform.setAxis(handle.axis, false, point), true);
 };
 viewport.onModalTransformPointerStart = point => modalTransform.reanchorPointer(point);
 viewport.onModalTransformPointerMove = point => {

@@ -8,6 +8,11 @@ export function resolveTransformGizmoHandle(target) {
     const axis = String(target?.dataset?.axis || '').toLowerCase();
     return AXES.has(axis) ? { kind: 'axis', axis } : null;
   }
+  if (kind === 'plane') {
+    const plane = String(target?.dataset?.plane || '').toLowerCase();
+    const normal = ({ xy: 'z', yz: 'x', xz: 'y' })[plane];
+    return normal ? { kind: 'plane', plane, axis: normal } : null;
+  }
   return null;
 }
 
@@ -18,7 +23,7 @@ export function resolveTransformGizmoHandle(target) {
 export function resolveTransformGuidePointerEvents(target) {
   const handle = resolveTransformGizmoHandle(target);
   if (!handle) return 'none';
-  return handle.kind === 'free' ? 'all' : 'stroke';
+  return handle.kind === 'axis' ? 'stroke' : 'all';
 }
 
 /** Ignore pointer jitter; only a real drag should auto-apply a gizmo transform. */

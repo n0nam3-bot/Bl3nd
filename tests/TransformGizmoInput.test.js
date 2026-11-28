@@ -60,3 +60,16 @@ test('modal viewport drags remain owned by their initiating pointer ID', () => {
   assert.equal(isTransformPointerOwner(null, { pointerId: 0 }), false);
   assert.equal(isTransformPointerOwner(7, {}), false);
 });
+
+test('plane handles resolve only XY, YZ and XZ to their perpendicular constraint axes', () => {
+  assert.deepEqual(resolveTransformGizmoHandle({ dataset: { gizmoHandle: 'plane', plane: 'xy' } }), { kind: 'plane', plane: 'xy', axis: 'z' });
+  assert.deepEqual(resolveTransformGizmoHandle({ dataset: { gizmoHandle: 'plane', plane: 'yz' } }), { kind: 'plane', plane: 'yz', axis: 'x' });
+  assert.deepEqual(resolveTransformGizmoHandle({ dataset: { gizmoHandle: 'plane', plane: 'xz' } }), { kind: 'plane', plane: 'xz', axis: 'y' });
+  for (const plane of ['', 'xx', 'zyx', null]) {
+    assert.equal(resolveTransformGizmoHandle({ dataset: { gizmoHandle: 'plane', plane } }), null);
+  }
+});
+
+test('plane squares remain interactive pointer targets above the transparent SVG guide', () => {
+  assert.equal(resolveTransformGuidePointerEvents({ dataset: { gizmoHandle: 'plane', plane: 'xy' } }), 'all');
+});
