@@ -50,7 +50,7 @@ function createWorkerHarness({ fetchImpl = async () => new FakeResponse('fresh-p
     async match(key) { return cache.match(key); }
   };
   const self = {
-    location: new URL('https://example.test/Bl3nd/sw.js?v=0.1.81'),
+    location: new URL('https://example.test/Bl3nd/sw.js?v=0.1.82'),
     registration: { scope: 'https://example.test/Bl3nd/' },
     clients: { async claim() {} },
     addEventListener(type, listener) { listeners.set(type, listener); },
@@ -67,7 +67,7 @@ function createWorkerHarness({ fetchImpl = async () => new FakeResponse('fresh-p
 }
 
 test('app entry versions the worker URL and checks for updates on startup/foreground return', () => {
-  assert.match(entrySource, /const APP_RELEASE = '0\.1\.81'/);
+  assert.match(entrySource, /const APP_RELEASE = '0\.1\.82'/);
   assert.match(entrySource, /workerURL\.searchParams\.set\('v', APP_RELEASE\)/);
   assert.match(entrySource, /updateViaCache: 'none'/);
   assert.match(entrySource, /serviceWorkerRegistration\.update\(\)/);
@@ -83,13 +83,14 @@ test('new release derives fresh shell/runtime caches and bypasses HTTP cache for
   harness.listeners.get('install')({ waitUntil(promise) { installPromise = promise; } });
   await installPromise;
 
-  assert.ok(harness.openedCaches.includes('bl3nd-shell-0.1.81'));
+  assert.ok(harness.openedCaches.includes('bl3nd-shell-0.1.82'));
   assert.ok(harness.precacheRequests.length > 0);
   assert.ok(harness.precacheRequests.every(request => request.cache === 'reload'));
   assert.ok(harness.precacheRequests.some(request => request.url.endsWith('/Bl3nd/index.html')));
   assert.ok(harness.precacheRequests.some(request => request.url.endsWith('/Bl3nd/src/main.js')));
   assert.ok(harness.precacheRequests.some(request => request.url.endsWith('/Bl3nd/src/modifiers/CatmullClark.js')));
   assert.ok(harness.precacheRequests.some(request => request.url.endsWith('/Bl3nd/src/modifiers/MirrorGeometry.js')));
+  assert.ok(harness.precacheRequests.some(request => request.url.endsWith('/Bl3nd/src/modifiers/SolidifyGeometry.js')));
 });
 
 test('page navigation bypasses HTTP cache, returns the network page and stores an offline copy', async () => {
@@ -107,7 +108,7 @@ test('page navigation bypasses HTTP cache, returns the network page and stores a
   assert.equal(harness.fetchCalls.length, 1);
   assert.equal(harness.fetchCalls[0].cache, 'no-store');
   assert.equal(response.body, 'fresh-page');
-  assert.ok(harness.openedCaches.includes('bl3nd-shell-0.1.81'));
+  assert.ok(harness.openedCaches.includes('bl3nd-shell-0.1.82'));
 });
 
 test('offline navigation keeps the last cached app page available', async () => {
@@ -142,4 +143,27 @@ test('modifier panel exposes Mirror axis and center-plane merge distance', () =>
   assert.match(mainSource, /Vertices within the merge distance are snapped to the center plane/);
   assert.match(mainSource, /field === 'mergeDistance' \? clampMirrorMergeDistance\(value\)/);
   assert.match(mainSource, /DEFAULT_MIRROR_MERGE_DISTANCE|clampMirrorMergeDistance/);
+});
+
+
+test('mobile Solidify card exposes touch-sized Thickness and Inside/Center/Outside controls', () => {
+  assert.match(mainSource, /SHELL POSITION/);
+  assert.match(mainSource, /INSIDE/);
+  assert.match(mainSource, /CENTER/);
+  assert.match(mainSource, /OUTSIDE/);
+  assert.match(mainSource, /solidify-position-button/);
+  assert.match(mainSource, /clampSolidifyThickness\(value\)/);
+  assert.match(mainSource, /clampSolidifyOffset\(value\)/);
+  assert.match(styleSource, /\.solidify-position-button\{[^}]*min-height:40px/);
+  assert.match(styleSource, /\.solidify-position-button\{min-height:46px/);
+});
+
+
+test('modifier add/toggle/remove/update restore previous stack state after worker rejection', () => {
+  assert.match(mainSource, /const modifier = modifierStack\.add\(mesh, type\)/);
+  assert.match(mainSource, /filter\(item => item\.id !== modifier\.id\)/);
+  assert.match(mainSource, /modifiers\.splice\(index, 0, removed\)/);
+  assert.match(mainSource, /item\.enabled = previousValue/);
+  assert.match(mainSource, /item\[field\] = previousValue/);
+  assert.match(mainSource, /refreshModifiers\(\);\s*throw error/);
 });

@@ -586,3 +586,19 @@ Full Blender keymap parity is not claimed by this build. Android touch acceptanc
 
 ### Desktop — Chrome / Edge (deferred)
 - Repeat Axis X/Y/Z, Merge Distance 0/small/large, seam inspection, toggle/remove, stack order and Undo/Redo with a mouse. Confirm the merge field remains readable and keyboard focus does not trigger viewport shortcuts.
+
+
+## v0.1.82 — Validated Solidify shells
+
+### Android — Chrome / Samsung Internet
+- Select an open quad plane or simple open polygon surface. Open **More → Mods**, add **Solidify**, and confirm the card shows **Thickness** plus three large **INSIDE**, **CENTER** and **OUTSIDE** controls. The selected placement must be visibly highlighted and have `aria-pressed=true`.
+- Keep the default Inside position. Confirm the original front surface stays in place while a back surface and rim walls give the plane thickness. Orbit around the boundary and check that the open edge is capped, without gaps or doubled rim faces.
+- Tap Center. Confirm the shell moves equally to both sides of the original plane. Tap Outside. Confirm the original surface stays at the inner side and the shell expands outward. Return to Inside.
+- Change Thickness to a small value and a larger safe value. Confirm the shell responds smoothly. Try an excessive thickness on a curved/closed model; if a local offset face folds or collapses, the worker must reject it and preserve the previous valid evaluated shell and setting.
+- Add Solidify to a cube. Confirm the original editable cage remains unchanged, the shell is closed, the inner and outer surfaces face opposite directions, and no extra rim walls appear on the already-closed cube.
+- Try a mesh with a non-manifold edge, inconsistent triangle winding, a disconnected vertex fan, a degenerate face or an unused vertex. Confirm a clear error appears and the last valid evaluated shell remains intact.
+- Toggle Solidify off/on, remove it, Undo/Redo, wait for `LOCAL · SAVED`, and reload. Confirm Thickness and Inside/Center/Outside state are restored with the correct evaluated geometry. Test Solidify before and after Mirror and Subdivision.
+- Confirm all three placement buttons remain comfortably tappable in the mobile drawer and the modifier card can scroll without obscuring the viewport controls.
+
+### Desktop — Chrome / Edge (deferred)
+- Repeat open-surface rim generation and closed-cube shell generation. Inspect normals, triangle winding, boundaries and local fold rejection. Verify Thickness input, Inside/Center/Outside keyboard access, focus states, stack order, Undo/Redo and save/reload.

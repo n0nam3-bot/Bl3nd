@@ -121,3 +121,37 @@ test('worker can apply Catmull-Clark after a welded Mirror result', () => {
   assert.ok(result.positions.length / 3 > 4);
   assert.equal(result.indices.length % 3, 0);
 });
+
+
+test('worker Solidify closes an open quad surface with shared rim vertices', () => {
+  const result = runWorker({
+    id: 15,
+    ...quad,
+    modifiers: [{ type: 'solidify', thickness: 0.2, offset: -1, enabled: true }]
+  });
+  assert.equal(result.error, undefined);
+  assert.equal(result.positions.length / 3, 8);
+  assert.equal(result.indices.length / 3, 12);
+});
+
+test('worker Solidify honors Center and Outside offset modes', () => {
+  const centered = runWorker({ id: 16, ...quad, modifiers: [{ type: 'solidify', thickness: 0.2, offset: 0, enabled: true }] });
+  const outside = runWorker({ id: 17, ...quad, modifiers: [{ type: 'solidify', thickness: 0.2, offset: 1, enabled: true }] });
+  assert.ok(Math.abs(centered.positions[2] - 0.1) < 1e-6);
+  assert.ok(Math.abs(centered.positions[14] + 0.1) < 1e-6);
+  assert.equal(outside.positions[14], 0);
+  assert.ok(Math.abs(outside.positions[2] - 0.2) < 1e-6);
+});
+
+test('worker Solidify reports unsafe topology without returning a partial shell', () => {
+  const positions = new Float32Array([0,0,0, 1,0,0, 0,1,0, 0,-1,0, 0,0,1]);
+  const result = runWorker({
+    id: 18,
+    positions,
+    indices: new Uint32Array([0,1,2, 1,0,3, 0,1,4]),
+    modifiers: [{ type: 'solidify', thickness: 0.08, enabled: true }]
+  });
+  assert.match(result.error, /non-manifold/);
+  assert.equal(result.positions, undefined);
+  assert.equal(result.indices, undefined);
+});

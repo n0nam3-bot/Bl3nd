@@ -18,6 +18,7 @@ import { FaceOperationModal } from './operators/FaceOperationModal.js';
 import { ModifierStack } from './modifiers/ModifierStack.js';
 import { clampSubdivisionLevel, getSubdivisionLevelOptions } from './modifiers/CatmullClark.js';
 import { clampMirrorMergeDistance, normalizeMirrorAxis } from './modifiers/MirrorGeometry.js';
+import { clampSolidifyOffset, clampSolidifyThickness } from './modifiers/SolidifyGeometry.js';
 import { Viewport } from './ui/Viewport.js';
 import { ModelIO } from './io/ModelIO.js';
 import { KeyboardController } from './input/KeyboardController.js';
@@ -758,17 +759,44 @@ function registerCommands() {
   }, { recordUndo: false });
   commandBus.register('modifier.add', async ({ type }) => {
     const mesh = sceneDocument.activeObject; if (!mesh) return notify('Select a mesh before adding a modifier.');
-    modifierStack.add(mesh, type); await modifierStack.evaluate(mesh); refreshModifiers();
+    const modifier = modifierStack.add(mesh, type);
+    try {
+      await modifierStack.evaluate(mesh);
+    } catch (error) {
+      mesh.userData.modifiers = (mesh.userData.modifiers || []).filter(item => item.id !== modifier.id);
+      refreshModifiers();
+      throw error;
+    }
+    refreshModifiers();
   });
   commandBus.register('modifier.remove', async ({ id }) => {
     const mesh = sceneDocument.activeObject; if (!mesh) return;
-    mesh.userData.modifiers = mesh.userData.modifiers.filter(item => item.id !== id);
-    if (mesh.userData.modifiers.length) await modifierStack.evaluate(mesh); else { modifierStack.clearEvaluation(mesh); sceneDocument.updateMesh(mesh); }
+    const modifiers = mesh.userData.modifiers || [];
+    const index = modifiers.findIndex(item => item.id === id);
+    if (index < 0) return;
+    const [removed] = modifiers.splice(index, 1);
+    try {
+      if (modifiers.length) await modifierStack.evaluate(mesh);
+      else { modifierStack.clearEvaluation(mesh); sceneDocument.updateMesh(mesh); }
+    } catch (error) {
+      modifiers.splice(index, 0, removed);
+      refreshModifiers();
+      throw error;
+    }
     refreshModifiers();
   });
   commandBus.register('modifier.toggle', async ({ id }) => {
-    const mesh = sceneDocument.activeObject; const item = mesh?.userData.modifiers?.find(m => m.id === id); if (!item) return;
-    item.enabled = !item.enabled; await modifierStack.evaluate(mesh); refreshModifiers();
+    const mesh = sceneDocument.activeObject; const item = mesh?.userData?.modifiers?.find(m => m.id === id); if (!item) return;
+    const previousValue = item.enabled;
+    item.enabled = !previousValue;
+    try {
+      await modifierStack.evaluate(mesh);
+    } catch (error) {
+      item.enabled = previousValue;
+      refreshModifiers();
+      throw error;
+    }
+    refreshModifiers();
   });
   commandBus.register('modifier.update', async ({ id, field, value }) => {
     const mesh = sceneDocument.activeObject; const item = mesh?.userData.modifiers?.find(m => m.id === id); if (!item) return;
@@ -777,12 +805,15 @@ function registerCommands() {
       ? clampSubdivisionLevel(value)
       : field === 'mergeDistance' ? clampMirrorMergeDistance(value)
       : field === 'axis' ? normalizeMirrorAxis(value)
-      : ['count', 'thickness'].includes(field) ? Number(value) : value;
+      : field === 'thickness' ? clampSolidifyThickness(value)
+      : field === 'offset' ? clampSolidifyOffset(value)
+      : field === 'count' ? Number(value) : value;
     try {
       await modifierStack.evaluate(mesh);
     } catch (error) {
       // A failed worker evaluation must not leave a new setting paired with the old mesh.
       item[field] = previousValue;
+      refreshModifiers();
       throw error;
     }
     refreshModifiers();
@@ -847,7 +878,34 @@ function refreshModifiers() {
       card.append(note);
     }
     if(mod.type==='array') addField('Copies','count',mod.count);
-    if(mod.type==='solidify') addField('Thickness','thickness',mod.thickness);
+    if(mod.type==='solidify') {
+      addField('Thickness','thickness',clampSolidifyThickness(mod.thickness),{min:0.0001,max:1000,step:0.001});
+      const positionControl=document.createElement('section');
+      positionControl.className='solidify-position-control';
+      positionControl.setAttribute('aria-label','Solidify shell position');
+      const positionHeading=document.createElement('div');
+      positionHeading.className='solidify-position-heading';
+      positionHeading.textContent='SHELL POSITION';
+      const positionButtons=document.createElement('div');
+      positionButtons.className='solidify-position-buttons';
+      positionButtons.setAttribute('role','group');
+      positionButtons.setAttribute('aria-label','Choose shell position');
+      const activeOffset=clampSolidifyOffset(mod.offset);
+      for(const option of [{value:-1,label:'INSIDE'},{value:0,label:'CENTER'},{value:1,label:'OUTSIDE'}]) {
+        const choice=document.createElement('button');
+        choice.type='button';
+        choice.className='solidify-position-button';
+        choice.textContent=option.label;
+        choice.setAttribute('aria-pressed',String(activeOffset===option.value));
+        choice.addEventListener('click',()=>run('modifier.update',{id:mod.id,field:'offset',value:option.value}));
+        positionButtons.append(choice);
+      }
+      positionControl.append(positionHeading,positionButtons);
+      card.append(positionControl);
+      const note=document.createElement('div'); note.className='panel-note';
+      note.textContent='Creates an inner and outer shell and closes open boundary rims. Inside keeps the original surface in place; Center splits thickness evenly; Outside keeps the inner surface in place. Unsupported or folded offsets are rejected without replacing the last valid result.';
+      card.append(note);
+    }
     if(mod.type==='subdivision') {
       const activeLevel = clampSubdivisionLevel(mod.level);
       const levelControl=document.createElement('section');

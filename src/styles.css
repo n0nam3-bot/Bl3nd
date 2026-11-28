@@ -167,3 +167,11 @@ body.transform-modal-active .topbar,body.transform-modal-active .tool-rail,body.
 /* Modifier fields are deliberately touch-sized on narrow displays. */
 .modifier-card input,.modifier-card select{min-height:36px}
 @media(max-width:650px){.modifier-card input,.modifier-card select{width:112px;min-height:42px}}
+
+/* Solidify controls remain legible and easy to tap in the narrow mobile drawer. */
+.solidify-position-control{display:grid;gap:8px;margin:10px 0 7px;padding:9px;background:#222832;border:1px solid #46515e;border-radius:7px}
+.solidify-position-heading{color:#b6c0cd;font-size:9px;font-weight:850;letter-spacing:.8px}
+.solidify-position-buttons{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.solidify-position-button{min-width:0;min-height:40px;padding:6px 3px;border:1px solid #566171;border-radius:6px;background:#2a303a;color:#d8e0e9;font-size:10px;font-weight:800;letter-spacing:.2px;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+.solidify-position-button[aria-pressed="true"]{background:#493729;border-color:#ed9b52;color:#ffd0a7;box-shadow:inset 0 0 0 1px #ed9b5244}
+@media(max-width:650px){.solidify-position-control{padding:10px;gap:9px}.solidify-position-heading{font-size:10px}.solidify-position-buttons{gap:7px}.solidify-position-button{min-height:46px;font-size:11px;letter-spacing:.35px}}
