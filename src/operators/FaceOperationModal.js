@@ -1,10 +1,12 @@
 import { HalfEdgeMesh } from '../core/HalfEdgeMesh.js';
+import { analyzeSelectedFaceRegions } from '../core/SelectedFaceRegions.js';
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
 /**
- * Transactional preview for face-region Extrude and connected-region Inset.
- * Each preview is rebuilt from immutable source topology. Unsupported or
+ * Transactional preview for face-region Extrude and Inset across one or more
+ * disconnected planar islands. Each preview is rebuilt from immutable source
+ * topology. Unsupported or
  * invalid candidates never replace the live source; confirm records one undo
  * entry and cancel restores the full document snapshot.
  */
@@ -41,7 +43,7 @@ export class FaceOperationModal {
       return false;
     }
     if (this.document.selectionMode !== 'face' || source.selectionMode !== 'face' || !source.faceSelection.size) {
-      this.lastError = 'Switch to Face Select and select one connected planar face region.';
+      this.lastError = 'Switch to Face Select and select one or more separate planar face regions.';
       return false;
     }
     const sourceReport = source.validateTopology();
@@ -49,10 +51,12 @@ export class FaceOperationModal {
       this.lastError = 'The source mesh has topology warnings. Validate and repair safe issues before using this operation.';
       return false;
     }
-    if (operation === 'extrude' && !this.isSupportedExtrudeRegion(source, [...source.faceSelection])) {
-      this.lastError = 'Extrude requires one connected, planar face region with a single simple boundary.';
+    const regionAnalysis = analyzeSelectedFaceRegions(source, [...source.faceSelection]);
+    if (!regionAnalysis.valid) {
+      this.lastError = `${operation === 'extrude' ? 'Extrude' : 'Inset'} needs one or more separate connected planar regions. ${regionAnalysis.reason}`;
       return false;
     }
+    this.regionCount = regionAnalysis.regions.length;
 
     const before = await this.document.serialize();
     this.mesh = mesh;
@@ -83,54 +87,87 @@ export class FaceOperationModal {
     this.lastResult = preview.result;
     this.applyPreview(preview.hem);
     this.active = true;
+    const regionDetail = this.lastResult.regionCount > 1 ? ` · ${this.lastResult.regionCount} regions` : '';
     this.status?.(operation === 'extrude'
-      ? `EXTRUDE · ${this.lastResult.selectedFaces} face(s) · ${this.lastResult.boundaryEdges} boundary edges · distance ${this.lastResult.distance.toFixed(3)} · drag / type · Enter apply · Esc cancel`
-      : `INSET · ${this.seedFaceIds.length} face(s) · offset ${this.lastResult.distance.toFixed(3)} · drag / type amount · Enter apply · Esc cancel`);
+      ? `EXTRUDE · ${this.lastResult.selectedFaces} face(s)${regionDetail} · ${this.lastResult.boundaryEdges} boundary edges · distance ${this.lastResult.distance.toFixed(3)} · drag / type · Enter apply · Esc cancel`
+      : `INSET · ${this.seedFaceIds.length} face(s)${regionDetail} · average offset ${this.lastResult.distance.toFixed(3)} · drag / type amount · Enter apply · Esc cancel`);
     this.onChange?.();
     return true;
   }
 
   isSupportedExtrudeRegion(source, faceIds) {
-    if (!Array.isArray(faceIds) || !faceIds.length) return false;
-    if (faceIds.length === 1) return Boolean(source.faces[faceIds[0]] && source.triangulateFace(faceIds[0]).length);
-    // boundaryForRegion verifies a single simple boundary, planar faces and
-    // consistent normals; this also excludes disconnected selections/holes.
-    return Boolean(source.boundaryForRegion(faceIds));
+    return analyzeSelectedFaceRegions(source, faceIds).valid;
   }
 
   buildPreview(value) {
     const hem = new HalfEdgeMesh(this.basePositions, this.baseFaces);
-    hem.setSelectionMode('face');
-    hem.faceSelection = new Set(this.seedFaceIds);
-    let operationDetails;
-    if (this.operation === 'extrude') {
-      operationDetails = hem.extrudeSelectedRegion(value);
-      if (!operationDetails?.changed) {
-        return { hem, result: { changed: false, reason: operationDetails?.reason || 'The selected faces could not be extruded as one connected planar region.' } };
+    const partition = analyzeSelectedFaceRegions(hem, this.seedFaceIds);
+    if (!partition.valid) return { hem, result: { changed: false, reason: partition.reason } };
+
+    const faceSignature = face => JSON.stringify([...face].sort((a, b) => a - b));
+    const selectedOutputSignatures = new Set();
+    const operations = [];
+    const operationName = this.operation === 'extrude' ? 'Extrude' : 'Inset';
+
+    for (const region of partition.regions) {
+      let selectedIds = region.faceIds;
+      if (this.operation === 'inset') {
+        const sourceSignatures = new Set(region.faceIds.map(faceId => faceSignature(this.baseFaces[faceId])));
+        selectedIds = hem.faces.map((face, faceId) => sourceSignatures.has(faceSignature(face)) ? faceId : -1)
+          .filter(faceId => faceId >= 0);
+        if (selectedIds.length !== region.faceIds.length) {
+          return { hem, result: { changed: false, reason: 'Inset could not safely match a remaining selected region after another region was processed.' } };
+        }
       }
-    } else {
-      operationDetails = hem.insetSelectedRegion(value);
-      if (!operationDetails?.changed) {
-        return { hem, result: { changed: false, reason: operationDetails?.reason || 'The selected faces could not be inset safely.' } };
+
+      hem.setSelectionMode('face');
+      hem.clearSelection();
+      hem.faceSelection = new Set(selectedIds);
+      const details = this.operation === 'extrude'
+        ? hem.extrudeSelectedRegion(value)
+        : hem.insetSelectedRegion(value);
+      if (!details?.changed) {
+        return { hem, result: { changed: false, reason: `${operationName} region ${operations.length + 1} was rejected: ${details?.reason || 'unsupported region geometry.'} The source mesh was not changed.` } };
+      }
+      operations.push(details);
+      for (const faceId of hem.faceSelection) {
+        const face = hem.faces[faceId];
+        if (face) selectedOutputSignatures.add(faceSignature(face));
       }
     }
+
     const report = hem.validateTopology();
-    if (!report.valid) {
-      return { hem, result: { changed: false, reason: `${this.operation === 'extrude' ? 'Extrude' : 'Inset'} candidate failed topology validation; the source mesh was not changed.` } };
+    if (!report.valid || hem.faces.some((_, faceId) => !hem.triangulateFace(faceId).length)) {
+      return { hem, result: { changed: false, reason: `${operationName} combined candidate failed final topology or triangulation validation; the source mesh was not changed.` } };
     }
-    const sourceFaces = this.baseFaces.length;
+
+    const selectedOutputIds = [];
+    hem.faces.forEach((face, faceId) => {
+      if (selectedOutputSignatures.has(faceSignature(face))) selectedOutputIds.push(faceId);
+    });
+    if (selectedOutputIds.length !== this.seedFaceIds.length) {
+      return { hem, result: { changed: false, reason: `${operationName} could not recover every selected result face; the source mesh was not changed.` } };
+    }
+    hem.setSelectionMode('face');
+    hem.clearSelection();
+    hem.faceSelection = new Set(selectedOutputIds);
+
+    const sum = key => operations.reduce((total, item) => total + (Number(item[key]) || 0), 0);
+    const average = key => sum(key) / Math.max(1, operations.length);
     return {
       hem,
       result: {
         changed: true,
         operation: this.operation,
         value,
-        selectedFaces: this.seedFaceIds.length,
-        distance: operationDetails.distance,
-        normal: operationDetails.normal,
-        boundaryEdges: operationDetails.boundaryEdges,
+        regionCount: operations.length,
+        selectedFaces: sum('selectedFaces'),
+        distance: average('distance'),
+        distances: operations.map(item => item.distance),
+        normal: operations.length === 1 ? operations[0].normal : null,
+        boundaryEdges: sum('boundaryEdges'),
         insertedVertices: hem.positions.length - this.basePositions.length,
-        createdFaces: hem.faces.length - sourceFaces,
+        createdFaces: hem.faces.length - this.baseFaces.length,
         topology: report
       }
     };
@@ -164,7 +201,8 @@ export class FaceOperationModal {
     this.applyPreview(preview.hem);
     const distanceDetail = Number.isFinite(this.lastResult?.distance)
       ? ` · ${this.operation === 'extrude' ? 'distance' : 'offset'} ${this.lastResult.distance.toFixed(3)}` : '';
-    this.status?.(`${this.operation === 'extrude' ? 'Extrude' : 'Inset'} preview · ${this.value.toFixed(3)}${distanceDetail} · Enter apply / Esc cancel`);
+    const regionDetail = this.lastResult.regionCount > 1 ? ` · ${this.lastResult.regionCount} regions` : '';
+    this.status?.(`${this.operation === 'extrude' ? 'Extrude' : 'Inset'} preview · ${this.value.toFixed(3)}${distanceDetail}${regionDetail} · Enter apply / Esc cancel`);
     this.onChange?.();
     return true;
   }
@@ -253,5 +291,6 @@ export class FaceOperationModal {
     this.startPointer = null;
     this.startValue = 0;
     this.dragScale = 1;
+    this.regionCount = 0;
   }
 }

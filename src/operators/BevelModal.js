@@ -1,10 +1,12 @@
 import { HalfEdgeMesh } from '../core/HalfEdgeMesh.js';
+import { analyzeSelectedFaceRegions } from '../core/SelectedFaceRegions.js';
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
 /**
- * Interactive, transactional preview for supported edge Bevel, connected planar
- * Face Bevel and per-face Face Bevel. Every update is rebuilt from immutable
+ * Interactive, transactional preview for supported edge Bevel, connected and
+ * multi-region planar Face Bevel, Continuous Surface and per-face Face Bevel.
+ * Every update is rebuilt from immutable
  * source topology; cancel restores the full snapshot and confirm records one
  * undo transaction.
  */
@@ -23,6 +25,7 @@ export class BevelModal {
     this.faceBevelMode = 'region';
     this.continuousCurvedRegionCandidate = false;
     this.planarRegionCandidate = false;
+    this.multiRegionCandidate = false;
     this.faceSettings = new Map();
     this.activeFaceIndex = 0;
     this.segments = 1;
@@ -51,6 +54,7 @@ export class BevelModal {
     const selectionMode = this.document.selectionMode || source.selectionMode;
     this.continuousCurvedRegionCandidate = false;
     this.planarRegionCandidate = false;
+    this.multiRegionCandidate = false;
     if (selectionMode === 'face' && source.selectionMode === 'face' && source.faceSelection.size > 0) {
       this.mode = 'face-region';
       this.seedFaceIds = [...source.faceSelection].sort((a, b) => a - b);
@@ -59,8 +63,14 @@ export class BevelModal {
       this.activeFaceIndex = 0;
       if (this.seedFaceIds.length > 1) {
         const analysis = source.analyzeFaceRegion(this.seedFaceIds);
-        this.planarRegionCandidate = Boolean(analysis.valid && analysis.connected && analysis.planar && analysis.loopCount === 1);
-        if (analysis.valid && analysis.connected && !analysis.planar && analysis.loopCount === 1) {
+        const separateRegions = analyzeSelectedFaceRegions(source, this.seedFaceIds);
+        this.multiRegionCandidate = Boolean(separateRegions.valid && separateRegions.regions.length > 1);
+        this.planarRegionCandidate = Boolean(separateRegions.valid && separateRegions.regions.length === 1 && analysis.connected);
+        if (this.multiRegionCandidate) {
+          // Treat disconnected, non-touching planar islands as independent
+          // shared regions, not as unrelated per-face panels.
+          this.faceBevelMode = 'multi-region';
+        } else if (analysis.valid && analysis.connected && !analysis.planar && analysis.loopCount === 1) {
           // Prefer a shared continuous transition on locally smooth curved
           // patches. The geometry validator may still fall back to panels.
           this.faceBevelMode = 'curved-region';
@@ -98,9 +108,9 @@ export class BevelModal {
     }]));
 
     let preview = this.buildPreview(this.amount, this.segments, this.profile, this.heightAmount);
-    if (!preview.result?.changed && this.faceBevelMode === 'curved-region') {
-      // If this patch exceeds the conservative smooth-curvature envelope, keep
-      // the established per-face panel path as the safe non-destructive option.
+    if (!preview.result?.changed && ['curved-region', 'multi-region'].includes(this.faceBevelMode)) {
+      // Keep the existing individually validated face-panel path as a safe
+      // fallback when one shared component cannot pass its candidate checks.
       this.faceBevelMode = 'individual';
       this.continuousCurvedRegionCandidate = false;
       preview = this.buildPreview(this.amount, this.segments, this.profile, this.heightAmount);
@@ -147,8 +157,9 @@ export class BevelModal {
     const curved = this.faceBevelMode === 'curved-region';
     const activeFaceId = individual ? this.seedFaceIds[this.activeFaceIndex] : null;
     const activeResult = individual ? result.perFace?.find(item => item.faceId === activeFaceId) : result;
+    const multiRegion = this.faceBevelMode === 'multi-region';
     const target = individual ? `INDIVIDUAL · FACE ${this.activeFaceIndex + 1}/${this.seedFaceIds.length}`
-      : curved ? 'CONTINUOUS SURFACE' : 'CONNECTED REGION';
+      : curved ? 'CONTINUOUS SURFACE' : multiRegion ? `MULTI-REGION · ${result.regionCount || 0} islands` : 'CONNECTED REGION';
     const modeHint = this.seedFaceIds.length > 1 ? ' · I toggles mode' : '';
     const faceHint = individual ? ' · PageUp/PageDown changes face' : '';
     return `FACE BEVEL · ${target} · ${result.reflexCorners || 0} reflex · ${this.segments} segment(s) · profile ${this.profile.toFixed(2)} · width ${Number(activeResult?.width || 0).toFixed(3)} · height ${Number(activeResult?.height || 0).toFixed(3)} · H switches width/height${modeHint}${faceHint} · Enter apply / Esc cancel`;
@@ -164,7 +175,9 @@ export class BevelModal {
         ? hem.bevelSelectedFacesIndividually({ faceSettings })
         : faceBevelMode === 'curved-region'
           ? hem.bevelSelectedCurvedFaceRegion({ amount, heightAmount, segments, profile })
-          : hem.bevelSelectedFaceRegion({ amount, heightAmount, segments, profile });
+          : faceBevelMode === 'multi-region'
+            ? this.bevelSelectedFaceRegions(hem, { amount, heightAmount, segments, profile })
+            : hem.bevelSelectedFaceRegion({ amount, heightAmount, segments, profile });
       return { hem, result };
     }
     hem.setSelectionMode('edge');
@@ -173,8 +186,51 @@ export class BevelModal {
     return { hem, result };
   }
 
+
+  bevelSelectedFaceRegions(hem, options) {
+    const fail = reason => ({ changed: false, reason });
+    const partition = analyzeSelectedFaceRegions(hem, this.seedFaceIds);
+    if (!partition.valid || partition.regions.length < 2) {
+      return fail(partition.reason || 'Multi-region Face Bevel requires at least two separate planar regions.');
+    }
+
+    const perRegion = [];
+    for (const region of partition.regions) {
+      hem.setSelectionMode('face');
+      hem.clearSelection();
+      hem.faceSelection = new Set(region.faceIds);
+      const result = hem.bevelSelectedFaceRegion(options);
+      if (!result.changed) {
+        return fail(`Face Bevel region ${perRegion.length + 1} was rejected: ${result.reason || 'unsupported geometry.'}`);
+      }
+      perRegion.push(result);
+    }
+
+    const topology = hem.validateTopology();
+    if (!topology.valid) return fail('Combined multi-region Face Bevel failed final topology validation; the source mesh was not changed.');
+    hem.setSelectionMode('face');
+    hem.clearSelection();
+    hem.faceSelection = new Set(this.seedFaceIds);
+    const total = key => perRegion.reduce((sum, item) => sum + (Number(item[key]) || 0), 0);
+    const average = key => total(key) / perRegion.length;
+    return {
+      changed: true,
+      operation: 'face-multi-region',
+      regionCount: perRegion.length,
+      selectedFaces: total('selectedFaces'),
+      width: average('width'),
+      height: average('height'),
+      boundaryEdges: total('boundaryEdges'),
+      insertedVertices: total('insertedVertices'),
+      createdFaces: total('createdFaces'),
+      reflexCorners: total('reflexCorners'),
+      perRegion,
+      topology
+    };
+  }
+
   setFaceBevelMode(mode) {
-    if (!this.active || this.mode !== 'face-region' || !['region', 'individual', 'curved-region'].includes(mode)) return false;
+    if (!this.active || this.mode !== 'face-region' || !['region', 'individual', 'curved-region', 'multi-region'].includes(mode)) return false;
     if (mode === this.faceBevelMode) return true;
     if (mode === 'individual' && this.seedFaceIds.length < 2) {
       this.lastError = 'Select at least two faces to use Individual Faces mode.';
@@ -247,9 +303,14 @@ export class BevelModal {
     return this.mode === 'face-region' && this.planarRegionCandidate;
   }
 
+  hasMultiRegionCandidate() {
+    return this.mode === 'face-region' && this.multiRegionCandidate;
+  }
+
   toggleFaceBevelMode() {
     if (this.faceBevelMode === 'individual') {
       if (this.hasContinuousCurvedRegionCandidate()) return this.setFaceBevelMode('curved-region');
+      if (this.hasMultiRegionCandidate()) return this.setFaceBevelMode('multi-region');
       if (this.hasPlanarRegionCandidate()) return this.setFaceBevelMode('region');
       this.lastError = 'This curved selection did not pass Continuous Surface validation. Individual Faces is the supported safe mode.';
       this.status?.(this.lastError);
@@ -474,6 +535,7 @@ export class BevelModal {
     this.faceBevelMode = 'region';
     this.continuousCurvedRegionCandidate = false;
     this.planarRegionCandidate = false;
+    this.multiRegionCandidate = false;
     this.faceSettings = new Map();
     this.activeFaceIndex = 0;
     this.startAmount = 0.25;

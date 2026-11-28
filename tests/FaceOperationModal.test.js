@@ -192,7 +192,7 @@ test('Inset modal cancellation restores the full connected region without an und
   assert.equal(session.commits.length, 0);
 });
 
-test('Inset modal rejects disconnected multi-face regions without changing the source', async () => {
+test('Inset modal processes disconnected planar regions together in one transaction', async () => {
   const hem = new HalfEdgeMesh(
     [[0,0,0],[1,0,0],[1,1,0],[0,1,0],[3,0,0],[4,0,0],[4,1,0],[3,1,0]],
     [[0,1,2,3],[4,5,6,7]]
@@ -211,10 +211,14 @@ test('Inset modal rejects disconnected multi-face regions without changing the s
   const session = { mesh, document, commits, undoManager, viewport: {} };
   const before = await document.serialize();
   const modal = new FaceOperationModal(session);
-  assert.equal(await modal.begin('inset'), false);
-  assert.match(modal.lastError, /connected planar face region/i);
-  assert.deepEqual(await document.serialize(), before);
-  assert.equal(commits.length, 0);
+  assert.equal(await modal.begin('inset'), true, modal.lastError);
+  assert.equal(modal.lastResult.regionCount, 2);
+  assert.equal(modal.lastResult.topology.valid, true);
+  assert.equal(mesh.userData.hem.faceSelection.size, 2);
+  const applied = await modal.confirm();
+  assert.equal(applied.regionCount, 2);
+  assert.equal(commits.length, 1);
+  assert.equal(mesh.userData.hem.validateTopology().valid, true);
 });
 
 test('Face operations require Face Select and leave the source unchanged on invalid selection', async () => {
@@ -228,17 +232,20 @@ test('Face operations require Face Select and leave the source unchanged on inva
   assert.deepEqual(await session.document.serialize(), before);
 });
 
-test('Extrude rejects disconnected face regions without changing the source', async () => {
+test('Extrude processes separate planar cube faces as independent islands', async () => {
   const session = makeCubeSession();
   session.mesh.userData.hem.clearSelection();
   session.mesh.userData.hem.selectFace(0);
   session.mesh.userData.hem.selectFace(1, true);
   const before = await session.document.serialize();
   const modal = new FaceOperationModal(session);
-  assert.equal(await modal.begin('extrude'), false);
-  assert.match(modal.lastError, /connected, planar face region/i);
-  assert.deepEqual(await session.document.serialize(), before);
-  assert.equal(session.commits.length, 0);
+  assert.equal(await modal.begin('extrude'), true, modal.lastError);
+  assert.equal(modal.lastResult.regionCount, 2);
+  assert.equal(modal.lastResult.topology.valid, true);
+  const applied = await modal.confirm();
+  assert.equal(applied.regionCount, 2);
+  assert.equal(session.commits.length, 1);
+  assert.equal(session.mesh.userData.hem.validateTopology().valid, true);
 });
 
 test('numeric input supports signed Extrude and bounded Inset values', async () => {
