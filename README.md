@@ -13,6 +13,12 @@ The application displays staged startup progress and keeps the exact startup err
 
 The application does not require a build command. Open the GitHub Pages URL after the deployment workflow completes.
 
+## Local scene recovery
+
+Bl3nd automatically saves the last committed scene in this browser after a short pause. When you reopen or refresh the app, it restores that scene before creating the starter cube. The recovery includes mesh edits, object transforms, modifiers, visibility, selection, mode, pivot and 3D cursor position. The footer shows checking, ready, pending, saving, saved, restored or unavailable/error status.
+
+Recovery is stored in this browser/device only; it is not synced to GitHub or another device. Active Move/Rotate/Scale, Bevel, Loop Cut and Extrude/Inset previews are not saved until Apply, and the last committed scene is checkpointed before those operations begin. Camera position and undo/redo history are not restored. Export a GLB regularly for a portable copy, and avoid clearing this site's browser storage while relying on local recovery.
+
 ## Controls
 
 ### Command search

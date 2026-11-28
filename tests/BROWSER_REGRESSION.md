@@ -513,3 +513,20 @@ Full Blender keymap parity is not claimed by this build. Android touch acceptanc
 - Press `G`, `R` and `S` separately. Confirm each updates the selected tool highlight before starting the same modal as before. Press `Q` and confirm Select is highlighted and any Box/Circle/Lasso selection tool returns to Click Select.
 - Confirm the selected tool state is restored from browser storage, the existing numeric input / snapping / Global-Local / center-axis-plane gizmo / pointer-ID paths still work, and ordinary blank-area drags outside a modal remain viewport navigation.
 - With browser storage blocked, confirm the app starts normally and falls back to Select for that session without a startup error.
+
+## v0.1.77 — Local scene autosave and refresh recovery
+
+### Android — Chrome / Samsung Internet
+- Open a fresh Bl3nd session. Confirm the footer begins with `LOCAL · READY` and changes to `LOCAL · SAVED` after the starter scene is written.
+- Add a second object, move it, rotate it and scale it. After each short pause, confirm the footer returns to `LOCAL · SAVED`. Reload the page and confirm both objects, their geometry and transforms return; the starter cube must not be added on top of the recovered scene.
+- Enter Edit Mode, select multiple faces, perform a committed Extrude or Inset, and wait for `LOCAL · SAVED`. Reload and confirm the mesh topology, face selections and Edit Mode state return.
+- Add/change a modifier, toggle its visibility or edit its parameters, wait for the saved indicator, then reload and confirm the modifier stack and evaluated appearance are restored.
+- Change object selection, pivot and 3D Cursor. Reload and confirm the saved selection/pivot/cursor state returns. Camera orientation and undo/redo history are intentionally not restored.
+- Start Move/Rotate/Scale, drag a preview without applying, then reload. Confirm the last committed scene is recovered and the preview is discarded. Repeat with Bevel, Loop Cut and Extrude/Inset previews. Apply an operation and reload; confirm the committed result is recovered.
+- Refresh immediately after a committed edit (without waiting for the debounce) and confirm the page-hide/hidden-tab flush still restores it. Confirm the footer state is visible and does not block the viewport or mobile actionbar.
+- In a separate browser test profile with IndexedDB blocked or unavailable, confirm Bl3nd still starts, displays `LOCAL · UNAVAILABLE`, and the manual Export button remains usable. Do not clear the normal profile's site data while testing.
+
+### Desktop — Chrome / Edge
+- Repeat object add, object transforms, edit-mode topology changes, modifiers, undo/redo and immediate reload recovery. Confirm the footer state and that the app never creates a duplicate starter cube when a recovery record exists.
+- Begin each modal type and reload before Apply; confirm only the last committed scene is restored. Apply and reload to confirm the committed version is saved.
+- Verify the save state survives service-worker activation and normal browser refresh. Confirm GLB export remains independent and portable.

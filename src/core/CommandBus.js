@@ -1,8 +1,9 @@
 export class CommandBus {
-  constructor({ undoManager, status }) {
+  constructor({ undoManager, status, onCommand = null }) {
     this.handlers = new Map();
     this.undoManager = undoManager;
     this.status = status;
+    this.onCommand = onCommand;
     this.running = false;
   }
 
@@ -24,7 +25,12 @@ export class CommandBus {
         await this.undoManager?.record(name, before, after);
       }
       this.status?.(name.replaceAll('.', ' '));
-      return result ?? true;
+      const normalizedResult = result ?? true;
+      if (result !== false) {
+        try { this.onCommand?.({ name, payload, result: normalizedResult }); }
+        catch { /* Persistence/UI observers must not turn a successful command into a failure. */ }
+      }
+      return normalizedResult;
     } finally {
       this.running = false;
     }

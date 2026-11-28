@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { detectCapabilities } from './core/DeviceCapabilities.js';
 import { CommandBus } from './core/CommandBus.js';
 import { SceneDocument } from './core/SceneDocument.js';
+import { SceneAutosave } from './core/SceneAutosave.js';
 import { buildMoveReadout } from './core/TransformReadout.js';
 import { getTransformSnapSettingKeys, getTransformSnapStep, normalizeTransformSnapSettings } from './core/TransformSnap.js';
 import { normalizeProportionalSettings } from './core/ProportionalEditing.js';
@@ -104,6 +105,40 @@ try {
 }
 const sceneDocument = new SceneDocument(viewport.scene);
 viewport.setContent(sceneDocument.content);
+let sceneAutosaveEnabled = false;
+let autosaveFailureNotified = false;
+let sceneAutosave = null;
+function canPersistScene() {
+  return sceneAutosaveEnabled && !modalTransform.active && !loopCutModal.active && !bevelModal.active &&
+    !faceOperationModal.active && !viewport.modalOperationActive;
+}
+function scheduleSceneAutosave() {
+  if (!sceneAutosave || !canPersistScene()) return false;
+  return sceneAutosave.schedule(() => sceneDocument.serialize(), canPersistScene);
+}
+async function checkpointCommittedSceneBeforeModal() {
+  if (!sceneAutosave || !sceneAutosaveEnabled || !canPersistScene()) return false;
+  return sceneAutosave.flush(() => sceneDocument.serialize(), canPersistScene);
+}
+function updateAutosaveIndicator(state, detail = null) {
+  const indicator = $('#autosave-indicator');
+  const labels = {
+    loading: 'LOCAL · CHECKING', ready: 'LOCAL · READY',
+    restored: 'LOCAL · RESTORED', pending: 'LOCAL · PENDING',
+    saving: 'LOCAL · SAVING', saved: 'LOCAL · SAVED',
+    deferred: 'LOCAL · WAITING', unavailable: 'LOCAL · UNAVAILABLE',
+    error: 'LOCAL · SAVE ERROR'
+  };
+  if (indicator) {
+    indicator.textContent = labels[state] || 'LOCAL RECOVERY';
+    indicator.dataset.state = state;
+    indicator.title = detail instanceof Error ? detail.message : 'The latest committed scene is stored locally on this browser/device. Use Export for a portable copy.';
+  }
+  if (state === 'error' && !autosaveFailureNotified) {
+    autosaveFailureNotified = true;
+    notify('Local scene recovery could not save. Use Export to keep a copy of your work.', 'error');
+  }
+}
 function syncProjectionUI(mode = viewport.projectionMode()) {
   const state = syncProjectionToggleButton($('#projection-toggle'), mode);
   syncProjectionToggleButton($('#mobile-projection-toggle'), mode);
@@ -120,14 +155,15 @@ let touchController = null;
 const undoManager = new UndoManager({
   maxEntries: capabilities.maxUndoEntries,
   status,
-  onRestore: async snapshot => { await sceneDocument.restore(snapshot); await reapplyModifiers(); refresh(); }
+  onRestore: async snapshot => { await sceneDocument.restore(snapshot); await reapplyModifiers(); refresh(); scheduleSceneAutosave(); }
 });
 const modalTransform = new ModalTransform({ document: sceneDocument, undoManager, viewport, status, transformSnapSettings: loadTransformSnapSettings(), proportionalSettings: loadProportionalSettings(), onChange: () => ui?.refreshModal() });
 const loopCutModal = new LoopCutModal({ document: sceneDocument, undoManager, viewport, status, onChange: () => { refresh(); ui?.refreshModal(); } });
 const bevelModal = new BevelModal({ document: sceneDocument, undoManager, viewport, status, onChange: () => { refresh(); ui?.refreshModal(); } });
 const faceOperationModal = new FaceOperationModal({ document: sceneDocument, undoManager, viewport, status, onChange: () => { refresh(); ui?.refreshModal(); } });
+sceneAutosave = new SceneAutosave({ onState: updateAutosaveIndicator });
 viewport.onModalPointerStart = event => faceOperationModal.setPointerAnchor({ x: event.clientX, y: event.clientY });
-const commandBus = new CommandBus({ undoManager, status });
+const commandBus = new CommandBus({ undoManager, status, onCommand: () => scheduleSceneAutosave() });
 viewport.onTransformGizmoStart = ({ handle, point }) => {
   if (!modalTransform.active) return false;
   if (handle.kind === 'free') return modalTransform.setFreeConstraint(point);
@@ -192,6 +228,7 @@ async function startFaceOperation(operation) {
   const selectedObject = sceneDocument.activeObject;
   const sourceTopology = selectedObject?.userData?.hem;
   const selectedFaceIds = [...(sourceTopology?.faceSelection || [])];
+  await checkpointCommittedSceneBeforeModal();
   const started = await faceOperationModal.begin(operation);
   if (!started) {
     notify(`${operation === 'extrude' ? 'Extrude' : 'Inset'} skipped · ${faceOperationModal.lastError || 'Unable to start the face operation.'}`, 'error');
@@ -499,6 +536,7 @@ function registerCommands() {
       edgeIds: [...(sourceTopology?.edgeSelection || [])],
       vertexIds: [...(sourceTopology?.vertexSelection || [])]
     };
+    await checkpointCommittedSceneBeforeModal();
     const started = await bevelModal.begin();
     if (!started) { notify(`Bevel skipped · ${bevelModal.lastError || 'Unable to start Bevel.'}`, 'error'); return false; }
     minimizeMobilePropertiesPanel();
@@ -601,6 +639,7 @@ function registerCommands() {
     const selectedObject = sceneDocument.activeObject;
     const sourceTopology = selectedObject?.userData?.hem;
     const selection = { edgeIds: [...(sourceTopology?.edgeSelection || [])] };
+    await checkpointCommittedSceneBeforeModal();
     const started = await loopCutModal.begin();
     if (!started) { notify(`Loop Cut skipped · ${loopCutModal.lastError || 'Unable to start the cut.'}`, 'error'); return false; }
     minimizeMobilePropertiesPanel();
@@ -665,6 +704,7 @@ function registerCommands() {
   commandBus.register('transform.modal_start', async ({ type, pointer }) => {
     transformSnapSettingsOpen = false;
     if (loopCutModal.active || bevelModal.active || faceOperationModal.active) { notify('Apply or cancel the current mesh operation before starting a transform.'); return false; }
+    await checkpointCommittedSceneBeforeModal();
     const started = await modalTransform.begin(type, pointer || ui.pointerOrigin());
     viewport.modalOperationActive = Boolean(started);
     document.body.classList.toggle('transform-modal-active', Boolean(started));
@@ -1162,7 +1202,7 @@ $('#object-mode-btn').addEventListener('click',()=>run('mode.set',{mode:'object'
 $('#edit-mode-btn').addEventListener('click',()=>run('mode.set',{mode:'edit'}));
 $('#save-btn').addEventListener('click',async()=>{try{await modelIO.exportFile('glb');}catch(e){notify(e.message,'error');}});
 $('#open-btn').addEventListener('click',()=>$('#file-input').click());
-$('#file-input').addEventListener('change',async event=>{const file=event.target.files?.[0];if(!file)return;try{const meshes=await modelIO.importFile(file);const issues=meshes.reduce((sum,mesh)=>sum+(mesh.userData.hem?.validateTopology().issueCount||0),0);if(issues)notify(`Imported mesh validation found ${issues} topology issue(s). Use Validate Mesh for details.`,'error');refresh();viewport.frame(meshes[0]);}catch(e){notify(e.message,'error');}finally{event.target.value='';}});
+$('#file-input').addEventListener('change',async event=>{const file=event.target.files?.[0];if(!file)return;try{const meshes=await modelIO.importFile(file);const issues=meshes.reduce((sum,mesh)=>sum+(mesh.userData.hem?.validateTopology().issueCount||0),0);if(issues)notify(`Imported mesh validation found ${issues} topology issue(s). Use Validate Mesh for details.`,'error');refresh();viewport.frame(meshes[0]);scheduleSceneAutosave();}catch(e){notify(e.message,'error');}finally{event.target.value='';}});
 $('#add-menu-btn').addEventListener('click',()=>ui.togglePie('add'));
 $('#mobile-add').addEventListener('click',()=>ui.togglePie('add'));
 $('#mobile-proportional').addEventListener('click',()=>run('transform.proportional_toggle'));
@@ -1355,37 +1395,67 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js',{scope:'./'}).then(()=>$('#sw-profile').textContent='Registered').catch(()=>$('#sw-profile').textContent='Unavailable');
 } else $('#sw-profile').textContent='Unsupported';
 
-// Initial scene: bootstrap directly through SceneDocument.
-// The default scene must not depend on command dispatch or undo snapshot I/O.
-loadingProgress(94, 'Creating the starter object…');
-let starterObject;
+// Recover the last committed scene from this browser before creating the starter cube.
+// Scene recovery is separate from OPFS undo snapshots and from the manual GLB export.
+loadingProgress(94, 'Checking for your last locally saved scene…');
+let recoveredLocalScene = false;
+let starterObject = null;
 try {
-  starterObject = sceneDocument.addPrimitive('cube');
+  const recoveryRecord = await sceneAutosave.load();
+  if (recoveryRecord?.snapshot) {
+    await sceneDocument.restore(recoveryRecord.snapshot);
+    await reapplyModifiers();
+    recoveredLocalScene = true;
+    const target = sceneDocument.activeObject || sceneDocument.objects[0] || null;
+    if (target) viewport.frame(target);
+    notify(`Recovered your scene · ${sceneDocument.objects.length} object(s)`, 'success');
+  }
 } catch (error) {
-  console.error('[Bl3nd startup: starter cube creation]', error);
-  loading?.fail(error);
-  throw new Error(`Starter cube creation failed: ${error?.message || String(error)}`, { cause: error });
+  console.warn('[Bl3nd local scene recovery]', error);
+  notify(`Local scene recovery was unavailable: ${error?.message || String(error)}. Starting a new scene.`, 'error');
+  try { await sceneDocument.restore({ version: 1, cursor: [0, 0, 0], mode: 'object', pivot: 'median', selectionMode: 'face', nameCounter: 1, activeIndex: -1, selectedIndices: [], objects: [] }); }
+  catch (restoreError) { console.error('[Bl3nd recovery cleanup]', restoreError); }
 }
 
-if (!starterObject?.isMesh || !starterObject.userData?.hem) {
-  const error = new Error('SceneDocument did not return a valid editable cube mesh.');
-  loading?.fail(error);
-  throw error;
-}
+if (!recoveredLocalScene) {
+  loadingProgress(95, 'Creating the starter object…');
+  try {
+    starterObject = sceneDocument.addPrimitive('cube');
+  } catch (error) {
+    console.error('[Bl3nd startup: starter cube creation]', error);
+    loading?.fail(error);
+    throw new Error(`Starter cube creation failed: ${error?.message || String(error)}`, { cause: error });
+  }
 
-starterObject.position.set(0, 0, 0);
-try {
-  viewport.frame(starterObject);
-} catch (error) {
-  console.error('[Bl3nd startup: starter cube framing]', error);
-  notify(`Starter cube created, but auto-framing failed: ${error?.message || String(error)}`, 'error');
+  if (!starterObject?.isMesh || !starterObject.userData?.hem) {
+    const error = new Error('SceneDocument did not return a valid editable cube mesh.');
+    loading?.fail(error);
+    throw error;
+  }
+
+  starterObject.position.set(0, 0, 0);
+  try {
+    viewport.frame(starterObject);
+  } catch (error) {
+    console.error('[Bl3nd startup: starter cube framing]', error);
+    notify(`Starter cube created, but auto-framing failed: ${error?.message || String(error)}`, 'error');
+  }
 }
 try {
   refresh();
 } catch (error) {
   console.error('[Bl3nd startup: initial UI refresh]', error);
-  notify(`Starter cube created, but some status panels could not refresh: ${error?.message || String(error)}`, 'error');
+  notify(`Scene loaded, but some status panels could not refresh: ${error?.message || String(error)}`, 'error');
 }
+sceneAutosaveEnabled = true;
+scheduleSceneAutosave();
+const flushSceneRecovery = () => {
+  if (canPersistScene()) void sceneAutosave.flush(() => sceneDocument.serialize(), canPersistScene);
+};
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') flushSceneRecovery();
+});
+window.addEventListener('pagehide', flushSceneRecovery);
 loadingProgress(98, 'Finalizing the workspace and browser storage…');
 status(`Ready · ${capabilities.tier} tier · ${capabilities.webgpu?'WebGPU detected':'WebGL path'}`);
 if(capabilities.storage){
