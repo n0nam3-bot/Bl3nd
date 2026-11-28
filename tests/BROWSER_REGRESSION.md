@@ -349,3 +349,19 @@ This procedure validates browser interaction for the starter cube. The automated
 - Confirm existing touch orbit, two-finger pan/zoom, selection additive mode, modal controls, Undo/Redo and the `O` proportional action are unchanged. Desktop pointer-flick behavior is not applicable to touch; tapping sectors is the mobile selection path.
 
 Full Blender keymap parity is not claimed by this build. Android touch acceptance is pending; desktop Chrome/Edge remains deferred until PC access is available.
+
+
+## v0.1.65 — Numpad viewport navigation and shortcut conflict audit
+
+### Desktop — full-size keyboard with a numeric keypad
+
+- In Object Mode, press Numpad `1`, `3` and `7`; confirm front, right and top cardinal views. Press `Ctrl+Numpad 1/3/7`; confirm back, left and bottom views. These are still perspective-camera cardinal views; no orthographic projection toggle is claimed.
+- Press Numpad `4` and `6` to orbit left/right by 15° per keypress, and `8` / `2` to orbit up/down by 15°. Press `9` to rotate the current view 180°. Confirm the camera keeps the same target and distance and that repeated vertical steps stop at the pole instead of flipping through it.
+- Enter Edit Mode, select a single face, then press Numpad `.`. Confirm the selected region is centered/framed even though only one face is selected. Repeat with one edge, one vertex, and multiple selected elements in each selection mode. In Object Mode, Numpad `.` frames the active object. `Home` continues to frame the full active object regardless of Edit Mode selection.
+- In Edit Mode, press the top-row `1/2/3` keys and confirm they still change Vertex/Edge/Face Select. Press Numpad `1/2/3` and confirm they navigate the view instead. With NumLock off, press Numpad `.` (which some browsers report as `Delete`); it must frame selection and must not delete geometry. The dedicated `Delete` key must still delete the selected topology/object.
+- Confirm `Numpad 5` reports that perspective/orthographic switching is not available yet; it must not alter the camera or mesh. Browser-reserved shortcuts, Ctrl/Meta+Z undo, Ctrl/Meta+Y redo, `Z` shading pie, `Shift+A` Add pie, and modal G/R/S/Bevel/Extrude/Inset/Loop Cut inputs must remain unchanged.
+- Confirm navigation shortcuts are ignored by the active text fields and do not create undo records. Reopen the radial wheels and confirm their keyboard navigation still takes priority while a wheel is open.
+
+### Android — Chrome
+
+- No new hardware-keyboard requirement is introduced. Confirm the existing bottom actionbar, one-finger orbit, two-finger pan/zoom, touch selection and radial menus still work. PC/numpad acceptance remains deferred until a physical keyboard is available.

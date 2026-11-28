@@ -3,6 +3,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { EditModeOverlay } from './EditModeOverlay.js';
 import { chooseSelectionViewDirection } from '../core/SelectionView.js';
 import { buildTransformGuideGeometry } from '../core/TransformGuideGeometry.js';
+import { orbitOffsetBySteps, rotateViewUpByHorizontalSteps } from '../core/ViewportNavigation.js';
 
 export class Viewport {
   constructor(container, { pixelRatio = 1.5, onSelect, onCursor, onStatus } = {}) {
@@ -297,6 +298,19 @@ export class Viewport {
     this.camera.lookAt(target); this.controls.update();
   }
 
+  orbitStep({ horizontalSteps = 0, verticalSteps = 0 } = {}) {
+    const target = this.controls.target.clone();
+    const offset = this.camera.position.clone().sub(target);
+    const nextOffset = orbitOffsetBySteps(offset.toArray(), this.camera.up.toArray(), horizontalSteps, verticalSteps);
+    if (!nextOffset) return false;
+    this.camera.position.copy(target).add(new THREE.Vector3(...nextOffset));
+    const nextUp = rotateViewUpByHorizontalSteps(this.camera.up.toArray(), horizontalSteps);
+    if (nextUp) this.camera.up.set(...nextUp).normalize();
+    this.camera.lookAt(target);
+    this.controls.update();
+    return true;
+  }
+
   frame(object) {
     if (!object) return;
     const box = new THREE.Box3().setFromObject(object); const sphere = box.getBoundingSphere(new THREE.Sphere());
@@ -313,7 +327,7 @@ export class Viewport {
    * operator replaces the live half-edge data with its preview candidate.
    * `focusFaceId` overrides group scoring and frames one active Individual Faces target.
    */
-  frameSelection(object, topology, { faceIds = [], edgeIds = [], vertexIds = [], focusFaceId = null } = {}) {
+  frameSelection(object, topology, { faceIds = [], edgeIds = [], vertexIds = [], focusFaceId = null, force = false } = {}) {
     if (!object || !topology?.faces?.length || !topology?.positions?.length) return false;
     const focusedFaceId = Number.isInteger(focusFaceId) && topology.faces[focusFaceId] ? focusFaceId : null;
     const selectedFaces = new Set();
@@ -339,7 +353,7 @@ export class Viewport {
       // One selected face/edge is already visible; avoid surprising camera
       // jumps. Reframe only when the user's actual topology selection is a set.
       const selectedElementCount = new Set(faceIds).size + new Set(edgeIds).size + new Set(vertexIds).size;
-      if (selectedElementCount < 2 || selectedFaces.size < 2) return false;
+      if (!force && (selectedElementCount < 2 || selectedFaces.size < 2)) return false;
     }
 
     object.updateMatrixWorld(true);

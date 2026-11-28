@@ -1,3 +1,5 @@
+import { resolveNumpadShortcut } from '../core/ViewportNavigation.js';
+
 export class KeyboardController {
   constructor({ viewport, commandBus, modalTransform, loopCutModal = null, bevelModal = null, faceOperationModal = null, getDocument, ui, notify }) {
     this.viewport=viewport; this.commandBus=commandBus; this.modal=modalTransform; this.loopCutModal=loopCutModal; this.bevelModal=bevelModal; this.faceOperationModal=faceOperationModal; this.getDocument=getDocument; this.ui=ui; this.notify=notify;
@@ -72,6 +74,22 @@ export class KeyboardController {
       if (key==='backspace') { event.preventDefault(); await this.dispatch('transform.modal_input',{value:'backspace'}); return; }
       return;
     }
+    const numpad = resolveNumpadShortcut(event.code, event);
+    if (numpad?.action === 'view') {
+      event.preventDefault(); await this.dispatch('view.set', { view: numpad.view }); return;
+    }
+    if (numpad?.action === 'orbit') {
+      event.preventDefault(); await this.dispatch('view.orbit_step', {
+        horizontalSteps: numpad.horizontalSteps,
+        verticalSteps: numpad.verticalSteps
+      }); return;
+    }
+    if (numpad?.action === 'frame-selection') {
+      event.preventDefault(); await this.dispatch('view.frame_selection'); return;
+    }
+    if (numpad?.action === 'reserved-projection-toggle') {
+      event.preventDefault(); this.notify?.('Perspective/orthographic toggle is not available yet.'); return;
+    }
     if (key==='escape' && this.viewport.selectionTool && this.viewport.selectionTool !== 'tap') { event.preventDefault(); await this.dispatch('selection.tool.set',{tool:'tap'}); return; }
     if (event.key==='Tab') { event.preventDefault(); await this.dispatch('mode.toggle_edit'); return; }
     if (event.shiftKey && key==='a') { event.preventDefault(); this.ui.togglePie('add',{gestureKey:'a'}); return; }
@@ -89,11 +107,7 @@ export class KeyboardController {
     if (event.shiftKey && key==='x' && doc.mode==='edit') { event.preventDefault(); await this.dispatch('mesh.dissolve'); return; }
     if (key==='x') { event.preventDefault(); if (doc.mode==='edit') await this.dispatch('mesh.delete'); else await this.dispatch('object.delete'); return; }
     if (key==='delete' || key==='backspace') { event.preventDefault(); if (doc.mode==='edit') await this.dispatch('mesh.delete'); else await this.dispatch('object.delete'); return; }
-    if (event.code==='Numpad1') await this.dispatch('view.set',{view:'front'});
-    else if (event.code==='Numpad3') await this.dispatch('view.set',{view:'right'});
-    else if (event.code==='Numpad7') await this.dispatch('view.set',{view:'top'});
-    else if (event.code==='Numpad5') this.notify?.('Perspective/orthographic toggle is scheduled for the next viewport pass.');
-    else if (key==='home') await this.dispatch('view.frame');
+    if (key==='home') { event.preventDefault(); await this.dispatch('view.frame'); }
   }
   onKeyUp(event) {
     const key=event.key.toLowerCase();

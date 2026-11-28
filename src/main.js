@@ -225,7 +225,22 @@ function registerCommands() {
     refresh(); return true;
   }, { recordUndo: false });
   commandBus.register('view.set', ({ view }) => viewport.setView(view), { recordUndo: false });
+  commandBus.register('view.orbit_step', ({ horizontalSteps = 0, verticalSteps = 0 } = {}) =>
+    viewport.orbitStep({ horizontalSteps, verticalSteps }), { recordUndo: false });
   commandBus.register('view.frame', () => viewport.frame(sceneDocument.activeObject), { recordUndo: false });
+  commandBus.register('view.frame_selection', () => {
+    const object = sceneDocument.activeObject;
+    const hem = object?.userData?.hem;
+    if (sceneDocument.mode !== 'edit' || !hem) return viewport.frame(object);
+    const framed = viewport.frameSelection(object, hem, {
+      faceIds: [...hem.faceSelection],
+      edgeIds: [...hem.edgeSelection],
+      vertexIds: [...hem.vertexSelection],
+      force: true
+    });
+    if (!framed) viewport.frame(object);
+    return framed;
+  }, { recordUndo: false });
   commandBus.register('shading.set', ({ mode }) => {
     sceneDocument.objects.forEach(mesh=>{mesh.material.wireframe=mode==='wire';mesh.material.needsUpdate=true;});
     notify(`${mode} shading`);
@@ -709,10 +724,10 @@ function refresh() {
   viewport.updateEditOverlay(editing ? sceneDocument.activeObject : null, sceneDocument.selectionMode);
   const hintDesktop = $('.hint-desktop'), hintMobile = $('.hint-mobile');
   if (editing) {
-    hintDesktop.textContent = 'Edit: Click topology · O proportional · Alt+L loop · Ctrl+Alt+L ring · Ctrl+B bevel · Ctrl+R loop cut · X delete';
+    hintDesktop.textContent = 'Edit: Click topology · O proportional · Alt+L loop · Ctrl+Alt+L ring · Ctrl+B bevel · Ctrl+R loop cut · X delete · Numpad: orbit/frame';
     hintMobile.textContent = 'Edit: Tap topology · Prop in the bottom bar toggles proportional G/R/S · adjust radius in its panel or transform pad · Select ▾ for selection tools';
   } else {
-    hintDesktop.textContent = 'Drag to orbit · Right-drag to pan · Scroll to zoom · Click to select · G/R/S then drag to transform';
+    hintDesktop.textContent = 'Drag to orbit · Right-drag to pan · Scroll to zoom · Numpad 2/4/6/8 orbit · Numpad . frame · G/R/S transform';
     hintMobile.textContent = 'One finger: orbit · Two fingers: pan/zoom · Long press: 3D Cursor · G/R/S: transform';
   }
   const stats=sceneDocument.stats(); $('#object-count').textContent=`Objects: ${stats.objects}`;
