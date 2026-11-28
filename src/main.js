@@ -5,6 +5,7 @@ import { SceneDocument } from './core/SceneDocument.js';
 import { buildMoveReadout } from './core/TransformReadout.js';
 import { getTransformSnapSettingKeys, getTransformSnapStep, normalizeTransformSnapSettings } from './core/TransformSnap.js';
 import { normalizeProportionalSettings } from './core/ProportionalEditing.js';
+import { bindProjectionToggleButton, syncProjectionToggleButton } from './core/ProjectionToggle.js';
 import { UndoManager } from './core/UndoManager.js';
 import { MeshOperators } from './operators/MeshOperators.js';
 import { SelectionOperators } from './operators/SelectionOperators.js';
@@ -86,15 +87,10 @@ try {
 const sceneDocument = new SceneDocument(viewport.scene);
 viewport.setContent(sceneDocument.content);
 function syncProjectionUI(mode = viewport.projectionMode()) {
-  const button = $('#projection-toggle');
-  const orthographic = mode === 'orthographic';
-  if (button) {
-    button.textContent = orthographic ? 'O' : 'P';
-    button.setAttribute('aria-pressed', String(orthographic));
-    button.title = `${orthographic ? 'Orthographic' : 'Perspective'} · tap to switch (Numpad 5)`;
-  }
+  const state = syncProjectionToggleButton($('#projection-toggle'), mode);
+  syncProjectionToggleButton($('#mobile-projection-toggle'), mode);
   const label = $('#view-label');
-  if (label) label.textContent = `User ${orthographic ? 'Orthographic' : 'Perspective'}`;
+  if (label && state) label.textContent = `User ${state.mode === 'orthographic' ? 'Orthographic' : 'Perspective'}`;
 }
 viewport.onProjectionChange = syncProjectionUI;
 syncProjectionUI();
@@ -1132,7 +1128,8 @@ for (const [input,setting] of snapStepBindings) {
   });
 }
 $$('[data-view]').forEach(button=>button.addEventListener('click',()=>run('view.set',{view:button.dataset.view})));
-$('#projection-toggle')?.addEventListener('click',()=>run('view.toggle_projection')); 
+$$('[data-projection-toggle]').forEach(button => bindProjectionToggleButton(button, () => run('view.toggle_projection')));
+
 $$('[data-modifier]').forEach(button=>button.addEventListener('click',()=>run('modifier.add',{type:button.dataset.modifier})));
 $$('[data-panel]').forEach(button=>button.addEventListener('click',()=>{
   $$('.panel-tab').forEach(item=>item.classList.toggle('active',item===button));

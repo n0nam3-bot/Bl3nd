@@ -378,3 +378,13 @@ Full Blender keymap parity is not claimed by this build. Android touch acceptanc
 - Start Move, Rotate and Scale in orthographic mode. Confirm pointer-driven screen movement uses the orthographic world-units-per-pixel scale and is independent of pivot depth; numeric entry, axis constraints, snapping, Apply/Cancel and Undo/Redo remain unchanged. Then switch back to perspective and confirm depth/FOV movement scaling returns.
 - Start Bevel, Extrude, Inset or Loop Cut. Confirm projection switching is not performed during the active modal operation; Apply/Cancel and Undo/Redo remain unaffected.
 - On Android, confirm one-finger orbit, two-finger pan/zoom, selection taps, radial pie menus and the bottom actionbar remain available with the P/O button visible. Desktop numpad hardware acceptance remains pending until a physical keyboard is available.
+
+
+## v0.1.67 — Mobile P/O projection control access
+
+- On Android, confirm the small P/O button beside the X/Y/Z view axes is hidden at the mobile breakpoint. A dedicated **P/O View** control must be visible in the bottom actionbar beside the existing quick actions, with a comfortably tappable 48px height.
+- Tap **P**. Confirm the viewport switches to orthographic, the button changes to **O**, its active styling appears, and the view label reports User Orthographic. The button must remain visible after switching to Edit Mode and when the More panel is closed.
+- Tap **O**. Confirm perspective returns, the button changes back to **P**, active styling clears, and the label reports User Perspective. Repeat several times; each tap must perform exactly one toggle.
+- Tap the P/O button while close to the viewport edge. Confirm the action changes projection without rotating the view, selecting mesh elements, placing the 3D cursor or opening another panel.
+- During an active Move/Rotate/Scale, Bevel, Extrude, Inset or Loop Cut modal, confirm the mobile actionbar is disabled/visually dimmed per existing modal rules and projection switching remains blocked. Confirm Cancel/Apply restores the button's usable state.
+- Verify the desktop P/O button remains beside the X/Y/Z axes and continues to synchronize with the same mobile/keyboard camera state. Desktop Numpad 5 acceptance still requires a physical keyboard.

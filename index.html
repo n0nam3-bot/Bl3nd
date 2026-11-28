@@ -75,7 +75,7 @@
             <button data-view="front" class="axis-x">X</button>
             <button data-view="right" class="axis-y">Y</button>
             <button data-view="top" class="axis-z">Z</button>
-            <button id="projection-toggle" class="projection-toggle" type="button" aria-pressed="false" title="Toggle Perspective / Orthographic (Numpad 5)">P</button>
+            <button id="projection-toggle" class="projection-toggle" data-projection-toggle type="button" aria-pressed="false" aria-label="Switch to Orthographic projection" title="Toggle Perspective / Orthographic (Numpad 5)">P</button>
           </div>
           <div class="cursor-reticle" id="cursor-reticle" hidden>＋</div>
           <div class="modal-readout" id="modal-readout" hidden></div>
@@ -264,6 +264,7 @@
       <button id="mobile-move">✥<small>Move</small></button>
       <button id="mobile-rotate">⟳<small>Rotate</small></button>
       <button id="mobile-scale">⤢<small>Scale</small></button>
+      <button id="mobile-projection-toggle" data-projection-toggle aria-label="Switch to Orthographic projection" aria-pressed="false" title="Switch to Orthographic projection"><span data-projection-label>P</span><small>View</small></button>
       <button id="mobile-proportional" aria-label="Enable proportional editing" aria-pressed="false" title="Proportional Editing · OFF">◎<small>Prop OFF</small></button>
       <button id="mobile-edit">◫<small>Edit</small></button>
       <button id="mobile-extrude">▱<small>Extrude</small></button>
