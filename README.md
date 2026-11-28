@@ -24,7 +24,7 @@ The application does not require a build command. Open the GitHub Pages URL afte
 ### Object Mode multi-selection
 
 - Desktop: click an object to replace the selection; `Shift`+click adds an object, and `Shift`+clicking a selected object removes it. The active object is the most recently added object and is shown with the existing active highlight; other selected objects use a secondary highlight. Clicking empty space clears the selection unless Shift is held.
-- Android: tap **Multi** in the bottom actionbar to enable additive/toggle selection, then tap objects. Turn Multi off to return to normal single-object taps. The Multi button occupies the same actionbar slot as Proportional Editing and is shown only in Object Mode on touch devices.
+- Android: the bottom actionbar shows **Multi OFF** in Object Mode. Tap it to switch to **ON**, then tap a second object to add it; tap an already-selected object again to remove it. The button turns green and displays the selected-object count, the footer repeats `Selected: N`, the active object is highlighted amber and additional selected objects are highlighted blue. While Multi is ON, tapping empty viewport space preserves the current group. Tap **Multi OFF** to return to normal single-object taps. The button shares the Edit Mode Proportional Editing slot and is shown only in Object Mode on touch devices.
 - `G`, `R` and `S` operate on the complete Object Mode selection in one modal and one undo step. Delete removes all selected objects. Entering Edit Mode intentionally collapses to the active object because multi-object Edit Mode is not implemented.
 
 ### Radial pie menus

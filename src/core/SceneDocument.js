@@ -63,7 +63,7 @@ export class SceneDocument {
       const active = item === this.activeObject;
       const materials = Array.isArray(item.material) ? item.material : [item.material];
       for (const material of materials) {
-        if (material?.emissive) material.emissive.setHex(active ? 0x342315 : selected ? 0x142b38 : 0x000000);
+        if (material?.emissive) material.emissive.setHex(active ? 0x8a4a19 : selected ? 0x075d82 : 0x000000);
       }
       item.userData.objectSelected = selected;
       item.userData.objectActive = active;

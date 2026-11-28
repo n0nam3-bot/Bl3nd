@@ -97,6 +97,7 @@ syncProjectionUI();
 loadingProgress(43, 'Viewport created · preparing the scene document…');
 
 let ui;
+let touchController = null;
 const undoManager = new UndoManager({
   maxEntries: capabilities.maxUndoEntries,
   status,
@@ -178,7 +179,16 @@ function initializeEditSelection(hem) {
 function registerCommands() {
   commandBus.register('object.add_primitive', ({ primitive = 'cube' }) => { const mesh = sceneDocument.addPrimitive(primitive); refresh(); viewport.frame(mesh); return mesh; });
   commandBus.register('object.delete', () => { const ok = sceneDocument.deleteActiveObject(); refresh(); return ok; });
-  commandBus.register('object.select', ({ mesh = null, additive = false, toggle = false }) => { sceneDocument.setActive(mesh, { additive, toggle }); refresh(); }, { recordUndo: false });
+  commandBus.register('object.select', ({ mesh = null, additive = false, toggle = false }) => {
+    sceneDocument.setActive(mesh, { additive, toggle });
+    touchController?.syncObjectSelectionButton();
+    if (additive) {
+      const count = sceneDocument.selectedObjects.size;
+      const activeName = sceneDocument.activeObject?.name;
+      status(`${count} object${count === 1 ? '' : 's'} selected${activeName ? ` · Active: ${activeName}` : ''}`);
+    }
+    refresh();
+  }, { recordUndo: false });
   commandBus.register('mesh.select_from_hit', ({ mesh, faceId, event = null }) => {
     if (!mesh?.userData?.hem || faceId < 0) return false;
     if (sceneDocument.activeObject !== mesh) sceneDocument.setActive(mesh);
@@ -644,8 +654,10 @@ function faceIdForTriangle(hem, triangleIndex) {
 function handleViewportSelection(hit, pointer, event) {
   if (modalTransform.active || loopCutModal.active || bevelModal.active) return;
   if (!hit) {
-    if (sceneDocument.mode === 'object') run('object.select',{mesh:null});
-    else run('mesh.clear_selection');
+    if (sceneDocument.mode === 'object') {
+      const additive = Boolean(event?.shiftKey);
+      run('object.select',{mesh:null,additive,toggle:additive});
+    } else run('mesh.clear_selection');
     return;
   }
   if (sceneDocument.mode === 'object') {
@@ -745,6 +757,7 @@ function refresh() {
     hintMobile.textContent = 'One finger: orbit · Two fingers: pan/zoom · Multi adds/toggles objects · P/O View switches projection · Long press: 3D Cursor · G/R/S: transform';
   }
   const stats=sceneDocument.stats(); $('#object-count').textContent=`Objects: ${stats.objects} · Selected: ${sceneDocument.selectedObjects?.size || 0}`;
+  touchController?.syncObjectSelectionButton();
   $('#mesh-stats').textContent=`Verts ${stats.vertices} · Edges ${stats.edges} · Faces ${stats.faces}`;
   $$('[data-transform]').forEach(input=>{
     const mesh=sceneDocument.activeObject,kind=input.dataset.transform,axis=input.dataset.axis;
@@ -1249,7 +1262,8 @@ viewportCanvas.addEventListener('contextmenu',event=>{
   if(loopCutModal.active){event.preventDefault();run('mesh.loop_cut_cancel');return;}
   if(modalTransform.active){event.preventDefault();run('transform.modal_cancel');}
 });
-new TouchController(viewport,notify);
+touchController = new TouchController(viewport, notify, () => sceneDocument.getSelectedObjects().length);
+touchController.syncObjectSelectionButton();
 new SelectionGestureController({viewport,dispatch:(name,payload)=>run(name,payload),getDocument:()=>sceneDocument,notify});
 new KeyboardController({viewport,commandBus,modalTransform,loopCutModal,bevelModal,faceOperationModal,getDocument:()=>sceneDocument,ui,notify});
 loadingProgress(88, 'Keyboard, pointer and touch controls are ready…');

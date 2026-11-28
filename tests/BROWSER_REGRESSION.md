@@ -4,7 +4,7 @@ This is a manual acceptance run for the deployed Bl3nd app. It checks the real b
 
 ## Build under test
 
-Current deployed baseline before v0.1.66: v0.1.65, `main` commit `eaf6accaf2ec1d1989f275c7333d6648e77bbc56`; Pages workflow run `46115270214` succeeded on 2026-11-28 after unpack run `46115259398`. The v0.1.66 package is a pending delta based on that deployed commit.
+Current repository baseline before v0.1.70: v0.1.69, `main` commit `161e322ba814711839cb3a8d178d5ced963a1219`. The last Pages deployment independently confirmed in this handoff was v0.1.68; verify the latest Pages run before treating v0.1.69 as live.
 
 Open the deployed app only after the latest Pages workflow succeeds:
 
@@ -423,8 +423,8 @@ Full Blender keymap parity is not claimed by this build. Android touch acceptanc
 - Delete with multiple objects selected. Confirm all selected objects are deleted together, the remaining scene is valid and one Undo restores all deleted objects. Enter Edit Mode with multiple objects selected and confirm only the active object remains selected/edited. Return to Object Mode and verify ordinary single-object selection still works.
 
 ### Android — Chrome
-- In Object Mode, confirm the **Multi** actionbar button is visible in the same slot used by Proportional Editing in Edit Mode. Tap Multi ON, then tap two objects. Confirm both remain selected, the last tapped object becomes active, and the Multi button shows its active state.
-- Tap an already selected object while Multi is ON. Confirm it is removed and the remaining active object is retained. Tap Multi OFF; the next object tap must replace the selection.
+- In Object Mode, confirm the **Multi OFF** actionbar button is visible in the same slot used by Proportional Editing in Edit Mode. Create a second object at a visible offset. Tap Multi ON, then tap the second object. Confirm the button turns green and reads `ON · 2`, the footer says `Selected: 2`, the active object is amber and the other selected object is blue.
+- Tap empty viewport space while Multi is ON; the two-object selection must remain. Tap one selected object again; it must be removed and the remaining object becomes active, with the button/footer count changing to 1. Tap Multi OFF; the next object tap must replace the selection and the button reads `Multi OFF`.
 - Enter Edit Mode and confirm Multi disappears while Prop controls take its place. Return to Object Mode and confirm Multi returns OFF.
 - With at least two objects selected, start G/R/S from the bottom actionbar. Confirm the operation applies to all selected objects, mobile numeric entry and Apply/Cancel work, and camera orbit returns immediately after completion.
 - Test Median, Bounding Box, Individual and Cursor pivots with Move/Rotate/Scale. Confirm individual-origin guide markers remain visible and controls do not select geometry or place the cursor accidentally.

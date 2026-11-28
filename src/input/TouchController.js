@@ -1,9 +1,11 @@
 import { SelectionAddMode } from '../core/SelectionAddMode.js';
+import { shouldMarkTouchSelectionAdditive } from '../core/TouchSelectionInput.js';
 
 export class TouchController {
-  constructor(viewport, notify) {
+  constructor(viewport, notify, getSelectedObjectCount = () => 0) {
     this.viewport = viewport;
     this.notify = notify;
+    this.getSelectedObjectCount = getSelectedObjectCount;
     this.timer = null;
     this.start = null;
     this.activePointers = new Set();
@@ -45,7 +47,10 @@ export class TouchController {
       this.multiSelectClick = () => {
         const enabled = this.objectSelectionAddMode.toggle();
         this.syncObjectSelectionButton();
-        const message = enabled ? 'Object Multi-Select ON · tap objects to add or remove them' : 'Object Multi-Select OFF · new taps replace the selection';
+        const count = Math.max(0, Number(this.getSelectedObjectCount()) || 0);
+        const message = enabled
+          ? `Multi-Select ON · ${count} selected · tap another object to add it`
+          : 'Multi-Select OFF · new taps replace the selection';
         const status = document.querySelector('#status-message');
         if (status) status.textContent = message;
         this.notify?.(enabled ? 'Object Multi-Select enabled' : 'Object Multi-Select disabled', 'success');
@@ -110,15 +115,17 @@ export class TouchController {
     const button = this.multiSelectButton;
     if (!button) return;
     const enabled = this.objectSelectionAddMode.enabled;
+    const selectedCount = Math.max(0, Number(this.getSelectedObjectCount()) || 0);
+    button.dataset.selectedCount = String(selectedCount);
     button.hidden = !this.isTouchDevice || this.isEditMode();
     button.classList.toggle('active', enabled);
     button.setAttribute('aria-pressed', String(enabled));
-    button.setAttribute('aria-label', `Object Multi-Select ${enabled ? 'on' : 'off'}`);
+    button.setAttribute('aria-label', `Object Multi-Select ${enabled ? 'on' : 'off'} · ${selectedCount} object(s) selected`);
     button.title = enabled
-      ? 'Object Multi-Select is ON · tap objects to add or remove them'
-      : 'Enable to add or remove objects with taps';
+      ? `Multi-Select ON · ${selectedCount} selected · tap another object to add it; tap a selected object to remove it`
+      : 'Multi-Select OFF · tap to add/remove objects without a keyboard';
     const label = button.querySelector('small');
-    if (label) label.textContent = enabled ? 'Multi ON' : 'Multi';
+    if (label) label.textContent = enabled ? `ON · ${selectedCount}` : 'Multi OFF';
   }
 
   ensureSelectionMenuToggle() {
@@ -179,24 +186,25 @@ export class TouchController {
   }
 
   markAdditiveSelection(event) {
-    if (event.pointerType === 'mouse' || this.viewport.modalOperationActive) return;
     const editMode = this.isEditMode();
-    if (editMode) {
-      if (!this.selectionAddMode.shouldAdd(event)) return;
-    } else if (!this.objectSelectionAddMode.enabled) return;
+    const shouldMark = shouldMarkTouchSelectionAdditive({
+      pointerType: event.pointerType,
+      modalOperationActive: this.viewport.modalOperationActive,
+      editMode,
+      objectAddModeEnabled: this.objectSelectionAddMode.enabled,
+      editAddModeEnabled: this.selectionAddMode.shouldAdd(),
+      selectionTool: this.viewport.selectionTool || 'tap',
+      eventType: event.type,
+      shiftKey: event.shiftKey
+    });
+    if (!shouldMark) return;
 
-    const tool = this.viewport.selectionTool || 'tap';
-    const isTapSelection = !editMode || tool === 'tap';
-    const relevantPhase = isTapSelection ? event.type === 'pointerup' : event.type === 'pointerdown';
-    if (!relevantPhase || event.shiftKey) return;
-
-    // The existing viewport/gesture code already treats Shift as additive.
-    // Add an own property to this touch PointerEvent so its normal input path
-    // is reused without duplicating picking or mesh-selection logic here.
+    // Viewport picking and region gestures already share the Shift-aware path.
+    // Decorate only the relevant touch phase rather than duplicating picking.
     try {
       Object.defineProperty(event, 'shiftKey', { configurable: true, value: true });
     } catch {
-      try { event.shiftKey = true; } catch { /* An immutable event safely falls back to normal selection. */ }
+      try { event.shiftKey = true; } catch { /* Immutable events safely fall back to ordinary selection. */ }
     }
   }
 

@@ -75,7 +75,8 @@ body.face-operation-modal-active .topbar,body.face-operation-modal-active .tool-
 
 /* Direct proportional-edit access on phones; no More/Scene drawer or keyboard required. */
 .mobile-actionbar button[hidden]{display:none!important}
-.mobile-actionbar #mobile-proportional.active,.mobile-actionbar #mobile-multi-select.active{color:#a6e6bd;background:#23392f;border-radius:8px}
+.mobile-actionbar #mobile-proportional.active{color:#a6e6bd;background:#23392f;border-radius:8px}
+.mobile-actionbar #mobile-multi-select.active{color:#b6f0ca;background:#234030;border-radius:8px;outline:1px solid #62b886;outline-offset:-1px}
 .mobile-proportional-panel{display:none}
 @media(max-width:650px){
   .mobile-proportional-panel:not([hidden]){position:fixed;left:10px;right:10px;bottom:calc(64px + env(safe-area-inset-bottom));z-index:8;display:grid;grid-template-columns:1fr auto;gap:5px 9px;padding:10px 12px;background:#191c22f5;border:1px solid #4d966e;border-radius:10px;box-shadow:0 8px 28px #0009;color:#dce5ee}
