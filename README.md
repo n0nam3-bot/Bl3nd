@@ -13,6 +13,12 @@ The application displays staged startup progress and keeps the exact startup err
 
 The application does not require a build command. Open the GitHub Pages URL after the deployment workflow completes.
 
+## Getting the newest deployed version
+
+When Bl3nd opens, it registers a release-versioned service worker and explicitly checks for updates. Update checks also run when the app becomes visible again or returns to the foreground. A changed worker takes control and reloads the page once. New app-shell files are fetched with HTTP-cache bypass, and page navigation checks GitHub Pages before falling back to the last cached page when offline. This refreshes the newest version that has successfully deployed to Pages; it does not replace a pending or failed GitHub Actions deployment.
+
+For each release, update `APP_RELEASE` in the service-worker registration block in `index.html`. The service-worker cache names derive from that same version automatically.
+
 ## Local scene recovery
 
 Bl3nd automatically saves the last committed scene in this browser after a short pause. When you reopen or refresh the app, it restores that scene before creating the starter cube. The recovery includes mesh edits, object transforms, modifiers, visibility, selection, mode, pivot and 3D cursor position. The footer shows checking, ready, pending, saving, saved, restored or unavailable/error status.

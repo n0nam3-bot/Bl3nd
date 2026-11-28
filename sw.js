@@ -1,5 +1,7 @@
-const SHELL_CACHE = 'bl3nd-shell-v74';
-const RUNTIME_CACHE = 'bl3nd-runtime-v74';
+const RELEASE_VERSION = new URL(self.location.href).searchParams.get('v') || '0.1.78';
+const CACHE_VERSION = RELEASE_VERSION.replace(/[^a-zA-Z0-9._-]/g, '-');
+const SHELL_CACHE = `bl3nd-shell-${CACHE_VERSION}`;
+const RUNTIME_CACHE = `bl3nd-runtime-${CACHE_VERSION}`;
 const APP_SHELL = [
   './', './index.html', './manifest.json', './src/styles.css',
   './src/main.js', './src/core/DeviceCapabilities.js', './src/core/CommandBus.js', './src/core/SceneAutosave.js', './src/core/ObjectSelection.js',
@@ -13,7 +15,13 @@ const APP_SHELL = [
 self.addEventListener('install', event => {
   event.waitUntil((async () => {
     const cache = await caches.open(SHELL_CACHE);
-    await cache.addAll(APP_SHELL);
+    // Bypass the browser HTTP cache when building a new app shell. This prevents a
+    // new service worker from precaching an older copy of a changed repo file.
+    const freshRequests = APP_SHELL.map(path => new Request(
+      new URL(path, self.registration.scope),
+      { cache: 'reload' }
+    ));
+    await cache.addAll(freshRequests);
     await self.skipWaiting();
   })());
 });
@@ -46,13 +54,40 @@ self.addEventListener('fetch', event => {
     return;
   }
   if (request.mode === 'navigate') {
-    event.respondWith(fetch(request).then(response => {
-      const copy = response.clone(); caches.open(SHELL_CACHE).then(cache => cache.put('./index.html', copy)); return response;
-    }).catch(() => caches.match('./index.html')));
+    event.respondWith((async () => {
+      try {
+        // Navigation must reach GitHub Pages rather than a stale browser HTTP-cache entry.
+        const response = await fetch(new Request(request, { cache: 'no-store' }));
+        if (response.ok) {
+          const cacheWrite = caches.open(SHELL_CACHE)
+            .then(cache => cache.put('./index.html', response.clone()))
+            .catch(() => {});
+          event.waitUntil(cacheWrite);
+        }
+        return response;
+      } catch {
+        // Keep the last precached page usable when the device is genuinely offline.
+        const currentCache = await caches.open(SHELL_CACHE);
+        return (await currentCache.match('./index.html')) || caches.match('./index.html');
+      }
+    })());
     return;
   }
-  event.respondWith(caches.match(request).then(cached => cached || fetch(request).then(response => {
-    if (response.ok) caches.open(SHELL_CACHE).then(cache => cache.put(request,response.clone()));
-    return response;
-  })));
+  event.respondWith((async () => {
+    const currentCache = await caches.open(SHELL_CACHE);
+    const cached = await currentCache.match(request);
+    if (cached) return cached;
+    try {
+      const response = await fetch(request);
+      if (response.ok) {
+        const cacheWrite = currentCache.put(request, response.clone()).catch(() => {});
+        event.waitUntil(cacheWrite);
+      }
+      return response;
+    } catch (error) {
+      const fallback = await caches.match(request);
+      if (fallback) return fallback;
+      throw error;
+    }
+  })());
 });

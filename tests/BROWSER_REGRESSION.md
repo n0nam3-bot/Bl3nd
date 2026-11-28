@@ -4,7 +4,7 @@ This is a manual acceptance run for the deployed Bl3nd app. It checks the real b
 
 ## Build under test
 
-Current repository baseline before v0.1.73: v0.1.72 source, `main` commit `e8c6ed33ccc37813b140a584a9281ebd592c812e`; Pages workflow run #80 succeeded. The owner reports that blank-area Move/Rotate/Scale drags still do nothing on Android after v0.1.72, so the v0.1.73 pointer-origin re-anchoring and capture-phase pointer-ID routing fix needs live retesting.
+Current accepted mobile baseline: v0.1.77 local scene recovery. The owner confirmed that scene recovery works after reload. Desktop Chrome/Edge and the v0.1.73 blank-area free-drag retest remain deferred. This document now includes the v0.1.78 update-delivery checks below.
 
 Open the deployed app only after the latest Pages workflow succeeds:
 
@@ -530,3 +530,14 @@ Full Blender keymap parity is not claimed by this build. Android touch acceptanc
 - Repeat object add, object transforms, edit-mode topology changes, modifiers, undo/redo and immediate reload recovery. Confirm the footer state and that the app never creates a duplicate starter cube when a recovery record exists.
 - Begin each modal type and reload before Apply; confirm only the last committed scene is restored. Apply and reload to confirm the committed version is saved.
 - Verify the save state survives service-worker activation and normal browser refresh. Confirm GLB export remains independent and portable.
+
+
+## Release update delivery — v0.1.78
+
+- With an older Bl3nd tab already open, deploy a newer app release and wait for the Pages workflow to finish. Return to the open tab or reload it. Confirm the new release-versioned worker installs, takes control, and reloads the page once without entering a reload loop.
+- Open the app in a fresh tab while online. In browser developer tools where available, verify the navigation request is made without HTTP-cache reuse and the app-shell precache is populated from fresh requests. The app should display the newest successfully deployed UI, not the prior shell cache.
+- Switch away from the app for more than one minute and return, or refocus the tab after a deployment. Confirm the app performs an update check and applies the new worker when one is available.
+- After the update is installed, reload once more. Confirm there is no extra reload and the active service-worker cache names match the current release version.
+- With the device offline, open/reload the app. Confirm the last cached app page remains available. Reconnect and return to the app; confirm the update check resumes and a deployed update can install.
+- Repeat scene recovery: confirm the locally saved scene remains intact across the service-worker upgrade and automatic page reload. Service-worker updates must not clear IndexedDB scene recovery.
+- Note that this mechanism fetches the newest version deployed to GitHub Pages. It cannot make a not-yet-deployed or failed Actions run available.

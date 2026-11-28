@@ -340,21 +340,59 @@
       };
 
       if ('serviceWorker' in navigator) {
+        // Bump this once per app release. The query string changes the worker script URL,
+        // while updateViaCache:'none' prevents HTTP cache reuse for the worker and imports.
+        const APP_RELEASE = '0.1.78';
         const hadController = Boolean(navigator.serviceWorker.controller);
+        let controllerReloaded = false;
         if (hadController) {
+          let shouldReloadOnControllerChange = true;
           try {
-            const refreshKey = 'bl3nd-cache-refresh-v32';
-            if (!sessionStorage.getItem(refreshKey)) {
-              navigator.serviceWorker.addEventListener('controllerchange', () => {
-                sessionStorage.setItem(refreshKey, '1');
-                window.location.reload();
-              }, { once: true });
-            }
-          } catch { /* session storage may be disabled; versioned cache still updates */ }
+            shouldReloadOnControllerChange = !sessionStorage.getItem(`bl3nd-controller-refresh-${APP_RELEASE}`);
+          } catch { /* A one-shot in-memory guard still works when session storage is unavailable. */ }
+          if (shouldReloadOnControllerChange) {
+            navigator.serviceWorker.addEventListener('controllerchange', () => {
+              if (controllerReloaded) return;
+              controllerReloaded = true;
+              try { sessionStorage.setItem(`bl3nd-controller-refresh-${APP_RELEASE}`, '1'); } catch {}
+              window.location.reload();
+            }, { once: true });
+          }
         }
-        navigator.serviceWorker.register('./sw.js', { scope: './' }).catch(error => {
+
+        let serviceWorkerRegistration = null;
+        let lastUpdateCheck = 0;
+        const checkForLatestServiceWorker = async () => {
+          if (!serviceWorkerRegistration || document.visibilityState === 'hidden') return;
+          if (typeof serviceWorkerRegistration.update !== 'function') return;
+          const now = Date.now();
+          if (now - lastUpdateCheck < 60000) return;
+          lastUpdateCheck = now;
+          try {
+            await serviceWorkerRegistration.update();
+          } catch (error) {
+            console.warn('[Bl3nd service worker update check]', error);
+          }
+        };
+
+        const workerURL = new URL('./sw.js', window.location.href);
+        workerURL.searchParams.set('v', APP_RELEASE);
+        navigator.serviceWorker.register(workerURL.href, {
+          scope: './',
+          updateViaCache: 'none'
+        }).then(registration => {
+          serviceWorkerRegistration = registration;
+          return checkForLatestServiceWorker();
+        }).catch(error => {
           console.warn('[Bl3nd service worker]', error);
         });
+
+        // Recheck after returning to the app, including restores from the back-forward cache.
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'visible') checkForLatestServiceWorker();
+        });
+        window.addEventListener('focus', checkForLatestServiceWorker, { passive: true });
+        window.addEventListener('pageshow', checkForLatestServiceWorker, { passive: true });
       }
 
       window.addEventListener('error', event => {
