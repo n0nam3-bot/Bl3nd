@@ -4,13 +4,12 @@ This is a manual acceptance run for the deployed Bl3nd app. It checks the real b
 
 ## Build under test
 
-Current package baseline before v0.1.50: v0.1.49, `main` commit `d8d8cff318bc4ae86f26e6f2668de0d64f069fc1`; Pages workflow run `46085889963` succeeded.
+Current package baseline before v0.1.51: v0.1.50, `main` commit `effe5c81ceb5caf21557f17025e08aea3fd5338b`; Pages workflow run `46087985134` succeeded.
 
 Open the deployed app only after the latest Pages workflow succeeds:
 
 `https://n0nam3-bot.github.io/Bl3nd/`
 
-Latest deployed baseline before this package is v0.1.43, `main` commit `7b03007246da36e6e1548c37cb4249d368253195`, Pages workflow run #51 (success). After applying v0.1.44, reload and allow the v41 service-worker cache to activate before testing.
 
 ## Desktop — Chrome or Edge
 
@@ -202,3 +201,12 @@ This procedure validates browser interaction for the starter cube. The automated
 - Apply each transform and confirm the guide disappears immediately. Cancel each transform and confirm it disappears while the source transform/mesh is restored. Starting Bevel, Extrude, Inset or Loop Cut must never leave a stale transform guide visible.
 - Orbit/pan/zoom before starting G/R/S from several camera angles. The guide must align with the actual projected world axes/pivot and remain clipped within the viewport. Normal camera navigation remains disabled during the modal transform; the SVG guide must not block viewport drags, touch gestures or modal controls. Confirm the marker stays at the cursor when the active pivot mode is 3D Cursor.
 - Desktop Chrome/Edge follows the same visual checks when the owner next has PC access; desktop acceptance remains deferred until then.
+
+
+## Transform pivot Bounding Box Center regression — v0.1.51 (browser acceptance pending)
+
+- In Edit Mode, select an asymmetrical set of vertices (for example, two close together and one much farther away). Choose **Median Point**, start Rotate or Scale, and note the guide pivot. Cancel, choose **Bounding Box Center**, and repeat. The pivot must now sit at the center of the selected vertices' local-space minimum/maximum extents, not at their arithmetic average.
+- Repeat with a flat selection and a single selected vertex. The bounding-box pivot must remain finite and sit at the middle of the selected extents; a single vertex must use that vertex position.
+- In Object Mode, choose Bounding Box Center and transform a mesh whose local geometry is offset from its object origin (or an imported mesh with an off-center origin). The guide pivot must sit at the center of the mesh's world-space bounds, and Rotate/Scale must operate around that point. The object origin must remain distinct.
+- Switch between Median Point, Bounding Box Center and 3D Cursor. The dropdown must reflect the active mode after a refresh/undo restore. 3D Cursor remains fixed while the object/selection moves; the Median and Bounding Box pivots remain anchored to the transform's starting geometry during Rotate/Scale previews.
+- Confirm the guide remains pointer-transparent, snapping still uses the same increments, numeric input stays exact, and Apply/Cancel/Undo/Redo remain transactional. Individual Origins is a documented limited mode and is not part of this acceptance. Desktop Chrome/Edge remains deferred.

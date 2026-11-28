@@ -555,7 +555,10 @@ function registerCommands() {
     return next;
   }, { recordUndo: false });
   commandBus.register('cursor.set', ({ point }) => { sceneDocument.cursor.fromArray(point); refreshCursor(); return true; }, { recordUndo: false });
-  commandBus.register('pivot.set', ({ pivot }) => { sceneDocument.pivot = pivot; refresh(); }, { recordUndo: false });
+  commandBus.register('pivot.set', ({ pivot }) => {
+    if (!['median', 'bounds', 'individual', 'cursor'].includes(pivot)) return false;
+    sceneDocument.pivot = pivot; refresh(); return true;
+  }, { recordUndo: false });
   commandBus.register('modifier.add', async ({ type }) => {
     const mesh = sceneDocument.activeObject; if (!mesh) return notify('Select a mesh before adding a modifier.');
     modifierStack.add(mesh, type); await modifierStack.evaluate(mesh); refreshModifiers();
@@ -630,6 +633,7 @@ function refreshModifiers() {
 }
 
 function refresh() {
+  $('#pivot-select').value = ['median', 'bounds', 'individual', 'cursor'].includes(sceneDocument.pivot) ? sceneDocument.pivot : 'median';
   $('#object-mode-btn').classList.toggle('active',sceneDocument.mode==='object');
   $('#edit-mode-btn').classList.toggle('active',sceneDocument.mode==='edit');
   $('#selection-vertex').classList.toggle('active',sceneDocument.selectionMode==='vertex');

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { resolveTransformAxis } from '../core/TransformOrientation.js';
+import { resolveTransformPivotPoint } from '../core/TransformPivot.js';
 import { getTransformSnapStep, normalizeTransformSnapSettings, resolveMoveSnapAmount, resolveRotateSnapDegrees, resolveScaleSnapFactor } from '../core/TransformSnap.js';
 
 const AXES = {
@@ -72,9 +73,8 @@ export class ModalTransform {
         return false;
       }
       this.originalVertices = this.vertexIds.map(id => [...hem.positions[id]]);
-      this.editPivot.set(0, 0, 0);
-      for (const point of this.originalVertices) this.editPivot.add(new THREE.Vector3(...point));
-      this.editPivot.divideScalar(this.originalVertices.length);
+      const selectionPivot = resolveTransformPivotPoint(this.originalVertices, this.document.pivot);
+      this.editPivot.fromArray(selectionPivot || [0, 0, 0]);
       if (this.document.pivot === 'cursor') {
         this.editPivot.copy(this.object.worldToLocal(this.document.cursor.clone()));
       }
@@ -84,7 +84,15 @@ export class ModalTransform {
       this.vertexIds = [];
       const worldPosition = this.object.getWorldPosition(new THREE.Vector3());
       const worldQuaternion = this.object.getWorldQuaternion(new THREE.Quaternion());
-      this.worldPivot.copy(this.document.pivot === 'cursor' ? this.document.cursor : worldPosition);
+      if (this.document.pivot === 'cursor') {
+        this.worldPivot.copy(this.document.cursor);
+      } else if (this.document.pivot === 'bounds') {
+        const worldBounds = new THREE.Box3().setFromObject(this.object, true);
+        this.worldPivot.copy(worldBounds.isEmpty() ? worldPosition : worldBounds.getCenter(new THREE.Vector3()));
+      } else {
+        // Median Point and Individual Origins coincide for one active object.
+        this.worldPivot.copy(worldPosition);
+      }
       this.original = {
         position: this.object.position.clone(),
         quaternion: this.object.quaternion.clone(),
