@@ -1,4 +1,5 @@
 import { estimateModifierWorkingSet, validateModifierBudget } from './ModifierBudget.js';
+import { copyModifierStageDiagnostics, createModifierStageDiagnostic, getModifierGeometryCounts } from './ModifierStackOrder.js';
 
 async function createThreeGeometry(result) {
   const THREE = await import('three');
@@ -30,9 +31,15 @@ export class ModifierStack {
     this.worker = null;
     this.requestId = 0;
     this.activeTask = null;
+    this.lastDiagnostics = new WeakMap();
   }
 
   get busy() { return Boolean(this.activeTask); }
+
+  getLastDiagnostics(mesh) {
+    if (!mesh || (typeof mesh !== 'object' && typeof mesh !== 'function')) return [];
+    return copyModifierStageDiagnostics(this.lastDiagnostics.get(mesh));
+  }
 
   ensureWorker() {
     if (this.worker) return this.worker;
@@ -71,7 +78,7 @@ export class ModifierStack {
     if (this.activeTask) throw new Error('A modifier evaluation is already running. Cancel it before starting another.');
     const base = mesh.userData.hem.toBufferGeometry();
     const modifiers = (mesh.userData.modifiers || []).map(copyModifier);
-    if (!modifiers.length) return null;
+    if (!modifiers.length) { this.lastDiagnostics.delete(mesh); return null; }
 
     const estimate = estimateModifierWorkingSet({
       positions: base.positions,
@@ -87,6 +94,9 @@ export class ModifierStack {
       const task = {
         id, mesh, worker, modifiers, estimate, resolve, reject,
         stageIndex: 0,
+        stageStartedAt: null,
+        stageInputCounts: null,
+        stageDiagnostics: [],
         result: {
           positions: new Float32Array(base.positions),
           indices: new Uint32Array(base.indices),
@@ -95,7 +105,7 @@ export class ModifierStack {
       };
       this.activeTask = task;
       this.onStatus?.('Evaluating modifier stack…');
-      this.report({ state: 'running', progress: 0, stageIndex: 0, stageCount: modifiers.length, modifierType: modifiers[0]?.type || 'modifier', estimate });
+      this.report({ state: 'running', progress: 0, stageIndex: 0, stageCount: modifiers.length, modifierType: modifiers[0]?.type || 'modifier', estimate, stageDiagnostics: [] });
       this.postStage(task);
     });
   }
@@ -104,6 +114,8 @@ export class ModifierStack {
     if (this.activeTask !== task || task.worker !== this.worker) return;
     const modifier = task.modifiers[task.stageIndex];
     const result = task.result;
+    task.stageInputCounts = getModifierGeometryCounts(result);
+    task.stageStartedAt = this.now();
     const message = {
       type: 'evaluate-stage',
       id: task.id,
@@ -120,6 +132,12 @@ export class ModifierStack {
     }
   }
 
+  now() {
+    const clock = globalThis.performance?.now?.bind(globalThis.performance);
+    const value = clock ? clock() : Date.now();
+    return Number.isFinite(value) ? value : Date.now();
+  }
+
   async handleWorkerMessage(worker, message) {
     const task = this.activeTask;
     if (worker !== this.worker || !task || message?.id !== task.id) return;
@@ -134,14 +152,25 @@ export class ModifierStack {
       indices: message.indices,
       faces: Array.isArray(message.faces) ? message.faces : null
     };
+    const modifier = task.modifiers[task.stageIndex];
+    const diagnostic = createModifierStageDiagnostic({
+      modifier,
+      stageIndex: task.stageIndex,
+      inputCounts: task.stageInputCounts,
+      outputCounts: getModifierGeometryCounts(task.result),
+      elapsedMs: this.now() - (task.stageStartedAt ?? this.now())
+    });
+    task.stageDiagnostics.push(diagnostic);
     const completedStages = task.stageIndex + 1;
     const progress = Math.round(completedStages / task.modifiers.length * 100);
     this.report({
       state: 'running', progress,
       stageIndex: completedStages,
       stageCount: task.modifiers.length,
-      modifierType: task.modifiers[task.stageIndex]?.type || 'modifier',
-      estimate: task.estimate
+      modifierType: modifier?.type || 'modifier',
+      estimate: task.estimate,
+      completedStage: diagnostic,
+      stageDiagnostics: copyModifierStageDiagnostics(task.stageDiagnostics)
     });
 
     if (completedStages < task.modifiers.length) {
@@ -158,12 +187,13 @@ export class ModifierStack {
         return;
       }
       const old = task.mesh.userData.evaluatedGeometry;
+      this.lastDiagnostics.set(task.mesh, copyModifierStageDiagnostics(task.stageDiagnostics));
       task.mesh.userData.evaluatedGeometry = geometry;
       task.mesh.geometry = geometry;
       old?.dispose?.();
       this.activeTask = null;
       this.onStatus?.('Modifier stack updated');
-      this.report({ state: 'complete', progress: 100, estimate: task.estimate });
+      this.report({ state: 'complete', progress: 100, estimate: task.estimate, stageDiagnostics: copyModifierStageDiagnostics(task.stageDiagnostics) });
       task.resolve(geometry);
     } catch (error) {
       if (this.activeTask === task) this.failTask(error);
@@ -175,7 +205,7 @@ export class ModifierStack {
     if (!task) return;
     this.activeTask = null;
     this.onStatus?.(`Modifier evaluation failed · ${error?.message || 'unknown error'}`);
-    this.report({ state: 'failed', error, estimate: task.estimate });
+    this.report({ state: 'failed', error, estimate: task.estimate, stageDiagnostics: copyModifierStageDiagnostics(task.stageDiagnostics) });
     task.reject(error);
   }
 
@@ -189,13 +219,14 @@ export class ModifierStack {
     }
     const error = abortError(message);
     this.onStatus?.('Modifier evaluation cancelled');
-    this.report({ state: 'cancelled', error, estimate: task.estimate });
+    this.report({ state: 'cancelled', error, estimate: task.estimate, stageDiagnostics: copyModifierStageDiagnostics(task.stageDiagnostics) });
     task.reject(error);
     return true;
   }
 
   clearEvaluation(mesh) {
     if (!mesh) return;
+    this.lastDiagnostics.delete(mesh);
     mesh.userData.evaluatedGeometry?.dispose?.();
     delete mesh.userData.evaluatedGeometry;
   }

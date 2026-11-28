@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { reorderModifier, reorderModifierAndEvaluate, summarizeModifierStack } from '../src/modifiers/ModifierStackOrder.js';
+import { reorderModifier, reorderModifierAndEvaluate, summarizeModifierStack, getModifierGeometryCounts, describeModifierSettings, createModifierStageDiagnostic, copyModifierStageDiagnostics } from '../src/modifiers/ModifierStackOrder.js';
 
 const stack = () => [
   { id: 'mirror-a', type: 'mirror', enabled: true },
@@ -80,4 +80,58 @@ test('modifier reorder restores the exact previous array when evaluation fails o
     assert.equal(mesh.userData.modifiers, modifiers);
     assert.deepEqual(mesh.userData.modifiers.map(item => item.id), ['mirror-a', 'subdivision-a', 'solidify-a']);
   }
+});
+
+
+test('stage geometry counts use positions and triangle indices without retaining buffers', () => {
+  const positions = new Float32Array(15);
+  const indices = new Uint32Array(12);
+  assert.deepEqual(getModifierGeometryCounts({ positions, indices }), { vertices: 5, triangles: 4 });
+  assert.deepEqual(getModifierGeometryCounts(null), { vertices: 0, triangles: 0 });
+});
+
+test('modifier settings inspection describes supported parameters safely', () => {
+  assert.equal(describeModifierSettings({ type: 'subdivision', level: 3 }), 'Level 3');
+  assert.equal(describeModifierSettings({ type: 'mirror', axis: 'y', mergeDistance: 0.001 }), 'Axis Y · Merge 0.001');
+  assert.equal(describeModifierSettings({ type: 'array', count: 3, offset: [1, 0.5, -2] }), '3 copies · Offset (1, 0.5, -2)');
+  assert.equal(describeModifierSettings({ type: 'solidify', thickness: 0.25, offset: 0 }), 'Thickness 0.25 · Center');
+  assert.match(describeModifierSettings({ type: 'array', offset: [NaN, Infinity, 1] }), /—/);
+});
+
+test('stage diagnostics report input/output deltas, settings and bypass state', () => {
+  const completed = createModifierStageDiagnostic({
+    modifier: { id: 'sub-a', type: 'subdivision', level: 2, enabled: true },
+    stageIndex: 1,
+    inputCounts: { vertices: 4, triangles: 2 },
+    outputCounts: { vertices: 9, triangles: 8 },
+    elapsedMs: 12.34
+  });
+  assert.deepEqual(completed, {
+    modifierId: 'sub-a', modifierType: 'subdivision', stageIndex: 1, position: 2,
+    enabled: true, state: 'complete',
+    input: { vertices: 4, triangles: 2 }, output: { vertices: 9, triangles: 8 },
+    delta: { vertices: 5, triangles: 6 }, elapsedMs: 12.3, settings: 'Level 2'
+  });
+
+  const bypassed = createModifierStageDiagnostic({
+    modifier: { id: 'mirror-a', type: 'mirror', enabled: false, axis: 'x' },
+    stageIndex: 0,
+    inputCounts: { vertices: 4, triangles: 2 },
+    outputCounts: { vertices: 4, triangles: 2 },
+    elapsedMs: 0
+  });
+  assert.equal(bypassed.state, 'bypassed');
+  assert.equal(bypassed.enabled, false);
+  assert.deepEqual(bypassed.delta, { vertices: 0, triangles: 0 });
+});
+
+test('stage diagnostic snapshots deep-copy their count records', () => {
+  const record = createModifierStageDiagnostic({
+    modifier: { id: 'array-a', type: 'array' }, stageIndex: 0,
+    inputCounts: { vertices: 2, triangles: 1 }, outputCounts: { vertices: 4, triangles: 2 }, elapsedMs: 1
+  });
+  const copy = copyModifierStageDiagnostics([record]);
+  copy[0].output.vertices = 999;
+  assert.equal(record.output.vertices, 4);
+  assert.deepEqual(copyModifierStageDiagnostics(null), []);
 });

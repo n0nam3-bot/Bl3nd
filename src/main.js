@@ -943,6 +943,7 @@ function refreshModifiers() {
   if (!modifiers.length) { host.innerHTML = '<div class="empty-state">No modifiers yet. Add one above.</div>'; return; }
 
   const summary = summarizeModifierStack(modifiers);
+  const lastStageDiagnostics = new Map(modifierStack.getLastDiagnostics(mesh).map(item => [item.modifierId, item]));
   const displayedGeometry = mesh.userData.evaluatedGeometry || mesh.geometry;
   const displayedVertices = displayedGeometry?.getAttribute?.('position')?.count ?? displayedGeometry?.attributes?.position?.count ?? 0;
   const displayedIndices = displayedGeometry?.index?.count ?? displayedGeometry?.index?.array?.length ?? 0;
@@ -1011,6 +1012,48 @@ function refreshModifiers() {
     stage.className = 'modifier-stage-meta';
     stage.textContent = `STAGE ${String(index + 1).padStart(2, '0')} · ${mod.enabled ? 'ENABLED' : 'DISABLED · BYPASSED'}`;
     card.append(stage);
+
+    const stageDiagnostic = lastStageDiagnostics.get(mod.id);
+    const inspector = document.createElement('details');
+    inspector.className = 'modifier-stage-inspector';
+    inspector.setAttribute('aria-label', `${mod.type} stage output inspection`);
+    const inspectorSummary = document.createElement('summary');
+    inspectorSummary.textContent = stageDiagnostic
+      ? 'Inspect last accepted stage output'
+      : 'Inspect stage details';
+    inspector.append(inspectorSummary);
+    const inspectorBody = document.createElement('div');
+    inspectorBody.className = 'modifier-stage-inspector-body';
+    if (stageDiagnostic) {
+      const state = document.createElement('strong');
+      state.className = `modifier-stage-result-state ${stageDiagnostic.state}`;
+      state.textContent = stageDiagnostic.state === 'bypassed' ? 'BYPASSED · NO GEOMETRY CHANGE' : 'COMPLETED';
+      inspectorBody.append(state);
+      const addInspectionRow = (label, value) => {
+        const row = document.createElement('div');
+        row.className = 'modifier-stage-inspector-row';
+        const key = document.createElement('span'); key.textContent = label;
+        const detail = document.createElement('b'); detail.textContent = value;
+        row.append(key, detail); inspectorBody.append(row);
+      };
+      const formatCounts = counts => `${counts.vertices.toLocaleString()} vertices · ${counts.triangles.toLocaleString()} triangles`;
+      const formatDelta = delta => `${delta.vertices > 0 ? '+' : ''}${delta.vertices.toLocaleString()} vertices · ${delta.triangles > 0 ? '+' : ''}${delta.triangles.toLocaleString()} triangles`;
+      addInspectionRow('INPUT', formatCounts(stageDiagnostic.input));
+      addInspectionRow('OUTPUT', formatCounts(stageDiagnostic.output));
+      addInspectionRow('CHANGE', formatDelta(stageDiagnostic.delta));
+      addInspectionRow('STAGE TIME', `${stageDiagnostic.elapsedMs.toFixed(1)} ms · worker round-trip`);
+      addInspectionRow('SETTINGS', stageDiagnostic.settings);
+    } else {
+      const empty = document.createElement('p');
+      empty.className = 'modifier-stage-inspector-empty';
+      empty.textContent = 'No successful stage result is recorded yet. Details appear after the complete modifier stack finishes.';
+      inspectorBody.append(empty);
+    }
+    const retentionNote = document.createElement('small');
+    retentionNote.textContent = 'Metadata from the last fully successful stack run. Intermediate geometry buffers are not retained.';
+    inspectorBody.append(retentionNote);
+    inspector.append(inspectorBody);
+    card.append(inspector);
 
     const addField=(label,field,value,limits={})=>{
       const row=document.createElement('label'); row.textContent=label; const input=document.createElement('input'); input.type='number';

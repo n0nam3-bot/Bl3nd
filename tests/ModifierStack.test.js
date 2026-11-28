@@ -175,3 +175,82 @@ test('ModifierStack stage failure does not replace the last valid evaluated resu
   assert.equal(mesh.userData.evaluatedGeometry, null);
   assert.equal(progress.at(-1).state, 'failed');
 });
+
+test('ModifierStack records inspectable input/output counts and elapsed time per successful stage', async () => {
+  const { stack, progress, workers } = setup();
+  const mesh = makeMesh([
+    { id: 'mirror-a', type: 'mirror', axis: 'x', mergeDistance: 0.001, enabled: true },
+    { id: 'array-a', type: 'array', count: 3, offset: [1,0,0], enabled: true }
+  ]);
+  const pending = stack.evaluate(mesh);
+  const worker = workers[0];
+  const first = worker.messages[0];
+  worker.emit(stageResult(first, {
+    positions: new Float32Array(15),
+    indices: new Uint32Array(9),
+    faces: null
+  }));
+  await new Promise(resolve => setTimeout(resolve, 0));
+  const second = worker.messages[1];
+  worker.emit(stageResult(second, {
+    positions: new Float32Array(24),
+    indices: new Uint32Array(18),
+    faces: null
+  }));
+  await pending;
+
+  const diagnostics = stack.getLastDiagnostics(mesh);
+  assert.equal(diagnostics.length, 2);
+  assert.deepEqual(diagnostics[0].input, { vertices: 4, triangles: 2 });
+  assert.deepEqual(diagnostics[0].output, { vertices: 5, triangles: 3 });
+  assert.equal(diagnostics[0].state, 'complete');
+  assert.equal(diagnostics[0].settings, 'Axis X · Merge 0.001');
+  assert.deepEqual(diagnostics[1].input, { vertices: 5, triangles: 3 });
+  assert.deepEqual(diagnostics[1].output, { vertices: 8, triangles: 6 });
+  assert.equal(diagnostics[1].settings, '3 copies · Offset (1, 0, 0)');
+  assert.ok(diagnostics.every(item => Number.isFinite(item.elapsedMs) && item.elapsedMs >= 0));
+  assert.equal(progress.at(-1).state, 'complete');
+  assert.equal(progress.at(-1).stageDiagnostics.length, 2);
+  assert.equal(progress.at(-1).stageDiagnostics[1].position, 2);
+});
+
+test('ModifierStack marks disabled stages as bypassed and reports unchanged counts', async () => {
+  const { stack, workers } = setup();
+  const mesh = makeMesh([{ id: 'solidify-off', type: 'solidify', enabled: false, thickness: 0.2, offset: 0 }]);
+  const pending = stack.evaluate(mesh);
+  workers[0].emit(stageResult(workers[0].messages[0]));
+  await pending;
+  const [diagnostic] = stack.getLastDiagnostics(mesh);
+  assert.equal(diagnostic.state, 'bypassed');
+  assert.equal(diagnostic.enabled, false);
+  assert.deepEqual(diagnostic.input, diagnostic.output);
+  assert.equal(diagnostic.settings, 'Thickness 0.2 · Center');
+});
+
+test('ModifierStack keeps the last accepted diagnostics when a later evaluation is cancelled', async () => {
+  const { stack, workers } = setup();
+  const mesh = makeMesh([{ id: 'sub', type: 'subdivision', level: 1, enabled: true }]);
+  const first = stack.evaluate(mesh);
+  workers[0].emit(stageResult(workers[0].messages[0], {
+    positions: new Float32Array(27), indices: new Uint32Array(24)
+  }));
+  await first;
+  const accepted = stack.getLastDiagnostics(mesh);
+  assert.equal(accepted[0].output.vertices, 9);
+
+  const second = stack.evaluate(mesh);
+  stack.cancel('Do not commit partial diagnostics.');
+  await assert.rejects(second, { name: 'AbortError' });
+  assert.deepEqual(stack.getLastDiagnostics(mesh), accepted);
+});
+
+test('ModifierStack clears derived diagnostics when evaluated geometry is removed', async () => {
+  const { stack, workers } = setup();
+  const mesh = makeMesh([{ id: 'sub', type: 'subdivision', level: 1, enabled: true }]);
+  const pending = stack.evaluate(mesh);
+  workers[0].emit(stageResult(workers[0].messages[0]));
+  await pending;
+  assert.equal(stack.getLastDiagnostics(mesh).length, 1);
+  stack.clearEvaluation(mesh);
+  assert.deepEqual(stack.getLastDiagnostics(mesh), []);
+});

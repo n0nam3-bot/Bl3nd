@@ -133,6 +133,11 @@ Modifier stacks now run as separate worker stages instead of one monolithic work
 
 Before transferring geometry, Bl3nd estimates the largest working set and projected vertex/triangle counts for the full enabled stack. Mobile devices receive lower limits (48 MB / 100,000 vertices / 160,000 triangles on a reported ≤2 GB device; otherwise 96 MB / 180,000 vertices / 300,000 triangles). Desktop profiles receive larger limits, reduced when the reported memory hint is 4 GB or less. The estimate includes topology scratch overhead but cannot guarantee actual browser heap availability. If a stack exceeds the estimated budget, lower Subdivision levels, remove/disable a modifier, or simplify the source mesh. Cancellation and budget rejection do not discard the last valid result or change the editable base cage.
 
+
+### Per-stage modifier inspection
+
+Modifier cards can be expanded with **Inspect last accepted stage output** after a complete stack evaluation. Each stage reports its input and output vertex/triangle counts, the change in those counts, the settings used and the measured stage time (including the worker round-trip). Disabled modifiers are identified as **Bypassed** and show unchanged geometry counts. These records describe the last fully successful stack run; a failed or cancelled evaluation never replaces them. Only small diagnostic metadata is retained—intermediate geometry buffers are not copied or kept in memory—so the editable source cage and final displayed result remain the only persistent geometry states.
+
 The modifier stack is evaluated from top to bottom. Use **↑** and **↓** on a modifier card to move that stage one position earlier or later; the first card cannot move up and the last cannot move down. Reordering runs the full stack before the new order is accepted. If evaluation fails or is cancelled, the previous order and last valid displayed mesh are retained. Successful moves are undoable and included in local scene recovery. The diagnostics card shows enabled/bypassed counts, the ordered pipeline and the displayed mesh's vertex/triangle totals. Disabled modifiers remain visible in the order and are marked as bypassed.
 
 ### Seam-welded Mirror

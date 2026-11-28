@@ -204,3 +204,15 @@ body.transform-modal-active .topbar,body.transform-modal-active .tool-rail,body.
 .modifier-card header .modifier-order-button:not(:disabled):active{background:#493729;border-color:#ed9b52;color:#ffd0a7}
 .modifier-stage-meta{margin:-4px 0 8px;color:#9ba8b8;font:750 8px ui-monospace,SFMono-Regular,Consolas,monospace;letter-spacing:.55px}
 @media(max-width:650px){.modifier-stack-summary{padding:11px;gap:6px}.modifier-stack-counts{font-size:11px}.modifier-stack-order,.modifier-stack-output{font-size:10px}.modifier-card header .modifier-order-button{width:36px;min-width:36px;height:40px;min-height:40px;font-size:15px}.modifier-card-actions{gap:5px}.modifier-stage-meta{font-size:9px}}
+
+.modifier-stage-inspector{margin:8px 0 9px;border:1px solid #3f4855;border-radius:6px;background:#202630;overflow:hidden}
+.modifier-stage-inspector>summary{min-height:34px;display:flex;align-items:center;padding:7px 9px;color:#c4ceda;font-size:9px;font-weight:800;letter-spacing:.35px;cursor:pointer;touch-action:manipulation;list-style-position:inside}
+.modifier-stage-inspector[open]>summary{border-bottom:1px solid #3f4855;color:#ffd0a7}
+.modifier-stage-inspector-body{display:grid;gap:5px;padding:9px}
+.modifier-stage-result-state{font-size:8px;letter-spacing:.65px;color:#9de0b7}
+.modifier-stage-result-state.bypassed{color:#b2bdcc}
+.modifier-stage-inspector-row{display:grid;grid-template-columns:78px minmax(0,1fr);gap:8px;align-items:start;font-size:9px;line-height:1.4}
+.modifier-stage-inspector-row span{color:#8f9cac;font-weight:750;letter-spacing:.35px}
+.modifier-stage-inspector-row b{min-width:0;color:#dbe2eb;text-align:right;overflow-wrap:anywhere;font-weight:650}
+.modifier-stage-inspector-empty,.modifier-stage-inspector-body small{margin:0;color:#98a5b5;font-size:9px;line-height:1.5}
+@media(max-width:650px){.modifier-stage-inspector>summary{min-height:42px;padding:9px 10px;font-size:10px}.modifier-stage-inspector-body{gap:7px;padding:10px}.modifier-stage-inspector-row{grid-template-columns:74px minmax(0,1fr);font-size:10px}.modifier-stage-inspector-empty,.modifier-stage-inspector-body small{font-size:10px}}

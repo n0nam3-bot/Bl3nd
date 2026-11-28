@@ -1,4 +1,4 @@
-const RELEASE_VERSION = new URL(self.location.href).searchParams.get('v') || '0.1.85';
+const RELEASE_VERSION = new URL(self.location.href).searchParams.get('v') || '0.1.86';
 const CACHE_VERSION = RELEASE_VERSION.replace(/[^a-zA-Z0-9._-]/g, '-');
 const SHELL_CACHE = `bl3nd-shell-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `bl3nd-runtime-${CACHE_VERSION}`;

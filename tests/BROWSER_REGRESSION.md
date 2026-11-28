@@ -642,6 +642,22 @@ Full Blender keymap parity is not claimed by this build. Android touch acceptanc
 - Cancel a reorder while its worker is active. Confirm the order rolls back to the last accepted arrangement, the previous evaluated mesh remains visible, and every stack control becomes available again. Trigger a fresh reorder and confirm it succeeds.
 - Use Undo and Redo after a successful reorder; both modifier order and evaluated appearance must restore. Wait for `LOCAL · SAVED`, refresh, and confirm the order and enabled states recover from IndexedDB.
 - Confirm reorder controls are disabled during evaluation, do not alter the editable source cage, and do not interfere with picking, selection overlays, modifier settings or existing progress/cancel/preflight behavior.
+- Owner-confirmed Android acceptance: modifier reordering is working on the deployed build. Desktop Chrome/Edge remains deferred.
 
 ### Desktop — Chrome / Edge (deferred)
 - Repeat order changes, boundary disabling, disabled-stage behavior, cancel rollback, Undo/Redo and reload recovery. Verify order changes use the same worker pipeline and no modifier evaluation is committed before the full stack succeeds.
+
+
+## v0.1.86 — Per-stage modifier output inspection
+
+### Android — Chrome / Samsung Internet
+- Open **More → Mods**, run a supported multi-stage stack, and expand **Inspect last accepted stage output** on each modifier card.
+- Confirm each stage reports input/output vertices and triangles, signed count changes, the settings used and stage time. The stage time label must explain that it includes the worker round-trip.
+- Disable a modifier and reevaluate. Confirm its inspector reports **BYPASSED · NO GEOMETRY CHANGE** and identical input/output counts.
+- Trigger a new evaluation and cancel during a later stage. Confirm the previous successful run's inspector values remain unchanged; after a successful run, confirm every stage's diagnostics update together.
+- Change modifier settings, reorder stages, remove a stage, then use Undo/Redo and refresh after `LOCAL · SAVED`. Confirm the displayed diagnostics always match the last accepted stack result and the saved modifier order/settings.
+- Expand/collapse each inspector on a narrow phone, scroll through parameter controls, and confirm summaries do not intercept viewport gestures or make the card wider than the panel.
+- Confirm only compact counts/settings/timing are retained; Cancel, Undo/Redo, selection overlays, source topology and local scene recovery continue to work.
+
+### Desktop — Chrome / Edge (deferred)
+- Repeat per-stage inspection for enabled and bypassed modifiers, verify worker round-trip timing/count deltas, and check disclosure keyboard/focus behavior, narrow panel widths, failed/cancelled evaluation retention and Undo/Redo.
