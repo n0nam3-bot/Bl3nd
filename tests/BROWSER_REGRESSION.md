@@ -558,3 +558,15 @@ Full Blender keymap parity is not claimed by this build. Android touch acceptanc
 - Repeat levels 1–3 on a cube, a quad plane and a low-poly imported polygon mesh. Inspect shared edges, silhouette, normals, boundary handling and modifier stack order.
 - Confirm level values are clamped to 1–3, and a high-face-count cage that exceeds the worker safety budget fails without corrupting the previous evaluated geometry.
 - Verify modifier toggle, remove, Undo/Redo, autosave/reload and export behavior.
+
+## v0.1.80 — Mobile-visible Catmull–Clark level controls
+
+### Android — Chrome / Samsung Internet
+- Tap **More** on the bottom actionbar, then tap **Mods**. Confirm the side panel opens on the Modifiers tab and the Subdivision add button is visible. Add Subdivision to the active cube.
+- Confirm the modifier card shows a clearly labeled **SUBDIVISION LEVEL** row with three large buttons: **LEVEL 1**, **LEVEL 2**, and **LEVEL 3**. The current level must also appear as `LEVEL 1`, `LEVEL 2` or `LEVEL 3` in the same control header; exactly one button is highlighted and has `aria-pressed=true`.
+- Tap each level in turn. Confirm the active highlight and header update only after evaluation succeeds, and the rendered surface becomes progressively smoother. Level 3 must remain responsive on the starter cube.
+- Reload after `LOCAL · SAVED`. Reopen **More → Mods** and confirm the selected level and evaluated geometry are restored. Toggle the modifier off/on and remove it; confirm the prior base mesh appears correctly.
+- Tap quickly between levels during evaluation. The control must not remain disabled or show multiple selected levels after success or a rejected update.
+
+### Desktop — Chrome / Edge
+- Repeat Levels 1–3, keyboard tab/space activation, visible focus outline, selected-state semantics, modifier toggle/remove, Undo/Redo and autosave/reload. Confirm the level selector does not overflow the modifier card at narrow desktop widths.

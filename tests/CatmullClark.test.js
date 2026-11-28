@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { clampSubdivisionLevel, subdivideCatmullClark } from '../src/modifiers/CatmullClark.js';
+import { clampSubdivisionLevel, getSubdivisionLevelOptions, subdivideCatmullClark } from '../src/modifiers/CatmullClark.js';
 
 const quad = {
   positions: new Float32Array([0,0,0, 1,0,0, 1,1,0, 0,1,0]),
@@ -106,4 +106,19 @@ test('subdivision level input is rounded and capped to one through three', () =>
   assert.equal(clampSubdivisionLevel(8), 3);
   assert.equal(clampSubdivisionLevel('2'), 2);
   assert.equal(clampSubdivisionLevel('invalid'), 1);
+});
+
+
+test('subdivision level control exposes explicit Level 1, Level 2 and Level 3 choices', () => {
+  assert.deepEqual(getSubdivisionLevelOptions(1), [
+    { level: 1, label: 'LEVEL 1', selected: true },
+    { level: 2, label: 'LEVEL 2', selected: false },
+    { level: 3, label: 'LEVEL 3', selected: false }
+  ]);
+  for (const level of [1, 2, 3]) {
+    const options = getSubdivisionLevelOptions(level);
+    assert.equal(options.filter(option => option.selected).length, 1);
+    assert.equal(options.find(option => option.selected)?.level, level);
+  }
+  assert.equal(getSubdivisionLevelOptions(99).find(option => option.selected)?.level, 3);
 });

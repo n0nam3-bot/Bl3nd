@@ -5,6 +5,8 @@ import vm from 'node:vm';
 
 const workerSource = await readFile(new URL('../sw.js', import.meta.url), 'utf8');
 const entrySource = await readFile(new URL('../index.html', import.meta.url), 'utf8');
+const mainSource = await readFile(new URL('../src/main.js', import.meta.url), 'utf8');
+const styleSource = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
 class FakeRequest {
   constructor(input, init = {}) {
@@ -48,7 +50,7 @@ function createWorkerHarness({ fetchImpl = async () => new FakeResponse('fresh-p
     async match(key) { return cache.match(key); }
   };
   const self = {
-    location: new URL('https://example.test/Bl3nd/sw.js?v=0.1.79'),
+    location: new URL('https://example.test/Bl3nd/sw.js?v=0.1.80'),
     registration: { scope: 'https://example.test/Bl3nd/' },
     clients: { async claim() {} },
     addEventListener(type, listener) { listeners.set(type, listener); },
@@ -65,7 +67,7 @@ function createWorkerHarness({ fetchImpl = async () => new FakeResponse('fresh-p
 }
 
 test('app entry versions the worker URL and checks for updates on startup/foreground return', () => {
-  assert.match(entrySource, /const APP_RELEASE = '0\.1\.79'/);
+  assert.match(entrySource, /const APP_RELEASE = '0\.1\.80'/);
   assert.match(entrySource, /workerURL\.searchParams\.set\('v', APP_RELEASE\)/);
   assert.match(entrySource, /updateViaCache: 'none'/);
   assert.match(entrySource, /serviceWorkerRegistration\.update\(\)/);
@@ -81,7 +83,7 @@ test('new release derives fresh shell/runtime caches and bypasses HTTP cache for
   harness.listeners.get('install')({ waitUntil(promise) { installPromise = promise; } });
   await installPromise;
 
-  assert.ok(harness.openedCaches.includes('bl3nd-shell-0.1.79'));
+  assert.ok(harness.openedCaches.includes('bl3nd-shell-0.1.80'));
   assert.ok(harness.precacheRequests.length > 0);
   assert.ok(harness.precacheRequests.every(request => request.cache === 'reload'));
   assert.ok(harness.precacheRequests.some(request => request.url.endsWith('/Bl3nd/index.html')));
@@ -104,7 +106,7 @@ test('page navigation bypasses HTTP cache, returns the network page and stores a
   assert.equal(harness.fetchCalls.length, 1);
   assert.equal(harness.fetchCalls[0].cache, 'no-store');
   assert.equal(response.body, 'fresh-page');
-  assert.ok(harness.openedCaches.includes('bl3nd-shell-0.1.79'));
+  assert.ok(harness.openedCaches.includes('bl3nd-shell-0.1.80'));
 });
 
 test('offline navigation keeps the last cached app page available', async () => {
@@ -118,4 +120,17 @@ test('offline navigation keeps the last cached app page available', async () => 
 
   const response = await responsePromise;
   assert.equal(response.body, 'offline-page');
+});
+
+
+test('mobile modifier panel exposes three large, named subdivision-level choices', () => {
+  assert.match(mainSource, /SUBDIVISION LEVEL/);
+  assert.match(mainSource, /getSubdivisionLevelOptions\(activeLevel\)/);
+  assert.match(mainSource, /choice\.textContent=option\.label/);
+  assert.match(mainSource, /choice\.setAttribute\('aria-pressed',String\(option\.selected\)\)/);
+  assert.match(mainSource, /const previousValue = item\[field\]/);
+  assert.match(mainSource, /item\[field\] = previousValue/);
+  assert.match(mainSource, /More → Mods|More/);
+  assert.match(styleSource, /\.modifier-level-button\[aria-pressed="true"\]/);
+  assert.match(styleSource, /\.modifier-level-button\{min-height:46px/);
 });

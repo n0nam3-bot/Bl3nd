@@ -180,3 +180,11 @@ export function clampSubdivisionLevel(value) {
   if (!Number.isFinite(number)) return 1;
   return Math.max(1, Math.min(3, Math.round(number)));
 }
+export function getSubdivisionLevelOptions(value) {
+  const activeLevel = clampSubdivisionLevel(value);
+  return [1, 2, 3].map(level => ({
+    level,
+    label: `LEVEL ${level}`,
+    selected: level === activeLevel
+  }));
+}

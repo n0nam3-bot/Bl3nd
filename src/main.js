@@ -16,6 +16,7 @@ import { LoopCutModal } from './operators/LoopCutModal.js';
 import { BevelModal } from './operators/BevelModal.js';
 import { FaceOperationModal } from './operators/FaceOperationModal.js';
 import { ModifierStack } from './modifiers/ModifierStack.js';
+import { clampSubdivisionLevel, getSubdivisionLevelOptions } from './modifiers/CatmullClark.js';
 import { Viewport } from './ui/Viewport.js';
 import { ModelIO } from './io/ModelIO.js';
 import { KeyboardController } from './input/KeyboardController.js';
@@ -770,10 +771,18 @@ function registerCommands() {
   });
   commandBus.register('modifier.update', async ({ id, field, value }) => {
     const mesh = sceneDocument.activeObject; const item = mesh?.userData.modifiers?.find(m => m.id === id); if (!item) return;
+    const previousValue = item[field];
     item[field] = field === 'level'
-      ? Math.max(1, Math.min(3, Math.round(Number(value) || 1)))
+      ? clampSubdivisionLevel(value)
       : ['count', 'thickness'].includes(field) ? Number(value) : value;
-    await modifierStack.evaluate(mesh); refreshModifiers();
+    try {
+      await modifierStack.evaluate(mesh);
+    } catch (error) {
+      // A failed worker evaluation must not leave a new setting paired with the old mesh.
+      item[field] = previousValue;
+      throw error;
+    }
+    refreshModifiers();
   });
 }
 registerCommands();
@@ -833,8 +842,47 @@ function refreshModifiers() {
     if(mod.type==='array') addField('Copies','count',mod.count);
     if(mod.type==='solidify') addField('Thickness','thickness',mod.thickness);
     if(mod.type==='subdivision') {
-      addField('Levels','level',mod.level,{min:1,max:3,step:1});
-      const note=document.createElement('div'); note.className='panel-note'; note.textContent='Catmull–Clark smooths the polygon cage. Levels are limited to 1–3 for memory safety.'; card.append(note);
+      const activeLevel = clampSubdivisionLevel(mod.level);
+      const levelControl=document.createElement('section');
+      levelControl.className='modifier-level-control';
+      levelControl.setAttribute('aria-label','Catmull-Clark subdivision level');
+      const levelHeading=document.createElement('div');
+      levelHeading.className='modifier-level-heading';
+      const levelLabel=document.createElement('span');
+      levelLabel.textContent='SUBDIVISION LEVEL';
+      const currentLevel=document.createElement('strong');
+      currentLevel.textContent=`LEVEL ${activeLevel}`;
+      currentLevel.setAttribute('aria-live','polite');
+      levelHeading.append(levelLabel,currentLevel);
+      const levelButtons=document.createElement('div');
+      levelButtons.className='modifier-level-buttons';
+      levelButtons.setAttribute('role','group');
+      levelButtons.setAttribute('aria-label','Choose subdivision level');
+      for(const option of getSubdivisionLevelOptions(activeLevel)) {
+        const choice=document.createElement('button');
+        choice.type='button';
+        choice.className='modifier-level-button';
+        choice.textContent=option.label;
+        choice.setAttribute('aria-pressed',String(option.selected));
+        choice.title=`Set Catmull–Clark subdivision to level ${option.level}`;
+        choice.addEventListener('click',async()=>{
+          if(option.selected || levelButtons.dataset.busy==='true')return;
+          levelButtons.dataset.busy='true';
+          levelButtons.setAttribute('aria-busy','true');
+          levelButtons.querySelectorAll('button').forEach(button=>button.disabled=true);
+          await run('modifier.update',{id:mod.id,field:'level',value:option.level});
+          // A successful update rebuilds the card in refreshModifiers(). On failure,
+          // restore the current level choices and leave the last good geometry intact.
+          if(levelButtons.isConnected)refreshModifiers();
+        });
+        levelButtons.append(choice);
+      }
+      levelControl.append(levelHeading,levelButtons);
+      card.append(levelControl);
+      const note=document.createElement('div');
+      note.className='panel-note';
+      note.textContent='Level 1 is lightest; Level 3 is smoothest and uses the most memory.';
+      card.append(note);
     }
     host.append(card);
   }
