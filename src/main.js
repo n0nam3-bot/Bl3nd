@@ -31,6 +31,70 @@ import { SceneExplorer } from './ui/SceneExplorer.js';
 
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
+const APP_RELEASE = document.querySelector('meta[name="app-release"]')?.content || 'unknown';
+let repositoryRelease = 'checking…';
+const appVersionBadge = $('#app-version-badge');
+const runningVersion = $('#running-version');
+const repositoryVersion = $('#repository-version');
+if (appVersionBadge) {
+  appVersionBadge.textContent = `APP v${APP_RELEASE}`;
+  appVersionBadge.title = `Running app v${APP_RELEASE}; checking the deployed repository release…`;
+}
+if (runningVersion) runningVersion.textContent = `v${APP_RELEASE}`;
+if (repositoryVersion) repositoryVersion.textContent = repositoryRelease;
+
+async function refreshRepositoryVersion() {
+  try {
+    const versionURL = new URL('./version.json', window.location.href);
+    versionURL.searchParams.set('check', String(Date.now()));
+    const response = await fetch(versionURL, { cache: 'no-store', headers: { Accept: 'application/json' } });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const payload = await response.json();
+    const version = typeof payload?.version === 'string' ? payload.version.trim() : '';
+    if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error('Invalid release marker');
+    repositoryRelease = `v${version}`;
+    if (repositoryVersion) repositoryVersion.textContent = repositoryRelease;
+    if (appVersionBadge) {
+      appVersionBadge.title = `Running app v${APP_RELEASE}; latest deployed repository release ${repositoryRelease}`;
+      appVersionBadge.classList.toggle('version-outdated', version !== APP_RELEASE);
+    }
+  } catch {
+    repositoryRelease = 'Unavailable · offline';
+    if (repositoryVersion) repositoryVersion.textContent = repositoryRelease;
+    if (appVersionBadge) appVersionBadge.title = `Running app v${APP_RELEASE}; repository release could not be checked`;
+  }
+}
+void refreshRepositoryVersion();
+
+const numericReadouts = new WeakMap();
+function bindNumericReadout(input) {
+  if (!(input instanceof HTMLInputElement) || input.type !== 'number') return;
+  let binding = numericReadouts.get(input);
+  if (!binding) {
+    const output = document.createElement('output');
+    output.className = 'control-value-readout';
+    output.setAttribute('aria-label', 'Current value');
+    input.insertAdjacentElement('beforebegin', output);
+    const update = () => {
+      const raw = input.value.trim();
+      const number = Number(raw);
+      const value = raw === '' || !Number.isFinite(number)
+        ? '—'
+        : String(Number(number.toPrecision(6)));
+      output.textContent = input.closest('.modifier-card') ? `= ${value}` : `CURRENT · ${value}`;
+      output.value = value;
+    };
+    input.addEventListener('input', update);
+    input.addEventListener('change', update);
+    binding = { output, update };
+    numericReadouts.set(input, binding);
+  }
+  binding.update();
+}
+function refreshNumericReadouts(root = document) {
+  root.querySelectorAll('input[type="number"]').forEach(bindNumericReadout);
+}
+
 let activeTransformTool = loadTransformToolSelection();
 function syncTransformToolButtons() {
   $$('[data-transform-tool]').forEach(button => {
@@ -892,6 +956,7 @@ function registerCommands() {
       ? clampSubdivisionLevel(value)
       : field === 'mergeDistance' ? clampMirrorMergeDistance(value)
       : field === 'axis' ? normalizeMirrorAxis(value)
+      : field === 'bisect' || field === 'bisectFlip' ? Boolean(value)
       : field === 'thickness' ? clampSolidifyThickness(value)
       : field === 'offset' ? clampSolidifyOffset(value)
       : field === 'count' ? Number(value) : value;
@@ -1060,16 +1125,30 @@ function refreshModifiers() {
       if(Number.isFinite(limits.min)) input.min=String(limits.min);
       if(Number.isFinite(limits.max)) input.max=String(limits.max);
       if(Number.isFinite(limits.step)) input.step=String(limits.step);
-      input.value=value; input.addEventListener('change',()=>run('modifier.update',{id:mod.id,field,value:input.value})); row.append(input); card.append(row);
+      input.value=value; input.addEventListener('change',()=>run('modifier.update',{id:mod.id,field,value:input.value})); row.append(input); card.append(row); bindNumericReadout(input);
+    };
+    const addHelp=(titleText,description)=>{
+      const help=document.createElement('details'); help.className='modifier-help';
+      const summary=document.createElement('summary'); summary.textContent=`Help · ${titleText}`;
+      const body=document.createElement('p'); body.textContent=description;
+      help.append(summary,body); card.append(help);
     };
     if(mod.type==='mirror'){
       const row=document.createElement('label'); row.textContent='Axis'; const select=document.createElement('select');
       for(const axis of ['x','y','z']){const option=document.createElement('option');option.value=axis;option.textContent=axis.toUpperCase();select.append(option);} select.value=mod.axis;
       select.addEventListener('change',()=>run('modifier.update',{id:mod.id,field:'axis',value:select.value}));row.append(select);card.append(row);
+      const addToggleField=(label,field,value)=>{
+        const toggleRow=document.createElement('label'); toggleRow.textContent=label;
+        const input=document.createElement('input'); input.type='checkbox'; input.checked=value===true;
+        input.addEventListener('change',()=>run('modifier.update',{id:mod.id,field,value:input.checked}));
+        toggleRow.append(input); card.append(toggleRow); return toggleRow;
+      };
+      const bisectEnabled=mod.bisect!==false;
+      addToggleField('Bisect at center plane','bisect',bisectEnabled);
+      const flipRow=addToggleField('Flip retained side','bisectFlip',mod.bisectFlip===true);
+      flipRow.hidden=!bisectEnabled;
       addField('Merge Distance','mergeDistance',clampMirrorMergeDistance(mod.mergeDistance),{min:0,max:1,step:0.001});
-      const note=document.createElement('div'); note.className='panel-note';
-      note.textContent='Reflects this half-mesh across the object origin. Vertices within the merge distance are snapped to the center plane and shared by both sides. Build only one side first; Mirror does not delete the opposite half.';
-      card.append(note);
+      addHelp('Mirror','Bisect keeps only one side of the object origin plane, then reflects it. It is enabled by default so a complete centered object does not overlap itself. Flip retained side switches from the positive half to the negative half. Turn Bisect off to reflect the whole source as-is. Merge Distance controls how close vertices snap to and weld across the center seam.');
     }
     if(mod.type==='array') addField('Copies','count',mod.count);
     if(mod.type==='solidify') {
@@ -1096,9 +1175,7 @@ function refreshModifiers() {
       }
       positionControl.append(positionHeading,positionButtons);
       card.append(positionControl);
-      const note=document.createElement('div'); note.className='panel-note';
-      note.textContent='Creates an inner and outer shell and closes open boundary rims. Inside keeps the original surface in place; Center splits thickness evenly; Outside keeps the inner surface in place. Unsupported or folded offsets are rejected without replacing the last valid result.';
-      card.append(note);
+      addHelp('Solidify','Creates an inner and outer shell and closes open boundary rims. Inside keeps the original surface in place; Center splits thickness evenly; Outside keeps the inner surface in place. Unsupported or folded offsets are rejected without replacing the last valid result.');
     }
     if(mod.type==='subdivision') {
       const activeLevel = clampSubdivisionLevel(mod.level);
@@ -1138,10 +1215,7 @@ function refreshModifiers() {
       }
       levelControl.append(levelHeading,levelButtons);
       card.append(levelControl);
-      const note=document.createElement('div');
-      note.className='panel-note';
-      note.textContent='Level 1 is lightest; Level 3 is smoothest and uses the most memory.';
-      card.append(note);
+      addHelp('Subdivision','Level 1 is lightest; Level 3 is smoothest and uses the most memory. Higher levels can increase geometry and memory use quickly.');
     }
     host.append(card);
   }
@@ -1208,7 +1282,7 @@ function refresh() {
     input.value=mesh ? (kind==='rotation'?THREE.MathUtils.radToDeg(mesh.rotation[axis]):mesh[kind][axis]).toFixed(2) : '';
     input.disabled=!mesh;
   });
-  refreshCursor(); refreshModifiers(); sceneExplorer?.refresh(); ui?.refreshModal(); ui?.refreshSelectionTool();
+  refreshCursor(); refreshModifiers(); sceneExplorer?.refresh(); ui?.refreshModal(); ui?.refreshSelectionTool(); refreshNumericReadouts();
 }
 
 const radialPieMenu = new RadialPieMenu($('#pie-menu'));
@@ -1512,6 +1586,39 @@ loadingProgress(73, 'Building the workspace panels and editing controls…');
 
 // Header, panels, tools and mobile quick actions all route into the command bus.
 $('#undo-btn').addEventListener('click',()=>ui.undo()); $('#redo-btn').addEventListener('click',()=>ui.redo());
+$('#reset-workspace-panel-btn').addEventListener('click',()=>$('#reset-workspace-btn').click());
+$('#reset-workspace-btn').addEventListener('click',async()=>{
+  if(modifierStack.busy || modalTransform.active || loopCutModal.active || bevelModal.active || faceOperationModal.active || viewport.modalOperationActive){
+    notify('Apply or cancel the current operation before resetting the workspace.','error');
+    return;
+  }
+  const accepted=window.confirm('Reset Bl3nd to its default workspace?\n\nThis restores the default view, panel, tool and editing preferences. Your current scene and model are kept.');
+  if(!accepted)return;
+  ui.closePie();
+  transformSnapSettingsOpen=false;
+  modalTransform.orientation='global';
+  touchController?.setAddSelectionEnabled(false,{notify:false});
+  touchController?.objectSelectionAddMode.reset();
+  touchController?.syncObjectSelectionButton();
+  await run('transform.snap_settings',{settings:normalizeTransformSnapSettings({})});
+  await run('transform.proportional_settings',{settings:normalizeProportionalSettings({})});
+  await run('mode.set',{mode:'object'});
+  if(sceneDocument.activeObject) sceneDocument.setActive(sceneDocument.activeObject);
+  await run('mesh.selection_mode',{mode:'face'});
+  await run('mesh.clear_selection');
+  await run('cursor.set',{point:[0,0,0]});
+  await run('pivot.set',{pivot:'median'});
+  await run('transform.tool.select',{tool:'select'});
+  await run('shading.set',{mode:'solid'});
+  viewport.selectionTool='tap';
+  sceneExplorer?.resetView();
+  const listTab=$('[data-panel="explorer"]');
+  listTab?.click();
+  $('.properties-panel')?.classList.remove('mobile-open');
+  viewport.resetDefaultView(sceneDocument.objects);
+  refresh();
+  notify('Default workspace restored. Your scene and model were kept.');
+});
 syncTransformToolButtons();
 $('#object-mode-btn').addEventListener('click',()=>run('mode.set',{mode:'object'}));
 $('#edit-mode-btn').addEventListener('click',()=>run('mode.set',{mode:'edit'}));

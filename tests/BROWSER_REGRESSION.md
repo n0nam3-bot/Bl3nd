@@ -648,6 +648,24 @@ Full Blender keymap parity is not claimed by this build. Android touch acceptanc
 - Repeat order changes, boundary disabling, disabled-stage behavior, cancel rollback, Undo/Redo and reload recovery. Verify order changes use the same worker pipeline and no modifier evaluation is committed before the full stack succeeds.
 
 
+
+## v0.1.87 — Mirror Bisect, readable values, help, versions and workspace reset
+
+### Desktop — Chrome / Edge (owner-reported Mirror issue; acceptance pending)
+- Add a centered Cube, add Mirror, and confirm Bisect is on by default. Check that the evaluated mesh is one complete cube rather than two overlapping halves, the center seam is closed, and the source cage remains unchanged.
+- Switch Axis X/Y/Z and verify the bisect/reflection plane follows the chosen local axis. Confirm the Flip retained side control appears only while Bisect is enabled and retains the opposite half on a positive/negative one-sided fixture. Turn Bisect off and verify legacy whole-source reflection behavior. Open a scene saved by a pre-v0.1.87 release with an existing Mirror modifier that has no Bisect setting; confirm it now defaults on, while an explicit saved Bisect=false remains off.
+- Adjust Location, Rotation, Scale, snapping steps and modifier numeric settings. Each numeric field must display a live CURRENT value while typing and must match its accepted value after commit/refresh.
+- Open Scene and Mods panels. Confirm feature explanations are collapsed under named Help disclosures and expand/collapse without affecting editing controls or viewport input.
+- Confirm the header app badge shows the running version. In System, verify Running app is the bundled release and Repository release is fetched from the latest deployed `version.json`; a deliberately older cached app should report its older running version beside the newer repository version. Offline should say unavailable rather than guessing.
+- Change mode/tool/pivot, enable snapping/proportional editing and Multi-select, navigate to a non-default view and panel, then press the header **↺** button or use **System → Workspace → Reset to default workspace**. Confirm the app returns to perspective/List/Object/Select/Median and default editing preferences while keeping all scene objects, mesh edits and modifiers unchanged.
+
+### Android — Chrome / Samsung Internet
+- Confirm Mirror's Bisect and Flip controls are visible, sufficiently touchable and evaluate without overlapping geometry on a centered cube. Verify all three axes, negative-side Flip and Bisect-off behavior.
+- Confirm Scene help remains collapsed by default; open each Help row and close it. Confirm modifier help also remains collapsed until requested.
+- Verify CURRENT badges update while editing numeric modifier and snap fields; confirm the badge does not push inputs outside the panel.
+- Verify the app badge and System version rows remain readable. Test repository marker refresh after deployment and the offline unavailable state.
+- Reset from a modified workspace and verify the panel closes to the default mobile viewport, while the scene/model and modifiers remain intact.
+
 ## v0.1.86 — Per-stage modifier output inspection
 
 ### Android — Chrome / Samsung Internet

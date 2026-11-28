@@ -13,6 +13,13 @@ The application displays staged startup progress and keeps the exact startup err
 
 The application does not require a build command. Open the GitHub Pages URL after the deployment workflow completes.
 
+## Workspace help, values and reset
+
+- **Reset Workspace:** use the ↺ button in the header or open System → Workspace → Reset to default workspace. It restores the default view, Scene Explorer state, panel, Object Mode, Select tool, Face selection, Median pivot, 3D cursor origin, solid shading and default snapping/proportional preferences. It intentionally keeps the current model, objects and modifiers.
+
+Numeric controls show a live **CURRENT** readout while you adjust them. Scene and modifier explanations are folded under feature-specific **Help** rows so the panels stay compact until you open the explanation. The System tab always shows separate **Running app** and **Repository release** rows; wider layouts also show the running version in the top bar. The latest deployed repository release is read from the root `version.json` marker using a network-only, no-store request, so an older cached app can reveal that Pages has a newer release. It is shown as unavailable while offline.
+
+
 ## Getting the newest deployed version
 
 When Bl3nd opens, it registers a release-versioned service worker and explicitly checks for updates. Update checks also run when the app becomes visible again or returns to the foreground. A changed worker takes control and reloads the page once. New app-shell files are fetched with HTTP-cache bypass, and page navigation checks GitHub Pages before falling back to the last cached page when offline. This refreshes the newest version that has successfully deployed to Pages; it does not replace a pending or failed GitHub Actions deployment.
@@ -142,7 +149,7 @@ The modifier stack is evaluated from top to bottom. Use **↑** and **↓** on a
 
 ### Seam-welded Mirror
 
-The Mirror modifier reflects an indexed half-mesh across the selected **X**, **Y** or **Z** plane through the object origin. Its **Merge Distance** is measured in object-local units (default `0.001`, adjustable from `0` to `1`). Source vertices within that distance of the center plane are snapped to the plane in the evaluated copy, and their reflected counterparts reuse the same vertex indices. The reflected triangles reverse winding so their normals face outward, and faces already on the center plane are not duplicated. The editable source mesh is never modified. Start with only one side of the model: Mirror does not automatically bisect/delete the opposite half, move the plane, or weld duplicate vertices away from the mirror seam. On Android, open **More → Mods**, add **Mirror**, choose the axis and adjust **Merge Distance**.
+The Mirror modifier reflects an indexed surface across the selected **X**, **Y** or **Z** plane through the object origin. **Bisect at center plane** is enabled by default: it keeps the positive side of that local axis, clips intersecting triangles to the center plane and reflects the retained half. This also lets Mirror work on a complete centered primitive without leaving overlapping copies. Enable **Flip retained side** to keep the negative half instead. Turn Bisect off to reflect the entire source as-is. **Merge Distance** is measured in object-local units (default `0.001`, adjustable from `0` to `1`) and controls center-seam snapping/welding. The editable source mesh is never modified. Mirror's plane is fixed at the object origin; arbitrary mirror-plane offsets and full Blender modifier parity are not implemented.
 
 ### Modifier-aware Edit Mode selection visibility
 When at least one non-destructive modifier is enabled and evaluated, Edit Mode keeps editing the original source cage while the viewport displays the evaluated result. v0.1.83 makes the selected source elements visible over that result: selected faces use a stronger amber fill and bright boundary, selected edges draw through the shell, and selected vertices receive a dark halo with a larger amber center. Unselected cage edges remain depth-tested, so the entire hidden wireframe does not clutter the view. Turning off/removing the last active modifier restores ordinary depth-based selection display. This changes only the visual overlay; it does not modify topology, picking rules, modifier output or selection state.

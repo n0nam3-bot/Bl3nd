@@ -1,4 +1,4 @@
-const RELEASE_VERSION = new URL(self.location.href).searchParams.get('v') || '0.1.86';
+const RELEASE_VERSION = new URL(self.location.href).searchParams.get('v') || '0.1.87';
 const CACHE_VERSION = RELEASE_VERSION.replace(/[^a-zA-Z0-9._-]/g, '-');
 const SHELL_CACHE = `bl3nd-shell-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `bl3nd-runtime-${CACHE_VERSION}`;
@@ -38,6 +38,12 @@ self.addEventListener('fetch', event => {
   const request = event.request;
   if (request.method !== 'GET') return;
   const url = new URL(request.url);
+  if (url.origin === self.location.origin && url.pathname.endsWith('/version.json')) {
+    // This tiny marker must describe the latest deployed repository, not the
+    // currently controlled app-shell cache. Never serve or store a stale copy.
+    event.respondWith(fetch(new Request(request, { cache: 'no-store' })));
+    return;
+  }
   if (url.origin !== self.location.origin) {
     // Cache CDN ES modules and lazy-loaded Wasm only after a successful CORS response.
     if (request.destination === 'script' || url.pathname.endsWith('.wasm')) {

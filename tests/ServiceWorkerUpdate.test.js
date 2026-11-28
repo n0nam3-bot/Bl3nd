@@ -51,7 +51,7 @@ function createWorkerHarness({ fetchImpl = async () => new FakeResponse('fresh-p
     async match(key) { return cache.match(key); }
   };
   const self = {
-    location: new URL('https://example.test/Bl3nd/sw.js?v=0.1.86'),
+    location: new URL('https://example.test/Bl3nd/sw.js?v=0.1.87'),
     registration: { scope: 'https://example.test/Bl3nd/' },
     clients: { async claim() {} },
     addEventListener(type, listener) { listeners.set(type, listener); },
@@ -68,7 +68,7 @@ function createWorkerHarness({ fetchImpl = async () => new FakeResponse('fresh-p
 }
 
 test('app entry versions the worker URL and checks for updates on startup/foreground return', () => {
-  assert.match(entrySource, /const APP_RELEASE = '0\.1\.86'/);
+  assert.match(entrySource, /const APP_RELEASE = '0\.1\.87'/);
   assert.match(entrySource, /workerURL\.searchParams\.set\('v', APP_RELEASE\)/);
   assert.match(entrySource, /updateViaCache: 'none'/);
   assert.match(entrySource, /serviceWorkerRegistration\.update\(\)/);
@@ -78,13 +78,45 @@ test('app entry versions the worker URL and checks for updates on startup/foregr
   assert.match(entrySource, /addEventListener\('controllerchange'/);
 });
 
+
+test('latest repository release marker bypasses the app-shell cache', async () => {
+  const harness = createWorkerHarness();
+  let responsePromise;
+  harness.listeners.get('fetch')({
+    request: { method: 'GET', url: 'https://example.test/Bl3nd/version.json?check=123', mode: 'cors' },
+    respondWith(promise) { responsePromise = promise; },
+    waitUntil() {}
+  });
+  const response = await responsePromise;
+  assert.equal(response.body, 'fresh-page');
+  assert.equal(harness.fetchCalls.length, 1);
+  assert.equal(harness.fetchCalls[0].cache, 'no-store');
+  assert.equal(harness.openedCaches.length, 0);
+});
+
+test('workspace exposes current values, feature help, separate versions and a scene-preserving reset', () => {
+  assert.match(mainSource, /bindNumericReadout/);
+  assert.match(mainSource, /refreshRepositoryVersion/);
+  assert.match(mainSource, /Reset Bl3nd to its default workspace/);
+  assert.match(mainSource, /reset-workspace-panel-btn/);
+  assert.match(entrySource, /id=\"reset-workspace-panel-btn\"/);
+  assert.match(mainSource, /Your current scene and model are kept/);
+  assert.match(mainSource, /cursor.set',\{point:\[0,0,0\]\}/);
+  assert.match(mainSource, /shading.set',\{mode:'solid'\}/);
+  assert.match(entrySource, /id="app-version-badge"/);
+  assert.match(entrySource, /id="running-version"/);
+  assert.match(entrySource, /id="repository-version"/);
+  assert.match(entrySource, /<details class="panel-help/);
+  assert.match(mainSource, /className='modifier-help'/);
+});
+
 test('new release derives fresh shell/runtime caches and bypasses HTTP cache for app-shell precache', async () => {
   const harness = createWorkerHarness();
   let installPromise;
   harness.listeners.get('install')({ waitUntil(promise) { installPromise = promise; } });
   await installPromise;
 
-  assert.ok(harness.openedCaches.includes('bl3nd-shell-0.1.86'));
+  assert.ok(harness.openedCaches.includes('bl3nd-shell-0.1.87'));
   assert.ok(harness.precacheRequests.length > 0);
   assert.ok(harness.precacheRequests.every(request => request.cache === 'reload'));
   assert.ok(harness.precacheRequests.some(request => request.url.endsWith('/Bl3nd/index.html')));
@@ -112,7 +144,7 @@ test('page navigation bypasses HTTP cache, returns the network page and stores a
   assert.equal(harness.fetchCalls.length, 1);
   assert.equal(harness.fetchCalls[0].cache, 'no-store');
   assert.equal(response.body, 'fresh-page');
-  assert.ok(harness.openedCaches.includes('bl3nd-shell-0.1.86'));
+  assert.ok(harness.openedCaches.includes('bl3nd-shell-0.1.87'));
 });
 
 test('offline navigation keeps the last cached app page available', async () => {
@@ -142,9 +174,11 @@ test('mobile modifier panel exposes three large, named subdivision-level choices
 });
 
 
-test('modifier panel exposes Mirror axis and center-plane merge distance', () => {
+test('modifier panel exposes Mirror bisect, side flip and center-plane merge distance', () => {
   assert.match(mainSource, /addField\('Merge Distance','mergeDistance',clampMirrorMergeDistance\(mod\.mergeDistance\)/);
-  assert.match(mainSource, /Vertices within the merge distance are snapped to the center plane/);
+  assert.match(mainSource, /Bisect keeps only one side of the object origin plane/);
+  assert.match(mainSource, /Flip retained side switches from the positive half to the negative half/);
+  assert.match(mainSource, /addToggleField\('Bisect at center plane','bisect'/);
   assert.match(mainSource, /field === 'mergeDistance' \? clampMirrorMergeDistance\(value\)/);
   assert.match(mainSource, /DEFAULT_MIRROR_MERGE_DISTANCE|clampMirrorMergeDistance/);
 });

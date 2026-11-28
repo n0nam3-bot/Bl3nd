@@ -37,9 +37,59 @@ test('Mirror reflects a half-surface and shares exact center-plane seam indices'
   assert.deepEqual([...seamTriangle.positions], [...sourcePositions]);
   assert.deepEqual([...seamTriangle.indices], [...sourceIndices]);
   assert.deepEqual(result.stats, {
-    axis: 'x', mergeDistance: 0, mergedCenterVertices: 2, mirroredVertices: 1,
+    axis: 'x', mergeDistance: 0, bisect: false, bisectFlip: false,
+    bisectedIntersectionVertices: 0, mergedCenterVertices: 2, mirroredVertices: 1,
     mirroredTriangles: 1, skippedCenterPlaneTriangles: 0, skippedCollapsedTriangles: 0
   });
+});
+
+
+test('Mirror Bisect turns a complete centered cube into one clean reflected result', () => {
+  const positions = new Float32Array([
+    -1,-1,-1, 1,-1,-1, 1,1,-1, -1,1,-1,
+    -1,-1,1, 1,-1,1, 1,1,1, -1,1,1
+  ]);
+  const quads = [
+    [0,3,2,1], [4,5,6,7], [0,1,5,4],
+    [3,7,6,2], [1,2,6,5], [0,4,7,3]
+  ];
+  const indices = [];
+  for (const face of quads) {
+    for (let corner = 1; corner < face.length - 1; corner++) indices.push(face[0], face[corner], face[corner + 1]);
+  }
+  const result = mirrorGeometry(positions, new Uint32Array(indices), {
+    axis: 'x', mergeDistance: 0.001, bisect: true
+  });
+  const edgeUses = new Map();
+  for (let i = 0; i < result.indices.length; i += 3) {
+    const tri = [result.indices[i], result.indices[i + 1], result.indices[i + 2]];
+    for (let corner = 0; corner < 3; corner++) {
+      const a = tri[corner], b = tri[(corner + 1) % 3];
+      const key = a < b ? `${a}:${b}` : `${b}:${a}`;
+      edgeUses.set(key, (edgeUses.get(key) || 0) + 1);
+    }
+  }
+  const coordinates = [...result.positions];
+  assert.equal(result.stats.bisect, true);
+  assert.ok(result.stats.bisectedIntersectionVertices >= 4);
+  assert.ok(coordinates.some((value, index) => index % 3 === 0 && value === -1));
+  assert.ok(coordinates.some((value, index) => index % 3 === 0 && value === 1));
+  assert.ok(coordinates.every(Number.isFinite));
+  assert.ok([...edgeUses.values()].every(count => count === 2), 'the bisected mirrored cube closes every surface and seam edge');
+  assert.deepEqual([...positions], [
+    -1,-1,-1, 1,-1,-1, 1,1,-1, -1,1,-1,
+    -1,-1,1, 1,-1,1, 1,1,1, -1,1,1
+  ], 'editable source positions remain unchanged');
+});
+
+test('Mirror Bisect can retain the negative side when Flip Side is enabled', () => {
+  const positions = new Float32Array([-1,0,0, -1,1,0, -0.5,0,1]);
+  const indices = new Uint32Array([0,1,2]);
+  assert.throws(() => mirrorGeometry(positions, indices, { axis: 'x', bisect: true }), /selected bisect side contains no surface/);
+  const result = mirrorGeometry(positions, indices, { axis: 'x', bisect: true, bisectFlip: true, mergeDistance: 0 });
+  assert.ok([...result.positions].some((value, index) => index % 3 === 0 && value === 1));
+  assert.ok([...result.positions].every(Number.isFinite));
+  assert.equal(result.stats.bisectFlip, true);
 });
 
 test('Mirror snaps near-plane vertices only in the evaluated copy and honours merge distance', () => {

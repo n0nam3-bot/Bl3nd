@@ -92,7 +92,8 @@ test('stage geometry counts use positions and triangle indices without retaining
 
 test('modifier settings inspection describes supported parameters safely', () => {
   assert.equal(describeModifierSettings({ type: 'subdivision', level: 3 }), 'Level 3');
-  assert.equal(describeModifierSettings({ type: 'mirror', axis: 'y', mergeDistance: 0.001 }), 'Axis Y · Merge 0.001');
+  assert.equal(describeModifierSettings({ type: 'mirror', axis: 'y', mergeDistance: 0.001 }), 'Axis Y · Bisect on · Merge 0.001');
+  assert.equal(describeModifierSettings({ type: 'mirror', axis: 'y', mergeDistance: 0.001, bisect: false }), 'Axis Y · Bisect off · Merge 0.001');
   assert.equal(describeModifierSettings({ type: 'array', count: 3, offset: [1, 0.5, -2] }), '3 copies · Offset (1, 0.5, -2)');
   assert.equal(describeModifierSettings({ type: 'solidify', thickness: 0.25, offset: 0 }), 'Thickness 0.25 · Center');
   assert.match(describeModifierSettings({ type: 'array', offset: [NaN, Infinity, 1] }), /—/);
@@ -134,4 +135,8 @@ test('stage diagnostic snapshots deep-copy their count records', () => {
   copy[0].output.vertices = 999;
   assert.equal(record.output.vertices, 4);
   assert.deepEqual(copyModifierStageDiagnostics(null), []);
+});
+
+test('legacy Mirror diagnostics report default Bisect as on', () => {
+  assert.match(describeModifierSettings({ type: 'mirror' }), /Bisect on/);
 });

@@ -18,7 +18,15 @@ function abortError(message = 'Modifier evaluation cancelled.') {
 }
 
 function copyModifier(modifier) {
-  return { ...modifier, ...(Array.isArray(modifier.offset) ? { offset: [...modifier.offset] } : {}) };
+  return {
+    ...modifier,
+    ...(modifier?.type === 'mirror' ? {
+      // Existing saved Mirror stages from pre-bisect releases inherit the safe new default.
+      bisect: modifier.bisect !== false,
+      bisectFlip: modifier.bisectFlip === true
+    } : {}),
+    ...(Array.isArray(modifier.offset) ? { offset: [...modifier.offset] } : {})
+  };
 }
 
 export class ModifierStack {
@@ -59,7 +67,7 @@ export class ModifierStack {
   add(mesh, type) {
     const defaults = {
       subdivision: { level: 1 },
-      mirror: { axis: 'x', mergeDistance: 0.001 },
+      mirror: { axis: 'x', mergeDistance: 0.001, bisect: true, bisectFlip: false },
       array: { count: 2, offset: [2,0,0] },
       solidify: { thickness: 0.08, offset: -1 }
     };

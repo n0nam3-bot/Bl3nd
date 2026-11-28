@@ -82,7 +82,7 @@ export function describeModifierSettings(modifier) {
   if (modifier.type === 'subdivision') return `Level ${Math.max(1, Math.min(3, Math.round(Number(modifier.level) || 1)))}`;
   if (modifier.type === 'mirror') {
     const axis = ['x', 'y', 'z'].includes(String(modifier.axis).toLowerCase()) ? String(modifier.axis).toUpperCase() : 'X';
-    return `Axis ${axis} · Merge ${displayNumber(modifier.mergeDistance ?? 0.001)}`;
+    return `Axis ${axis} · Bisect ${modifier.bisect !== false ? 'on' : 'off'}${modifier.bisectFlip === true ? ' · Flip side' : ''} · Merge ${displayNumber(modifier.mergeDistance ?? 0.001)}`;
   }
   if (modifier.type === 'array') {
     const count = Math.max(1, Math.min(20, Math.round(Number(modifier.count) || 2)));

@@ -88,6 +88,22 @@ test('ModifierStack splits a stack into ordered worker stages and reports progre
   assert.equal(progress.at(-1).progress, 100);
 });
 
+test('legacy Mirror stages inherit Bisect unless the user explicitly turned it off', async () => {
+  const { stack, workers } = setup();
+  const legacy = makeMesh([{ id: 'mirror-legacy', type: 'mirror', enabled: true }]);
+  const pending = stack.evaluate(legacy);
+  assert.equal(workers[0].messages[0].modifier.bisect, true);
+  assert.equal(workers[0].messages[0].modifier.bisectFlip, false);
+  stack.cancel();
+  await assert.rejects(pending, { name: 'AbortError' });
+
+  const explicitlyDisabled = makeMesh([{ id: 'mirror-legacy-off', type: 'mirror', bisect: false, enabled: true }]);
+  const second = stack.evaluate(explicitlyDisabled);
+  assert.equal(workers[1].messages[0].modifier.bisect, false);
+  stack.cancel();
+  await assert.rejects(second, { name: 'AbortError' });
+});
+
 test('ModifierStack cancellation terminates active worker and keeps previous geometry', async () => {
   const { stack, progress, workers } = setup();
   const mesh = makeMesh([{ id: 'sub', type: 'subdivision', level: 3, enabled: true }]);
@@ -204,7 +220,7 @@ test('ModifierStack records inspectable input/output counts and elapsed time per
   assert.deepEqual(diagnostics[0].input, { vertices: 4, triangles: 2 });
   assert.deepEqual(diagnostics[0].output, { vertices: 5, triangles: 3 });
   assert.equal(diagnostics[0].state, 'complete');
-  assert.equal(diagnostics[0].settings, 'Axis X · Merge 0.001');
+  assert.equal(diagnostics[0].settings, 'Axis X · Bisect on · Merge 0.001');
   assert.deepEqual(diagnostics[1].input, { vertices: 5, triangles: 3 });
   assert.deepEqual(diagnostics[1].output, { vertices: 8, triangles: 6 });
   assert.equal(diagnostics[1].settings, '3 copies · Offset (1, 0, 0)');

@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#17191e">
   <meta name="application-name" content="Bl3nd">
+  <meta name="app-release" content="0.1.87">
   <meta name="apple-mobile-web-app-title" content="Bl3nd">
   <meta name="description" content="Bl3nd is a mobile-first, browser-native 3D modeling workspace.">
   <title>Bl3nd — 3D Workspace</title>
@@ -24,13 +25,14 @@
 <body>
   <div id="app" class="app-shell">
     <header class="topbar">
-      <div class="brand"><span class="brand-mark" aria-hidden="true">B</span><span>Bl3nd</span></div>
+      <div class="brand"><span class="brand-mark" aria-hidden="true">B</span><span>Bl3nd</span><small id="app-version-badge" class="version-badge" aria-label="Running app version">APP v0.1.87</small></div>
       <div class="top-actions">
         <button class="mode-pill active" id="object-mode-btn" title="Object Mode (Tab)">Object</button>
         <button class="mode-pill" id="edit-mode-btn" title="Edit Mode (Tab)">Edit</button>
         <span class="top-divider"></span>
         <button class="icon-button" id="undo-btn" title="Undo (Ctrl+Z)" aria-label="Undo">↶</button>
         <button class="icon-button" id="redo-btn" title="Redo (Ctrl+Shift+Z)" aria-label="Redo">↷</button>
+        <button class="icon-button" id="reset-workspace-btn" title="Reset workspace to defaults · keeps your scene" aria-label="Reset workspace to defaults">↺</button>
         <button class="icon-button" id="save-btn" title="Export model" aria-label="Export">⇩</button>
         <button class="icon-button" id="open-btn" title="Import model" aria-label="Import">⇧</button>
         <input id="file-input" type="file" accept=".glb,.gltf,.obj,.stl,model/gltf-binary,model/gltf+json" hidden>
@@ -216,7 +218,7 @@
               <label>LOCAL STEP<input id="transform-snap-scale-local" data-snap-setting="localScaleStep" type="number" min="0.000001" max="1000000" step="any" value="0.1"></label>
             </div>
           </div>
-          <p class="panel-note transform-snap-panel">Only pointer-driven X/Y/Z constraints snap. Move uses world units, Rotate uses degrees, and Scale snaps by factor steps around 1.0. Typed values stay exact; free and plane movement are unchanged.</p>
+          <details class="panel-help transform-snap-panel"><summary>Help · Transform snapping</summary><p class="panel-note">Only pointer-driven X/Y/Z constraints snap. Move uses world units, Rotate uses degrees, and Scale snaps by factor steps around 1.0. Typed values stay exact; free and plane movement are unchanged.</p></details>
           <div class="panel-heading section-gap">EDIT MESH</div>
           <div class="button-grid">
             <button id="extrude-panel-btn">Extrude <kbd>E</kbd></button>
@@ -229,9 +231,9 @@
             <button id="validate-topology-btn" disabled>Validate Mesh</button>
             <button id="repair-topology-btn" disabled>Repair Safe Issues</button>
           </div>
-          <p class="panel-note">Extrude / Inset: switch to Face Select, then press E or I. Both support one connected planar region or multiple disconnected planar islands in one operation; every island must have one simple boundary and must not share vertices with another island. Each Extrude island follows its own face-region normal; Inset uses the same normalized amount relative to each island's shortest boundary edge. Connected non-planar groups, holes and shared-vertex islands reject without changing the mesh. Drag vertically or enter a value; Enter applies one undoable operation and Esc cancels.</p>
-          <p class="panel-note">Loop Cut: select one edge in Edge Select, then press Ctrl+R. Drag horizontally to slide the preview; use the mouse wheel or +/- to add/remove up to 8 evenly spaced cuts. Type an offset from 0–1, use ←/→ to slide, Enter to apply or Esc to cancel.</p>
-          <p class="panel-note">Bevel: in Edge Select, supported single edges, adjacent pairs, three-to-eight-edge paths and disjoint neighborhoods use the existing transactional edge Bevel; arbitrary mixed edge batches remain guarded. In Face Select, Ctrl+B starts Face Bevel. One connected planar region uses Region mode; multiple separate planar islands use Multi-Region mode, applying the same settings to each island while retaining its internal seams. Islands must not share vertices. A small smooth connected curved patch may use Continuous Surface; Individual Faces is the separate-panel fallback. Supported planar region corners must pass inward-offset and transition-wall validation. Holes, shared-vertex islands, unsafe miters, invalid topology and unsupported non-planar input reject without mutation. Face Bevel supports 1–8 segments and a 0–1 concave/rounded/convex profile. Width and height are independently adjustable from 0.01–0.95; press H to switch the active drag/numeric value, or use the mobile Height controls. Use +/- for segments and [ ] for profile; press I to switch shared/individual mode when available. Enter applies and Esc cancels.</p>
+          <details class="panel-help"><summary>Help · Extrude and Inset</summary><p class="panel-note">Switch to Face Select, then press E or I. Both support one connected planar region or multiple disconnected planar islands; every island must have one simple boundary and must not share vertices with another island. Each Extrude island follows its own face-region normal; Inset uses the same normalized amount relative to each island's shortest boundary edge. Connected non-planar groups, holes and shared-vertex islands reject without changing the mesh. Drag vertically or enter a value; Enter applies one undoable operation and Esc cancels.</p></details>
+          <details class="panel-help"><summary>Help · Loop Cut</summary><p class="panel-note">Select one edge in Edge Select, then press Ctrl+R. Drag horizontally to slide the preview; use the mouse wheel or +/- to add/remove up to 8 evenly spaced cuts. Type an offset from 0–1, use ←/→ to slide, Enter to apply or Esc to cancel.</p></details>
+          <details class="panel-help"><summary>Help · Bevel</summary><p class="panel-note">In Edge Select, supported single edges, adjacent pairs, three-to-eight-edge paths and disjoint neighborhoods use the transactional edge Bevel; arbitrary mixed edge batches remain guarded. In Face Select, Ctrl+B starts Face Bevel. One connected planar region uses Region mode; multiple separate planar islands use Multi-Region mode while retaining internal seams. A small smooth connected curved patch may use Continuous Surface; Individual Faces is the separate-panel fallback. Holes, shared-vertex islands, unsafe miters, invalid topology and unsupported non-planar input reject without mutation. Face Bevel supports 1–8 segments and a 0–1 concave/rounded/convex profile. Width and height are independently adjustable from 0.01–0.95; press H to switch the active drag/numeric value, or use the mobile Height controls. Use +/- for segments and [ ] for profile; press I to switch shared/individual mode when available. Enter applies and Esc cancels.</p></details>
           <div class="panel-heading section-gap">PIVOT POINT</div>
           <select id="pivot-select"><option value="median">Median Point</option><option value="bounds">Bounding Box Center</option><option value="individual">Individual Origins</option><option value="cursor">3D Cursor</option></select>
           <div class="panel-heading section-gap">PROPORTIONAL EDITING</div>
@@ -242,13 +244,13 @@
               <option value="smooth">Smooth · default</option><option value="linear">Linear</option><option value="sharp">Sharp</option><option value="root">Root</option><option value="sphere">Sphere</option>
             </select>
           </label>
-          <p class="panel-note">Selected vertices move fully; connected unselected vertices follow the chosen edge-distance curve. Smooth is the default. Linear, Sharp, Root and Sphere change how quickly influence fades. Disconnected mesh islands remain isolated.</p>
+          <details class="panel-help"><summary>Help · Proportional Editing</summary><p class="panel-note">Selected vertices move fully; connected unselected vertices follow the chosen edge-distance curve. Smooth is the default. Linear, Sharp, Root and Sphere change how quickly influence fades. Disconnected mesh islands remain isolated.</p></details>
           <div class="panel-heading section-gap">3D CURSOR</div>
           <div class="cursor-coords" id="cursor-coords">X 0.00 · Y 0.00 · Z 0.00</div>
         </section>
         <section class="panel-content" id="panel-modifiers" hidden>
           <div class="panel-heading">NON-DESTRUCTIVE STACK</div>
-          <p class="panel-note">Modifiers are evaluated in cancellable worker stages. The editable base mesh remains unchanged.</p>
+          <details class="panel-help"><summary>Help · Non-destructive modifiers</summary><p class="panel-note">Modifiers are evaluated in cancellable worker stages. The editable base mesh remains unchanged. Change their order with the arrows and expand each stage inspector to see the last accepted geometry counts and settings.</p></details>
           <section id="modifier-progress-panel" class="modifier-progress-panel" hidden aria-live="polite">
             <div class="modifier-progress-heading"><strong id="modifier-progress-label">Preparing modifiers…</strong><button id="modifier-cancel-btn" type="button" disabled>Cancel</button></div>
             <div id="modifier-progress-bar" class="modifier-progress-bar" role="progressbar" aria-label="Modifier evaluation progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="modifier-progress-fill"></span></div>
@@ -260,13 +262,19 @@
           <div id="modifier-list" class="modifier-list"><div class="empty-state">Select a mesh to manage its modifiers.</div></div>
         </section>
         <section class="panel-content" id="panel-system" hidden>
-          <div class="panel-heading">RUNTIME PROFILE</div>
+          <div class="panel-heading">VERSION</div>
+          <div class="system-row"><span>Running app</span><b id="running-version">v0.1.87</b></div>
+          <div class="system-row"><span>Repository release</span><b id="repository-version">v0.1.87</b></div>
+          <div class="panel-heading section-gap">RUNTIME PROFILE</div>
           <div class="system-row"><span>Renderer</span><b id="renderer-profile">Detecting…</b></div>
           <div class="system-row"><span>Memory hint</span><b id="memory-profile">Unknown</b></div>
           <div class="system-row"><span>CPU threads</span><b id="cpu-profile">Unknown</b></div>
           <div class="system-row"><span>Local storage</span><b id="storage-profile">Checking…</b></div>
           <div class="system-row"><span>Service worker</span><b id="sw-profile">Checking…</b></div>
           <p class="panel-note">Large scenes are not automatically safe on every phone. Save exports regularly and keep mobile meshes lightweight.</p>
+          <div class="panel-heading section-gap">WORKSPACE</div>
+          <button id="reset-workspace-panel-btn" class="reset-workspace-action" type="button">↺ Reset to default workspace</button>
+          <p class="panel-note">Restores the default view, panels, tools and editing preferences. Your scene and model are kept.</p>
         </section>
       </aside>
     </main>
@@ -347,7 +355,7 @@
       if ('serviceWorker' in navigator) {
         // Bump this once per app release. The query string changes the worker script URL,
         // while updateViaCache:'none' prevents HTTP cache reuse for the worker and imports.
-        const APP_RELEASE = '0.1.86';
+        const APP_RELEASE = '0.1.87';
         const hadController = Boolean(navigator.serviceWorker.controller);
         let controllerReloaded = false;
         if (hadController) {

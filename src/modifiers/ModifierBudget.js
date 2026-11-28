@@ -92,9 +92,17 @@ export function estimateModifierWorkingSet({ positions, indices, faces = null, m
         corners = nextCorners;
       }
     } else if (type === 'mirror') {
-      vertices *= 2;
-      triangles *= 2;
-      edges = Math.ceil(edges * 2);
+      if (modifier?.bisect !== false) {
+        // Bisect can create one shared intersection per crossed source edge,
+        // then reflect a clipped triangle set that can contain up to twice as
+        // many triangles as the original indexed surface.
+        vertices = (vertices + edges) * 2;
+        triangles *= 4;
+      } else {
+        vertices *= 2;
+        triangles *= 2;
+      }
+      edges = Math.ceil(triangles * 1.5);
       faceCount = triangles;
       corners = triangles * 3;
       peakBytes = Math.max(peakBytes, estimateBytes(before), estimateBytes({ vertices, triangles, faces: faceCount, edges, corners }));

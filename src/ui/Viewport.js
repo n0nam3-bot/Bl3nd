@@ -485,6 +485,35 @@ export class Viewport {
     return true;
   }
 
+  /** Restore the default perspective framing without changing any scene geometry. */
+  resetDefaultView(subject = null) {
+    if (this.modalOperationActive || this.controls?.enabled === false) return false;
+    if (this.camera?.isOrthographicCamera) this.toggleProjection();
+
+    const bounds = new THREE.Box3();
+    const subjects = Array.isArray(subject) ? subject : subject ? [subject] : [];
+    for (const object of subjects) if (object?.isObject3D) bounds.expandByObject(object);
+    const sphere = bounds.isEmpty() ? new THREE.Sphere(new THREE.Vector3(0, 0, 0), 1) : bounds.getBoundingSphere(new THREE.Sphere());
+    const target = sphere.center;
+    const radius = Math.max(1, Number(sphere.radius) || 1);
+    const direction = new THREE.Vector3(7, -9, 7).normalize();
+    const distance = radius * 3.1;
+
+    this.controls.target.copy(target);
+    this.camera.up.set(0, 0, 1);
+    this.camera.position.copy(target).addScaledVector(direction, distance);
+    this.camera.near = Math.max(0.01, radius / 100);
+    this.camera.far = Math.max(2000, radius * 1000);
+    this.camera.updateProjectionMatrix();
+    this.camera.lookAt(target);
+    this.controls.update();
+    this.transformGuideState = null;
+    this.updateTransformGuide(null);
+    this.onProjectionChange?.('perspective');
+    this.onStatus?.('Default perspective workspace restored');
+    return true;
+  }
+
   setView(view) {
     const target = this.controls.target.clone(); const distance = this.camera.position.distanceTo(target) || 10;
     const vectors = { front:new THREE.Vector3(0,-1,0), back:new THREE.Vector3(0,1,0), right:new THREE.Vector3(1,0,0), left:new THREE.Vector3(-1,0,0), top:new THREE.Vector3(0,0,1), bottom:new THREE.Vector3(0,0,-1) };

@@ -39,6 +39,14 @@ test('working-set estimate grows with subdivision levels and array copies', () =
   assert.equal(arrayFive.estimatedTriangles, 10);
 });
 
+test('working-set estimate budgets Mirror Bisect intersections and clipped triangles', () => {
+  const plain = estimateModifierWorkingSet({ positions, indices, faces, modifiers: [{ type: 'mirror', bisect: false }] });
+  const bisected = estimateModifierWorkingSet({ positions, indices, faces, modifiers: [{ type: 'mirror', bisect: true }] });
+  assert.ok(bisected.estimatedVertices > plain.estimatedVertices);
+  assert.ok(bisected.estimatedTriangles >= plain.estimatedTriangles * 2);
+  assert.ok(bisected.estimatedWorkingBytes > plain.estimatedWorkingBytes);
+});
+
 test('working-set estimate budgets Solidify shell and boundary walls conservatively', () => {
   const estimate = estimateModifierWorkingSet({ positions, indices, faces, modifiers: [{ type: 'solidify', thickness: 0.1 }] });
   assert.equal(estimate.estimatedVertices, 8);

@@ -26,6 +26,16 @@ export class SceneExplorer {
     this.tree?.addEventListener('click', event => this.onTreeClick(event));
   }
 
+  resetView() {
+    this.query = '';
+    if (this.searchInput) this.searchInput.value = '';
+    this.expandedObjects.clear();
+    this.expandedFaces.clear();
+    this.lastActiveObject = null;
+    this.lastRenderKey = '';
+    this.refresh();
+  }
+
   onTreeClick(event) {
     const button = event.target.closest?.('button[data-explorer-action]');
     if (!button || !this.tree?.contains(button)) return;
