@@ -541,3 +541,20 @@ Full Blender keymap parity is not claimed by this build. Android touch acceptanc
 - With the device offline, open/reload the app. Confirm the last cached app page remains available. Reconnect and return to the app; confirm the update check resumes and a deployed update can install.
 - Repeat scene recovery: confirm the locally saved scene remains intact across the service-worker upgrade and automatic page reload. Service-worker updates must not clear IndexedDB scene recovery.
 - Note that this mechanism fetches the newest version deployed to GitHub Pages. It cannot make a not-yet-deployed or failed Actions run available.
+
+
+## v0.1.79 — Catmull–Clark Subdivision modifier
+
+### Android — Chrome / Samsung Internet
+- Select a cube or a simple open quad surface, open Modifiers, and add Subdivision. Confirm the result becomes visibly smoother rather than merely producing four flat child triangles per source triangle.
+- Set Levels to 1, 2 and 3. Confirm the surface becomes progressively smoother, updates after each change, and the input cannot exceed the 1–3 range.
+- Toggle the modifier Off and On. Confirm the original cage returns when disabled and the evaluated smooth surface returns when enabled. Remove the modifier and confirm the original mesh is restored.
+- Add Subdivision to a cube and confirm the corners round consistently without cracks along shared edges. Add it to an open plane/quad and confirm the outer boundary stays open and smooths using the boundary rule.
+- Try an imported mesh with a non-manifold edge or two surfaces touching only at a vertex. Confirm the modifier reports a clear error and does not replace the previous valid evaluated geometry or modify editable source topology.
+- Combine Subdivision with Mirror, Array or Solidify in both stack orders. Confirm supported combinations evaluate without a startup error and the active modifier card remains responsive.
+- Undo/Redo the modifier addition/removal and confirm the stack and rendered result return together. Reload after LOCAL · SAVED and confirm the modifier settings and evaluated surface are restored.
+
+### Desktop — Chrome / Edge
+- Repeat levels 1–3 on a cube, a quad plane and a low-poly imported polygon mesh. Inspect shared edges, silhouette, normals, boundary handling and modifier stack order.
+- Confirm level values are clamped to 1–3, and a high-face-count cage that exceeds the worker safety budget fails without corrupting the previous evaluated geometry.
+- Verify modifier toggle, remove, Undo/Redo, autosave/reload and export behavior.

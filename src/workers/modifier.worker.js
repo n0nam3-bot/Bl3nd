@@ -1,18 +1,31 @@
+import { clampSubdivisionLevel, subdivideCatmullClark } from '../modifiers/CatmullClark.js';
+
 const edgeKey = (a, b) => a < b ? `${a}:${b}` : `${b}:${a}`;
 
-function subdivide(positions, indices) {
-  const points = Array.from(positions), midpoint = new Map(), out = [];
-  const mid = (a, b) => {
-    const key = edgeKey(a,b); if (midpoint.has(key)) return midpoint.get(key);
-    const id = points.length / 3;
-    for (let i=0;i<3;i++) points.push((positions[a*3+i] + positions[b*3+i]) / 2);
-    midpoint.set(key,id); return id;
-  };
-  for (let i=0;i+2<indices.length;i+=3) {
-    const [a,b,c] = [indices[i],indices[i+1],indices[i+2]], ab=mid(a,b),bc=mid(b,c),ca=mid(c,a);
-    out.push(a,ab,ca, ab,b,bc, ca,bc,c, ab,bc,ca);
+function trianglesToFaces(indices) {
+  const faces = [];
+  for (let i = 0; i + 2 < indices.length; i += 3) faces.push([indices[i], indices[i + 1], indices[i + 2]]);
+  return faces;
+}
+
+function facesToTriangleIndices(faces) {
+  const indices = [];
+  for (const face of faces) {
+    for (let i = 1; i + 1 < face.length; i++) indices.push(face[0], face[i], face[i + 1]);
   }
-  return { positions: new Float32Array(points), indices: new Uint32Array(out) };
+  return new Uint32Array(indices);
+}
+
+function subdivide(positions, indices, sourceFaces, modifier) {
+  let nextPositions = positions;
+  let nextFaces = Array.isArray(sourceFaces) && sourceFaces.length ? sourceFaces : trianglesToFaces(indices);
+  const levels = clampSubdivisionLevel(modifier.level);
+  for (let level = 0; level < levels; level++) {
+    const result = subdivideCatmullClark(nextPositions, nextFaces);
+    nextPositions = result.positions;
+    nextFaces = result.faces;
+  }
+  return { positions: nextPositions, faces: nextFaces, indices: facesToTriangleIndices(nextFaces) };
 }
 
 function mirror(positions, indices, modifier) {
@@ -61,13 +74,13 @@ function solidify(positions, indices, modifier) {
 
 self.onmessage = ({ data }) => {
   try {
-    let result = { positions:new Float32Array(data.positions), indices:new Uint32Array(data.indices) };
+    let result = { positions:new Float32Array(data.positions), indices:new Uint32Array(data.indices), faces:Array.isArray(data.faces) ? data.faces : null };
     for (const modifier of data.modifiers || []) {
       if (modifier.enabled === false) continue;
-      if (modifier.type === 'subdivision') result = subdivide(result.positions, result.indices);
-      else if (modifier.type === 'mirror') result = mirror(result.positions, result.indices, modifier);
-      else if (modifier.type === 'array') result = arrayMesh(result.positions, result.indices, modifier);
-      else if (modifier.type === 'solidify') result = solidify(result.positions, result.indices, modifier);
+      if (modifier.type === 'subdivision') result = subdivide(result.positions, result.indices, result.faces, modifier);
+      else if (modifier.type === 'mirror') result = { ...mirror(result.positions, result.indices, modifier), faces: null };
+      else if (modifier.type === 'array') result = { ...arrayMesh(result.positions, result.indices, modifier), faces: null };
+      else if (modifier.type === 'solidify') result = { ...solidify(result.positions, result.indices, modifier), faces: null };
     }
     self.postMessage({ id:data.id, positions:result.positions, indices:result.indices }, [result.positions.buffer,result.indices.buffer]);
   } catch (error) {

@@ -35,7 +35,8 @@ export class ModifierStack {
       result = await new Promise((resolve,reject) => {
         this.pending.set(id,{resolve,reject});
         const p = new Float32Array(base.positions), i = new Uint32Array(base.indices);
-        this.worker.postMessage({id,positions:p,indices:i,modifiers},[p.buffer,i.buffer]);
+        const faces = mesh.userData.hem.faces.map(face => [...face]);
+        this.worker.postMessage({id,positions:p,indices:i,faces,modifiers},[p.buffer,i.buffer]);
       });
     } else {
       throw new Error('Module Workers are unavailable; modifier evaluation was skipped.');

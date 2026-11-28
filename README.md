@@ -124,3 +124,8 @@ Select exactly one edge in Edge Select mode, then press **Ctrl+R** or use **Loop
 ### Interactive G/R/S Gizmo and mobile drag recovery (v0.1.74)
 
 When a Move, Rotate or Scale modal is active, you can still drag anywhere on the ordinary viewport area to adjust the active transform, just as before; the numeric pad is optional. The red X, green Y or blue Z handles constrain the operation, and Rotate displays three colored axis rings. During Move and Scale, the small square handles between the arrows constrain the operation to the XY, YZ or XZ plane; their color matches the axis perpendicular to that plane. The center handle selects free view-plane Move, trackball Rotate or uniform Scale. Dragging a gizmo handle and releasing applies one undoable transform; a tap without movement only selects that constraint. Enter/Esc and the numeric pad remain available. The full-size SVG guide passes blank-area touches through to the viewport canvas, so it cannot block the normal drag interaction.
+
+
+### Catmull–Clark subdivision
+
+The Subdivision modifier now smooths the editable polygon cage with Catmull–Clark rules rather than only splitting rendered triangles. Add it from the Modifiers panel, then set **Levels** from 1 to 3. Quads and n-gons are divided into shared quads; manifold interior vertices use the Catmull–Clark vertex rule and open boundaries use the standard boundary rule. Non-manifold edges, disconnected vertex fans and ambiguous boundary fans reject the preview without replacing the current evaluated mesh. Higher levels grow geometry quickly, so the app caps this control at three levels and rejects a step that would exceed the face safety budget. This is a first Catmull–Clark increment, not full Blender modifier parity.

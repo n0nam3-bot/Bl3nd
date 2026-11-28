@@ -770,7 +770,9 @@ function registerCommands() {
   });
   commandBus.register('modifier.update', async ({ id, field, value }) => {
     const mesh = sceneDocument.activeObject; const item = mesh?.userData.modifiers?.find(m => m.id === id); if (!item) return;
-    item[field] = field === 'count' || field === 'thickness' ? Number(value) : value;
+    item[field] = field === 'level'
+      ? Math.max(1, Math.min(3, Math.round(Number(value) || 1)))
+      : ['count', 'thickness'].includes(field) ? Number(value) : value;
     await modifierStack.evaluate(mesh); refreshModifiers();
   });
 }
@@ -816,9 +818,11 @@ function refreshModifiers() {
     const toggle=document.createElement('button'); toggle.textContent=mod.enabled?'On':'Off'; toggle.addEventListener('click',()=>run('modifier.toggle',{id:mod.id}));
     const remove=document.createElement('button'); remove.textContent='×'; remove.title='Remove modifier'; remove.addEventListener('click',()=>run('modifier.remove',{id:mod.id}));
     actions.append(toggle,remove); title.append(actions); card.append(title);
-    const addField=(label,field,value,type='number')=>{
-      const row=document.createElement('label'); row.textContent=label; const input=document.createElement('input'); input.type=type;
-      if(type==='select') { input.outerHTML=''; }
+    const addField=(label,field,value,limits={})=>{
+      const row=document.createElement('label'); row.textContent=label; const input=document.createElement('input'); input.type='number';
+      if(Number.isFinite(limits.min)) input.min=String(limits.min);
+      if(Number.isFinite(limits.max)) input.max=String(limits.max);
+      if(Number.isFinite(limits.step)) input.step=String(limits.step);
       input.value=value; input.addEventListener('change',()=>run('modifier.update',{id:mod.id,field,value:input.value})); row.append(input); card.append(row);
     };
     if(mod.type==='mirror'){
@@ -828,7 +832,10 @@ function refreshModifiers() {
     }
     if(mod.type==='array') addField('Copies','count',mod.count);
     if(mod.type==='solidify') addField('Thickness','thickness',mod.thickness);
-    if(mod.type==='subdivision') { const note=document.createElement('div'); note.className='panel-note'; note.textContent='Triangle subdivision · one level per stack pass'; card.append(note); }
+    if(mod.type==='subdivision') {
+      addField('Levels','level',mod.level,{min:1,max:3,step:1});
+      const note=document.createElement('div'); note.className='panel-note'; note.textContent='Catmull–Clark smooths the polygon cage. Levels are limited to 1–3 for memory safety.'; card.append(note);
+    }
     host.append(card);
   }
 }
