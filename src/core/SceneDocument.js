@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { HalfEdgeMesh } from './HalfEdgeMesh.js';
+import { resolveObjectSelection, resolveRestoredObjectSelection } from './ObjectSelection.js';
 
 const DEFAULT_MATERIAL = () => new THREE.MeshStandardMaterial({ color: 0xc8cbd0, roughness: 0.64, metalness: 0.08, flatShading: true, side: THREE.DoubleSide });
 
@@ -7,7 +8,7 @@ export class SceneDocument {
   constructor(scene) {
     this.scene = scene;
     this.content = new THREE.Group(); this.content.name = 'Scene Objects'; this.scene.add(this.content);
-    this.objects = []; this.activeObject = null; this.cursor = new THREE.Vector3(0, 0, 0); this.mode = 'object';
+    this.objects = []; this.activeObject = null; this.selectedObjects = new Set(); this.cursor = new THREE.Vector3(0, 0, 0); this.mode = 'object';
     this.pivot = 'median'; this.selectionMode = 'face'; this.nameCounter = 1;
   }
 
@@ -56,26 +57,76 @@ export class SceneDocument {
     previous?.dispose?.();
   }
 
-  setActive(mesh) {
-    this.objects.forEach(item => {
-      if (item.material?.emissive) item.material.emissive.setHex(item === mesh ? 0x342315 : 0x000000);
-    });
-    this.activeObject = mesh || null;
+  syncObjectSelectionAppearance() {
+    for (const item of this.objects) {
+      const selected = this.selectedObjects.has(item);
+      const active = item === this.activeObject;
+      const materials = Array.isArray(item.material) ? item.material : [item.material];
+      for (const material of materials) {
+        if (material?.emissive) material.emissive.setHex(active ? 0x342315 : selected ? 0x142b38 : 0x000000);
+      }
+      item.userData.objectSelected = selected;
+      item.userData.objectActive = active;
+    }
+  }
+
+  setActive(mesh, { additive = false, toggle = false, preserveSelection = false } = {}) {
+    if (preserveSelection) {
+      this.activeObject = this.objects.includes(mesh) && this.selectedObjects.has(mesh)
+        ? mesh
+        : [...this.selectedObjects].at(-1) || null;
+    } else {
+      const next = resolveObjectSelection({
+        objects: this.objects,
+        selectedObjects: [...this.selectedObjects],
+        activeObject: this.activeObject,
+        mesh,
+        additive,
+        toggle
+      });
+      this.selectedObjects = new Set(next.selectedObjects);
+      this.activeObject = next.activeObject;
+    }
+    this.syncObjectSelectionAppearance();
+    return this.activeObject;
+  }
+
+  getSelectedObjects() {
+    return this.objects.filter(item => this.selectedObjects.has(item));
   }
 
   deleteActiveObject() {
-    if (!this.activeObject) return false;
-    const mesh = this.activeObject; this.content.remove(mesh); mesh.geometry?.dispose?.();
-    this.objects = this.objects.filter(item => item !== mesh); this.setActive(this.objects.at(-1) || null); return true;
+    const targets = this.getSelectedObjects();
+    if (!targets.length && this.activeObject) targets.push(this.activeObject);
+    if (!targets.length) return false;
+    for (const mesh of targets) {
+      this.content.remove(mesh);
+      mesh.geometry?.dispose?.();
+      this.selectedObjects.delete(mesh);
+    }
+    this.objects = this.objects.filter(item => !targets.includes(item));
+    const nextActive = this.objects.at(-1) || null;
+    this.selectedObjects = new Set(nextActive ? [nextActive] : []);
+    this.setActive(nextActive, { preserveSelection: true });
+    return true;
   }
 
-  setMode(mode) { this.mode = mode === 'edit' ? 'edit' : 'object'; }
+  setMode(mode) {
+    this.mode = mode === 'edit' ? 'edit' : 'object';
+    // The current editing foundation operates on one active mesh. Collapse an
+    // Object Mode multi-selection to that mesh before entering Edit Mode.
+    if (this.mode === 'edit' && this.activeObject) {
+      this.selectedObjects = new Set([this.activeObject]);
+      this.syncObjectSelectionAppearance();
+    }
+  }
 
   async serialize() {
     return {
       version: 1, cursor: this.cursor.toArray(), mode: this.mode, pivot: this.pivot, selectionMode: this.selectionMode,
       nameCounter: this.nameCounter,
       activeIndex: this.objects.indexOf(this.activeObject),
+      selectedIndices: this.objects.map((mesh, index) => this.selectedObjects.has(mesh) ? index : -1).filter(index => index >= 0),
       objects: this.objects.map(mesh => ({
         name: mesh.name,
         positions: mesh.userData.hem.positions.map(position => [...position]),
@@ -110,8 +161,13 @@ export class SceneDocument {
       mesh.userData.hem = hem; mesh.userData.modifiers = item.modifiers || []; mesh.userData.baseMaterialColor = item.color ?? 0xc8cbd0;
       this.content.add(mesh); this.objects.push(mesh);
     }
-    const index = data.activeIndex ?? this.objects.length - 1;
-    this.setActive(this.objects[index] || this.objects.at(-1) || null);
+    const restored = resolveRestoredObjectSelection({
+      objects: this.objects,
+      selectedIndices: data.selectedIndices,
+      activeIndex: data.activeIndex ?? -1
+    });
+    this.selectedObjects = new Set(restored.selectedObjects);
+    this.setActive(restored.activeObject, { preserveSelection: true });
   }
 
   stats() {

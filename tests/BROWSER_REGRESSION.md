@@ -407,3 +407,25 @@ Full Blender keymap parity is not claimed by this build. Android touch acceptanc
 - Confirm the **⌕** header button remains visible and tappable at narrow phone widths without clipping Object/Edit, Undo/Redo, Export or Import controls.
 - Tap the launcher, type a search query and tap a result. Confirm the correct command runs and the palette closes. Verify the panel scrolls and result targets remain comfortably tappable.
 - Confirm Android keyboard typing, text selection, scrolling, Back/Esc close behavior and touch viewport navigation remain usable after closing the palette.
+
+
+## v0.1.69 — Object Mode multi-selection and pivot aggregation
+
+### Desktop — Chrome / Edge
+- In Object Mode, click one object, then Shift+click a second. Confirm both remain highlighted, the second becomes active, and the footer reports the selected count. Shift+click the active object to remove it; the remaining selected object becomes active. Shift+click the final object to clear the group, then click empty viewport space to clear a normal selection.
+- Create or import at least three objects at distinct positions and with different dimensions. Select two or more objects. Confirm the selected group persists through a scene serialize/restore path and Undo/Redo of a subsequent transform.
+- Set Pivot Point to Median Point. Start Move, Rotate and Scale. Confirm every selected object moves together; rotation and scale use the arithmetic mean of selected object origins as the shared pivot. Compare a selection with a deliberately offset origin to distinguish the mean from the bounding-box center.
+- Set Pivot Point to Bounding Box Center. Rotate and scale a selection containing differently sized and rotated objects. Confirm the pivot is centered on the union of their world-space mesh bounds, not the active object bounds.
+- Set Pivot Point to 3D Cursor. Move the cursor away from the objects, then rotate/scale the selection. Confirm the cursor stays fixed and every selected object's origin orbits around it.
+- Set Pivot Point to Individual Origins. Rotate and scale multiple objects. Confirm each object's origin stays fixed while its orientation/size changes. Confirm the viewport guide marks every object origin and labels the count as OBJECTS. Move in Individual mode and confirm all origins receive the same translation.
+- Test Global and Local axis constraints. Local orientation uses the active selected object as the shared reference; confirm every selected item responds to the same constrained world axis. Test snapping and numeric input.
+- Apply a multi-object transform and confirm exactly one undo step restores every object's transforms and the complete selection; Redo restores all of them. Cancel a transform and confirm every object returns to its original state with the same selection.
+- Delete with multiple objects selected. Confirm all selected objects are deleted together, the remaining scene is valid and one Undo restores all deleted objects. Enter Edit Mode with multiple objects selected and confirm only the active object remains selected/edited. Return to Object Mode and verify ordinary single-object selection still works.
+
+### Android — Chrome
+- In Object Mode, confirm the **Multi** actionbar button is visible in the same slot used by Proportional Editing in Edit Mode. Tap Multi ON, then tap two objects. Confirm both remain selected, the last tapped object becomes active, and the Multi button shows its active state.
+- Tap an already selected object while Multi is ON. Confirm it is removed and the remaining active object is retained. Tap Multi OFF; the next object tap must replace the selection.
+- Enter Edit Mode and confirm Multi disappears while Prop controls take its place. Return to Object Mode and confirm Multi returns OFF.
+- With at least two objects selected, start G/R/S from the bottom actionbar. Confirm the operation applies to all selected objects, mobile numeric entry and Apply/Cancel work, and camera orbit returns immediately after completion.
+- Test Median, Bounding Box, Individual and Cursor pivots with Move/Rotate/Scale. Confirm individual-origin guide markers remain visible and controls do not select geometry or place the cursor accidentally.
+- Confirm two-finger viewport pan/zoom, one-finger orbit, P/O View, Add, More and the mobile properties drawer remain functional.

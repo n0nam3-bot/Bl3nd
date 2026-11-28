@@ -51,7 +51,7 @@ export const COMMAND_SEARCH_ITEMS = Object.freeze([
   { id:'validate-mesh', label:'Validate Mesh', category:'Edit Mesh', description:'Report topology and triangulation issues.', keywords:'diagnostic check inspect manifold', scope:'edit', command:'mesh.validate_topology' },
   { id:'repair-mesh', label:'Repair Safe Topology Issues', category:'Edit Mesh', description:'Repair malformed, duplicate and safely orientable mesh components.', keywords:'clean fix winding nonmanifold safe', scope:'edit', command:'mesh.repair_topology' },
 
-  { id:'delete-object', label:'Delete Active Object', category:'Object', description:'Delete the active scene object.', keywords:'remove erase x', scope:'object', command:'object.delete' },
+  { id:'delete-object', label:'Delete Selected Objects', category:'Object', description:'Delete every selected scene object.', keywords:'remove erase active object x', scope:'object', command:'object.delete' },
   { id:'modifier-subdivision', label:'Add Subdivision Modifier', category:'Modifiers', description:'Add the current first-pass Subdivision modifier.', keywords:'smooth subdivide stack', scope:'any', command:'modifier.add', payload:{ type:'subdivision' } },
   { id:'modifier-mirror', label:'Add Mirror Modifier', category:'Modifiers', description:'Add a non-welded Mirror modifier.', keywords:'symmetry reflect stack', scope:'any', command:'modifier.add', payload:{ type:'mirror' } },
   { id:'modifier-array', label:'Add Array Modifier', category:'Modifiers', description:'Add a simple offset Array modifier.', keywords:'duplicate copies repeat stack', scope:'any', command:'modifier.add', payload:{ type:'array' } },

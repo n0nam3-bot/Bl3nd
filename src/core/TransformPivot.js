@@ -103,3 +103,27 @@ export function groupSelectedTransformVertices({
   }
   return [...groups.values()].sort((a, b) => a[0] - b[0]);
 }
+
+
+/**
+ * Resolve a shared Object Mode pivot from object origins, complete world-space
+ * bounds samples, or the fixed 3D cursor. Individual Origins is anchored to the
+ * active object for pointer projection; each object receives its own pivot in
+ * ModalTransform.
+ */
+export function resolveObjectTransformPivot({
+  origins = [],
+  bounds = [],
+  cursor = null,
+  activeOrigin = null
+} = {}, mode = 'median') {
+  const validPoint = point => Array.isArray(point) && point.length >= 3 &&
+    point.slice(0, 3).every(value => Number.isFinite(Number(value)))
+    ? point.slice(0, 3).map(Number)
+    : null;
+
+  if (mode === 'cursor') return validPoint(cursor);
+  if (mode === 'individual') return validPoint(activeOrigin) || resolveTransformPivotPoint(origins, 'median');
+  if (mode === 'bounds') return resolveTransformPivotPoint(bounds, 'bounds') || resolveTransformPivotPoint(origins, 'median');
+  return resolveTransformPivotPoint(origins, 'median');
+}

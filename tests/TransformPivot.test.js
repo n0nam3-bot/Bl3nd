@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { groupSelectedTransformVertices, resolveTransformPivotPoint } from '../src/core/TransformPivot.js';
+import { groupSelectedTransformVertices, resolveObjectTransformPivot, resolveTransformPivotPoint } from '../src/core/TransformPivot.js';
 
 test('Median Point is the arithmetic center of selected vertices', () => {
   assert.deepEqual(resolveTransformPivotPoint([[0, 0, 0], [2, 4, 6], [4, 2, 0]]), [2, 2, 2]);
@@ -85,4 +85,30 @@ test('invalid selected topology IDs and malformed positions are ignored safely',
   const groups = groupSelectedTransformVertices({ positions, faceIds:[0,1,100], edgeIds:[0,1], vertexIds:[2], faces, edges });
   assert.deepEqual(groups, [[0,1]]);
   assert.deepEqual(groupSelectedTransformVertices({ positions:[], vertexIds:[0] }), []);
+});
+
+
+test('Object Mode Median pivot averages the selected object origins', () => {
+  assert.deepEqual(resolveObjectTransformPivot({
+    origins: [[0,0,0],[10,4,2],[2,2,8]]
+  }, 'median'), [4,2,10/3]);
+});
+
+test('Object Mode Bounding Box pivot uses the combined world-space bounds', () => {
+  const corners = [
+    [-2,-1,-1],[2,-1,-1],[-2,1,-1],[2,1,-1],[-2,-1,1],[2,-1,1],[-2,1,1],[2,1,1],
+    [8,-3,-2],[12,-3,-2],[8,3,-2],[12,3,-2],[8,-3,2],[12,-3,2],[8,3,2],[12,3,2]
+  ];
+  assert.deepEqual(resolveObjectTransformPivot({ origins:[[0,0,0],[10,0,0]], bounds:corners }, 'bounds'), [5,0,0]);
+});
+
+test('Object Mode Cursor pivot remains fixed and Individual Origins anchor to active origin', () => {
+  const input = { origins:[[0,0,0],[10,0,0]], cursor:[3,4,5], activeOrigin:[10,0,0] };
+  assert.deepEqual(resolveObjectTransformPivot(input, 'cursor'), [3,4,5]);
+  assert.deepEqual(resolveObjectTransformPivot(input, 'individual'), [10,0,0]);
+});
+
+test('Object Mode pivot resolution safely falls back when one source is invalid', () => {
+  assert.deepEqual(resolveObjectTransformPivot({ origins:[[2,4,6]], bounds:[], cursor:[NaN,0,0] }, 'bounds'), [2,4,6]);
+  assert.equal(resolveObjectTransformPivot({ origins:[], cursor:[NaN,0,0] }, 'cursor'), null);
 });

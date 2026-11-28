@@ -8,6 +8,7 @@ export class TouchController {
     this.start = null;
     this.activePointers = new Set();
     this.selectionAddMode = new SelectionAddMode();
+    this.objectSelectionAddMode = new SelectionAddMode();
     const el = viewport.renderer.domElement;
     this.selectionCanvas = el;
     this.down = event => this.onDown(event);
@@ -32,12 +33,25 @@ export class TouchController {
   setupSelectionAddMode() {
     this.selectionMenu = document.querySelector('#pie-menu');
     this.selectionButton = document.querySelector('#selection-menu-btn');
+    this.multiSelectButton = document.querySelector('#mobile-multi-select');
     this.editModeButton = document.querySelector('#edit-mode-btn');
     this.viewportContainer = document.querySelector('#viewport');
     this.isTouchDevice = Boolean(
       (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) ||
       ('ontouchstart' in window)
     );
+    this.syncObjectSelectionButton();
+    if (this.multiSelectButton) {
+      this.multiSelectClick = () => {
+        const enabled = this.objectSelectionAddMode.toggle();
+        this.syncObjectSelectionButton();
+        const message = enabled ? 'Object Multi-Select ON · tap objects to add or remove them' : 'Object Multi-Select OFF · new taps replace the selection';
+        const status = document.querySelector('#status-message');
+        if (status) status.textContent = message;
+        this.notify?.(enabled ? 'Object Multi-Select enabled' : 'Object Multi-Select disabled', 'success');
+      };
+      this.multiSelectButton.addEventListener('click', this.multiSelectClick);
+    }
 
     if (this.selectionMenu) {
       this.selectionMenuClick = event => {
@@ -69,9 +83,13 @@ export class TouchController {
 
     if (this.editModeButton) {
       this.editModeObserver = new MutationObserver(() => {
-        if (!this.isEditMode() && this.selectionAddMode.enabled) {
+        if (this.isEditMode()) {
+          if (this.selectionAddMode.enabled) this.setAddSelectionEnabled(false, { notify: false });
+          this.objectSelectionAddMode.reset();
+        } else if (this.selectionAddMode.enabled) {
           this.setAddSelectionEnabled(false, { notify: false });
         }
+        this.syncObjectSelectionButton();
       });
       this.editModeObserver.observe(this.editModeButton, { attributes: true, attributeFilter: ['class'] });
     }
@@ -86,6 +104,21 @@ export class TouchController {
 
   isEditMode() {
     return Boolean(this.editModeButton?.classList.contains('active'));
+  }
+
+  syncObjectSelectionButton() {
+    const button = this.multiSelectButton;
+    if (!button) return;
+    const enabled = this.objectSelectionAddMode.enabled;
+    button.hidden = !this.isTouchDevice || this.isEditMode();
+    button.classList.toggle('active', enabled);
+    button.setAttribute('aria-pressed', String(enabled));
+    button.setAttribute('aria-label', `Object Multi-Select ${enabled ? 'on' : 'off'}`);
+    button.title = enabled
+      ? 'Object Multi-Select is ON · tap objects to add or remove them'
+      : 'Enable to add or remove objects with taps';
+    const label = button.querySelector('small');
+    if (label) label.textContent = enabled ? 'Multi ON' : 'Multi';
   }
 
   ensureSelectionMenuToggle() {
@@ -146,11 +179,14 @@ export class TouchController {
   }
 
   markAdditiveSelection(event) {
-    if (!this.selectionAddMode.shouldAdd(event) || event.pointerType === 'mouse' ||
-        !this.isEditMode() || this.viewport.modalOperationActive) return;
+    if (event.pointerType === 'mouse' || this.viewport.modalOperationActive) return;
+    const editMode = this.isEditMode();
+    if (editMode) {
+      if (!this.selectionAddMode.shouldAdd(event)) return;
+    } else if (!this.objectSelectionAddMode.enabled) return;
 
     const tool = this.viewport.selectionTool || 'tap';
-    const isTapSelection = tool === 'tap';
+    const isTapSelection = !editMode || tool === 'tap';
     const relevantPhase = isTapSelection ? event.type === 'pointerup' : event.type === 'pointerdown';
     if (!relevantPhase || event.shiftKey) return;
 
@@ -216,6 +252,7 @@ export class TouchController {
     window.removeEventListener('pointerup', this.up);
     window.removeEventListener('pointercancel', this.cancel);
     this.selectionMenu?.removeEventListener('click', this.selectionMenuClick, true);
+    this.multiSelectButton?.removeEventListener('click', this.multiSelectClick);
     this.selectionMenuObserver?.disconnect();
     this.selectionButtonObserver?.disconnect();
     this.editModeObserver?.disconnect();

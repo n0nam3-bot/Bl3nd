@@ -178,7 +178,7 @@ function initializeEditSelection(hem) {
 function registerCommands() {
   commandBus.register('object.add_primitive', ({ primitive = 'cube' }) => { const mesh = sceneDocument.addPrimitive(primitive); refresh(); viewport.frame(mesh); return mesh; });
   commandBus.register('object.delete', () => { const ok = sceneDocument.deleteActiveObject(); refresh(); return ok; });
-  commandBus.register('object.select', ({ mesh = null }) => { sceneDocument.setActive(mesh); refresh(); }, { recordUndo: false });
+  commandBus.register('object.select', ({ mesh = null, additive = false, toggle = false }) => { sceneDocument.setActive(mesh, { additive, toggle }); refresh(); }, { recordUndo: false });
   commandBus.register('mesh.select_from_hit', ({ mesh, faceId, event = null }) => {
     if (!mesh?.userData?.hem || faceId < 0) return false;
     if (sceneDocument.activeObject !== mesh) sceneDocument.setActive(mesh);
@@ -648,7 +648,11 @@ function handleViewportSelection(hit, pointer, event) {
     else run('mesh.clear_selection');
     return;
   }
-  if (sceneDocument.mode === 'object') { run('object.select',{mesh:hit.object}); return; }
+  if (sceneDocument.mode === 'object') {
+    const additive = Boolean(event?.shiftKey);
+    run('object.select',{mesh:hit.object,additive,toggle:additive});
+    return;
+  }
   const faceId = faceIdForTriangle(hit.object.userData.hem, hit.faceIndex ?? 0);
   run('mesh.select_from_hit', { mesh: hit.object, faceId, event: event ? { clientX: event.clientX, clientY: event.clientY, shiftKey: event.shiftKey } : null });
 }
@@ -735,12 +739,12 @@ function refresh() {
   const hintDesktop = $('.hint-desktop'), hintMobile = $('.hint-mobile');
   if (editing) {
     hintDesktop.textContent = 'Edit: Click topology · O proportional · Alt+L loop · Ctrl+Alt+L ring · Ctrl+B bevel · Ctrl+R loop cut · X delete · Numpad: views/orbit/frame/projection';
-    hintMobile.textContent = 'Edit: Tap topology · Prop in the bottom bar toggles proportional G/R/S · P/O switches projection · Select ▾ for selection tools';
+    hintMobile.textContent = 'Edit: Tap topology · Prop toggles proportional G/R/S · P/O switches projection · Select ▾ for selection tools';
   } else {
     hintDesktop.textContent = 'Drag to orbit · Right-drag to pan · Scroll to zoom · Numpad 2/4/6/8 orbit · Numpad 5 / P-O switch projection · Numpad . frame · G/R/S transform';
-    hintMobile.textContent = 'One finger: orbit · Two fingers: pan/zoom · P/O above axes switches projection · Long press: 3D Cursor · G/R/S: transform';
+    hintMobile.textContent = 'One finger: orbit · Two fingers: pan/zoom · Multi adds/toggles objects · P/O View switches projection · Long press: 3D Cursor · G/R/S: transform';
   }
-  const stats=sceneDocument.stats(); $('#object-count').textContent=`Objects: ${stats.objects}`;
+  const stats=sceneDocument.stats(); $('#object-count').textContent=`Objects: ${stats.objects} · Selected: ${sceneDocument.selectedObjects?.size || 0}`;
   $('#mesh-stats').textContent=`Verts ${stats.vertices} · Edges ${stats.edges} · Faces ${stats.faces}`;
   $$('[data-transform]').forEach(input=>{
     const mesh=sceneDocument.activeObject,kind=input.dataset.transform,axis=input.dataset.axis;

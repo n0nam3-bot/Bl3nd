@@ -79,3 +79,10 @@ test('editable-field detection recognizes editable ancestors but ignores ordinar
   assert.equal(isEditableCommandSearchTarget({ tagName:'BUTTON' }), false);
   assert.equal(isEditableCommandSearchTarget({ closest() { return true; } }), true);
 });
+
+
+test('Object Mode delete command is described as deleting the selected object group', () => {
+  const item = COMMAND_SEARCH_ITEMS.find(entry => entry.id === 'delete-object');
+  assert.equal(item.label, 'Delete Selected Objects');
+  assert.match(item.description, /every selected scene object/i);
+});

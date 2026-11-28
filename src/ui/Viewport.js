@@ -200,7 +200,8 @@ export class Viewport {
     }
     elements.push(`<circle cx="${center.x.toFixed(2)}" cy="${center.y.toFixed(2)}" r="7" fill="#1a1e25" fill-opacity="0.88" stroke="${activeColor}" stroke-width="2"/>`);
     elements.push(`<path d="M ${(center.x-11).toFixed(2)} ${center.y.toFixed(2)} H ${(center.x+11).toFixed(2)} M ${center.x.toFixed(2)} ${(center.y-11).toFixed(2)} V ${(center.y+11).toFixed(2)}" stroke="#f3f4f6" stroke-opacity="0.72" stroke-width="1"/>`);
-    const regionBadge = state.pivotMode === 'individual' && state.regionCount ? ` · ${state.regionCount} REGION${state.regionCount === 1 ? '' : 'S'}` : '';
+    const markerLabel = state.pivotMarkerLabel || 'REGION';
+    const regionBadge = state.pivotMode === 'individual' && state.regionCount ? ` · ${state.regionCount} ${markerLabel}${state.regionCount === 1 ? '' : 'S'}` : '';
     const badge = `${(state.orientation || 'global').toUpperCase()} · ${(state.pivotMode || 'median').toUpperCase()}${regionBadge}`;
     elements.push(`<text x="${(center.x+12).toFixed(2)}" y="${(center.y+20).toFixed(2)}" fill="#f0d6b5" font-size="9" font-weight="700" paint-order="stroke" stroke="#151920" stroke-width="3">${badge}</text>`);
 
