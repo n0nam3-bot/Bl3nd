@@ -20,7 +20,7 @@ The application does not require a build command. Open the GitHub Pages URL afte
 - Free `G` follows the current camera view plane, so screen-right/screen-up move with the current view
 - `X`, `Y`, `Z`: constrain to an axis; `Shift + X/Y/Z`: constrain move/scale to the plane perpendicular to that axis
 - `,` during a transform toggles **Global / Local** orientation. Global is the default; Local uses the object's world-space starting axes for axis-constrained Move, Rotate and Scale. The mobile transform pad has the same toggle.
-- Axis-constrained Move (`G` then `X/Y/Z`) has optional snapping, off by default. On mobile, use **SNAP ON/OFF** in the active Move pad and open **STEP SIZE** to edit separate Global and Local increments. On desktop, the same settings are in the Scene panel. Snapping affects pointer drags only; numeric entry stays exact, and free/plane movement is not snapped.
+- Optional axis snapping is shared by `G`, `R` and `S` when constrained with `X/Y/Z`. It is off by default; Move uses world-unit steps, Rotate uses degree steps (15° by default), and Scale snaps factor changes around 1.0 (0.1 by default). Global and Local steps are configured separately. Typed numeric values remain exact; free movement/trackball and Shift+axis plane constraints are not changed. On mobile the SNAP and STEP SIZE controls appear inside the active transform pad; desktop settings are in Scene properties.
 - Free `R` uses a camera-oriented virtual trackball; `R` + `X/Y/Z` rotates around the chosen Global or Local axis
 - Numeric keys, `Enter`, `Esc`: enter a value, apply, cancel
 - Press `G/R/S` with the pointer over the viewport to begin there; otherwise the viewport center is used

@@ -3,7 +3,7 @@ import { detectCapabilities } from './core/DeviceCapabilities.js';
 import { CommandBus } from './core/CommandBus.js';
 import { SceneDocument } from './core/SceneDocument.js';
 import { buildMoveReadout } from './core/TransformReadout.js';
-import { normalizeMoveSnapSettings } from './core/TransformSnap.js';
+import { getTransformSnapSettingKeys, getTransformSnapStep, normalizeTransformSnapSettings } from './core/TransformSnap.js';
 import { UndoManager } from './core/UndoManager.js';
 import { MeshOperators } from './operators/MeshOperators.js';
 import { SelectionOperators } from './operators/SelectionOperators.js';
@@ -26,13 +26,13 @@ const loading = window.Bl3ndLoading;
 function loadingProgress(value, message) { loading?.update(value, message); }
 
 const MOVE_SNAP_STORAGE_KEY = 'bl3nd-move-snap-v1';
-let moveSnapSettingsOpen = false;
-const formatSnapStep = value => Number(Number(value).toPrecision(6)).toString();
-function loadMoveSnapSettings() {
-  try { return normalizeMoveSnapSettings(JSON.parse(localStorage.getItem(MOVE_SNAP_STORAGE_KEY) || '{}')); }
-  catch { return normalizeMoveSnapSettings(); }
+let transformSnapSettingsOpen = false;
+const formatSnapStep = (value, type = 'move') => `${Number(Number(value).toPrecision(6)).toString()}${type === 'rotate' ? '°' : type === 'scale' ? '×' : ''}`;
+function loadTransformSnapSettings() {
+  try { return normalizeTransformSnapSettings(JSON.parse(localStorage.getItem(MOVE_SNAP_STORAGE_KEY) || '{}')); }
+  catch { return normalizeTransformSnapSettings(); }
 }
-function persistMoveSnapSettings(settings) {
+function persistTransformSnapSettings(settings) {
   try { localStorage.setItem(MOVE_SNAP_STORAGE_KEY, JSON.stringify(settings)); }
   catch { /* Browser storage may be unavailable; in-memory settings still work. */ }
 }
@@ -76,7 +76,7 @@ const undoManager = new UndoManager({
   status,
   onRestore: async snapshot => { await sceneDocument.restore(snapshot); await reapplyModifiers(); refresh(); }
 });
-const modalTransform = new ModalTransform({ document: sceneDocument, undoManager, viewport, status, moveSnapSettings: loadMoveSnapSettings(), onChange: () => ui?.refreshModal() });
+const modalTransform = new ModalTransform({ document: sceneDocument, undoManager, viewport, status, transformSnapSettings: loadTransformSnapSettings(), onChange: () => ui?.refreshModal() });
 const loopCutModal = new LoopCutModal({ document: sceneDocument, undoManager, viewport, status, onChange: () => { refresh(); ui?.refreshModal(); } });
 const bevelModal = new BevelModal({ document: sceneDocument, undoManager, viewport, status, onChange: () => { refresh(); ui?.refreshModal(); } });
 const faceOperationModal = new FaceOperationModal({ document: sceneDocument, undoManager, viewport, status, onChange: () => { refresh(); ui?.refreshModal(); } });
@@ -536,7 +536,7 @@ function registerCommands() {
     return result;
   }, { recordUndo: false });
   commandBus.register('transform.modal_start', async ({ type, pointer }) => {
-    moveSnapSettingsOpen = false;
+    transformSnapSettingsOpen = false;
     if (loopCutModal.active || bevelModal.active) { notify('Apply or cancel the current mesh operation before starting a transform.'); return false; }
     const started = await modalTransform.begin(type, pointer || ui.pointerOrigin());
     if (!started) notify('Select an object before transforming.');
@@ -550,8 +550,8 @@ function registerCommands() {
   commandBus.register('transform.modal_orientation_toggle', () => modalTransform.toggleOrientation(), { recordUndo: false });
   commandBus.register('transform.modal_input', ({ value }) => { modalTransform.appendNumeric(value); ui.refreshModal(); }, { recordUndo: false });
   commandBus.register('transform.snap_settings', ({ settings }) => {
-    const next = modalTransform.setMoveSnapSettings(settings);
-    persistMoveSnapSettings(next);
+    const next = modalTransform.setTransformSnapSettings(settings);
+    persistTransformSnapSettings(next);
     return next;
   }, { recordUndo: false });
   commandBus.register('cursor.set', ({ point }) => { sceneDocument.cursor.fromArray(point); refreshCursor(); return true; }, { recordUndo: false });
@@ -688,32 +688,42 @@ ui = {
     const readout=$('#modal-readout'),pad=$('#numeric-pad'),padTitle=pad.querySelector('.pad-title');
     const axisButtons=pad.querySelectorAll('[data-axis]');
     const orientationButton=$('#pad-transform-orientation');
-    const snapControls=$('#pad-move-snap-controls');
-    const snapButton=$('#pad-move-snap-toggle');
-    const snapSettingsButton=$('#pad-move-snap-settings-toggle');
-    const snapSettingsPanel=$('#pad-move-snap-settings');
-    const snapSettings=modalTransform.moveSnapSettings;
-    const snapEnabledInput=$('#move-snap-enabled');
-    const snapStepInputs=[
-      [$('#move-snap-global-step'),'globalStep'],
-      [$('#move-snap-local-step'),'localStep'],
-      [$('#pad-move-snap-global-step'),'globalStep'],
-      [$('#pad-move-snap-local-step'),'localStep']
-    ];
+    const snapControls=$('#pad-transform-snap-controls');
+    const snapButton=$('#pad-transform-snap-toggle');
+    const snapSettingsButton=$('#pad-transform-snap-settings-toggle');
+    const snapSettingsPanel=$('#pad-transform-snap-settings');
+    const snapSettings=modalTransform.transformSnapSettings;
+    const snapEnabledInput=$('#transform-snap-enabled');
+    const snapType=modalTransform.active ? modalTransform.type : 'move';
+    const snapKeys=getTransformSnapSettingKeys(snapType);
+    const snapStepInputs=$$('[data-snap-setting]').map(input=>[input,input.dataset.snapSetting]);
+    const mobileGlobalInput=$('#pad-transform-snap-global-step');
+    const mobileLocalInput=$('#pad-transform-snap-local-step');
     if(document.activeElement!==snapEnabledInput) snapEnabledInput.checked=snapSettings.enabled;
     for(const [input,key] of snapStepInputs) if(document.activeElement!==input) input.value=String(snapSettings[key]);
-    const canConfigureSnap=modalTransform.active && modalTransform.type==='move' && Boolean(modalTransform.axis);
+    if(document.activeElement!==mobileGlobalInput) mobileGlobalInput.value=String(snapSettings[snapKeys.global]);
+    if(document.activeElement!==mobileLocalInput) mobileLocalInput.value=String(snapSettings[snapKeys.local]);
+    const labelType=snapType==='rotate'?'ROTATION':snapType.toUpperCase();
+    $('#pad-snap-global-label').textContent=`GLOBAL ${labelType}`;
+    $('#pad-snap-local-label').textContent=`LOCAL ${labelType}`;
+    $('#pad-snap-help').textContent=snapType==='rotate'
+      ? 'Axis drags snap in degrees. Typed rotation values stay exact.'
+      : snapType==='scale'
+        ? 'Axis drags snap by factor steps around 1.0. Typed scale values stay exact.'
+        : 'Axis drags snap in world units. Typed Move values stay exact.';
+    const canConfigureSnap=modalTransform.active && Boolean(modalTransform.axis) && ['move','rotate','scale'].includes(modalTransform.type);
     snapControls.hidden=!canConfigureSnap;
-    snapSettingsPanel.hidden=!canConfigureSnap || !moveSnapSettingsOpen;
-    const activeSnapStep=modalTransform.orientation==='local'?snapSettings.localStep:snapSettings.globalStep;
-    snapButton.textContent=snapSettings.enabled?`SNAP ON · ${formatSnapStep(activeSnapStep)}`:'SNAP OFF';
+    snapSettingsPanel.hidden=!canConfigureSnap || !transformSnapSettingsOpen;
+    const activeSnapStep=getTransformSnapStep(snapSettings,snapType,modalTransform.orientation);
+    const activeSnapLabel=formatSnapStep(activeSnapStep,snapType);
+    snapButton.textContent=snapSettings.enabled?`SNAP ON · ${activeSnapLabel}`:'SNAP OFF';
     snapButton.classList.toggle('is-enabled',snapSettings.enabled);
     snapButton.setAttribute('aria-pressed',String(snapSettings.enabled));
     snapButton.title=snapSettings.enabled
-      ? `Pointer movement snaps in ${modalTransform.orientation} increments of ${activeSnapStep}. Numeric input stays exact.`
-      : 'Snapping is off. Tap to enable axis-constrained Move snapping.';
-    snapSettingsButton.textContent=moveSnapSettingsOpen?'HIDE STEPS ▴':'STEP SIZE ▾';
-    snapSettingsButton.setAttribute('aria-expanded',String(moveSnapSettingsOpen));
+      ? `Pointer-driven ${snapType} on the ${modalTransform.orientation} axis snaps in ${activeSnapLabel}. Numeric input stays exact.`
+      : `Snapping is off. Tap to enable axis-constrained ${snapType}.`;
+    snapSettingsButton.textContent=transformSnapSettingsOpen?'HIDE STEPS ▴':'STEP SIZE ▾';
+    snapSettingsButton.setAttribute('aria-expanded',String(transformSnapSettingsOpen));
     const padDetail=$('#pad-detail');
     orientationButton.hidden=true;
     padDetail.hidden=true;
@@ -812,9 +822,10 @@ ui = {
     padTitle.textContent='TRANSFORM VALUE';
     axisButtons.forEach(button=>button.hidden=false);
     negativeKey.hidden=false;
-    if(!modalTransform.active){readout.hidden=true;pad.hidden=true;snapControls.hidden=true;snapSettingsPanel.hidden=true;moveSnapSettingsOpen=false;return;}
+    if(!modalTransform.active){readout.hidden=true;pad.hidden=true;snapControls.hidden=true;snapSettingsPanel.hidden=true;transformSnapSettingsOpen=false;return;}
     const axis=modalTransform.axis?` · ${modalTransform.orientation.toUpperCase()} ${modalTransform.axis.toUpperCase()} axis`:modalTransform.planeNormal?` · ${modalTransform.orientation.toUpperCase()} ${modalTransform.planeNormal.toUpperCase()} plane`:` · ${modalTransform.orientation.toUpperCase()} orientation`;
     let moveReadout=null;
+    let transformPadValue='0';
     if(modalTransform.type==='move'){
       const numeric=modalTransform.numeric.trim()!=='' && Number.isFinite(Number(modalTransform.numeric));
       const previewDelta=modalTransform.getMoveWorldDelta(numeric);
@@ -843,6 +854,7 @@ ui = {
       padTitle.textContent=!numeric && primaryPosition
         ? `${positionKind} ${moveReadout.positionAxis} POSITION`
         : numeric ? 'MOVE INPUT · WORLD UNITS' : 'MOVE DISTANCE · WORLD UNITS';
+      transformPadValue=modalTransform.numeric || moveReadout.positionValue || moveReadout.value || '0';
       padDetail.hidden=false;
       const [dx,dy,dz]=moveReadout.delta;
       const [tx,ty,tz]=moveReadout.target;
@@ -855,10 +867,25 @@ ui = {
       $('#pad-target-y').textContent=`Y ${signed(ty)}`;
       $('#pad-target-z').textContent=`Z ${signed(tz)}`;
     }else{
-      readout.textContent=`${modalTransform.type.toUpperCase()}${axis} · ${modalTransform.numeric || 'mouse'} · , switches Global/Local · Enter apply / Esc cancel`;
-      padTitle.textContent=modalTransform.type==='rotate'?'ROTATION · DEGREES':'SCALE FACTOR';
+      const numeric=modalTransform.numeric.trim()!=='' && Number.isFinite(Number(modalTransform.numeric));
+      const snapFeedback=modalTransform.axis
+        ? numeric ? (snapSettings.enabled?' · EXACT INPUT (SNAP BYPASSED)':' · EXACT INPUT')
+          : snapSettings.enabled ? ` · SNAP ${activeSnapLabel}` : ' · SNAP OFF'
+        : '';
+      if(modalTransform.type==='rotate'){
+        const angle=modalTransform.rotationPointerDegrees();
+        transformPadValue=modalTransform.numeric || (angle===null?'TRACKBALL':`${angle.toFixed(2)}°`);
+        const angleReadout=modalTransform.numeric ? `VALUE ${modalTransform.numeric}` : angle===null ? 'TRACKBALL' : `ANGLE ${angle.toFixed(2)}°`;
+        readout.textContent=`ROTATE${axis} · ${angleReadout}${snapFeedback} · , switches Global/Local · Enter apply / Esc cancel`;
+        padTitle.textContent='ROTATION · DEGREES';
+      }else{
+        const factor=modalTransform.scaleFactor(numeric);
+        transformPadValue=modalTransform.numeric || `${factor.toFixed(3)}×`;
+        readout.textContent=`SCALE${axis} · ${numeric?`VALUE ${modalTransform.numeric}`:`FACTOR ${factor.toFixed(3)}×`}${snapFeedback} · , switches Global/Local · Enter apply / Esc cancel`;
+        padTitle.textContent='SCALE FACTOR';
+      }
     }
-    pad.hidden=!capabilities.tier.includes('Mobile'); orientationButton.hidden=false; orientationButton.textContent=`${modalTransform.orientation.toUpperCase()} AXES · SWITCH TO ${modalTransform.orientation==='global'?'LOCAL':'GLOBAL'}`; orientationButton.setAttribute('aria-label',`Current orientation: ${modalTransform.orientation}. Switch to ${modalTransform.orientation==='global'?'Local':'Global'}.`); orientationButton.setAttribute('aria-pressed',String(modalTransform.orientation==='local')); $('#pad-value').textContent=modalTransform.numeric || (moveReadout?.positionValue || moveReadout?.value || '0');
+    pad.hidden=!capabilities.tier.includes('Mobile'); orientationButton.hidden=false; orientationButton.textContent=`${modalTransform.orientation.toUpperCase()} AXES · SWITCH TO ${modalTransform.orientation==='global'?'LOCAL':'GLOBAL'}`; orientationButton.setAttribute('aria-label',`Current orientation: ${modalTransform.orientation}. Switch to ${modalTransform.orientation==='global'?'Local':'Global'}.`); orientationButton.setAttribute('aria-pressed',String(modalTransform.orientation==='local')); $('#pad-value').textContent=transformPadValue;
   }
 };
 loadingProgress(73, 'Building the workspace panels and editing controls…');
@@ -898,19 +925,27 @@ $('#validate-topology-btn').addEventListener('click',()=>run('mesh.validate_topo
 $('#repair-topology-btn').addEventListener('click',()=>run('mesh.repair_topology')); $('#loop-cut-btn').addEventListener('click',()=>run('mesh.loop_cut'));
 $('#frame-btn').addEventListener('click',()=>run('view.frame'));
 $('#pivot-select').addEventListener('change',event=>run('pivot.set',{pivot:event.target.value}));
-$('#move-snap-enabled').addEventListener('change',event=>run('transform.snap_settings',{settings:{enabled:event.target.checked}}));
-for (const [id,key] of [
-  ['move-snap-global-step','globalStep'],['move-snap-local-step','localStep'],
-  ['pad-move-snap-global-step','globalStep'],['pad-move-snap-local-step','localStep']
-]) {
-  $(`#${id}`).addEventListener('change',event=>{
+$('#transform-snap-enabled').addEventListener('change',event=>run('transform.snap_settings',{settings:{enabled:event.target.checked}}));
+const mobileSnapInputRoles=[
+  [$('#pad-transform-snap-global-step'),'global'],
+  [$('#pad-transform-snap-local-step'),'local']
+];
+const snapStepBindings=[
+  ...$$('[data-snap-setting]').map(input=>[input,input.dataset.snapSetting]),
+  ...mobileSnapInputRoles
+];
+for (const [input,setting] of snapStepBindings) {
+  input.addEventListener('change',event=>{
+    const key=setting==='global' || setting==='local'
+      ? getTransformSnapSettingKeys(modalTransform.active ? modalTransform.type : 'move')[setting]
+      : setting;
     const value=Number(event.target.value);
     if(!Number.isFinite(value) || value<=0){
-      event.target.value=String(modalTransform.moveSnapSettings[key]);
+      event.target.value=String(modalTransform.transformSnapSettings[key]);
       notify('Snap step must be a number greater than zero.','error');
       return;
     }
-    const normalized=normalizeMoveSnapSettings({[key]:value},modalTransform.moveSnapSettings);
+    const normalized=normalizeTransformSnapSettings({[key]:value},modalTransform.transformSnapSettings);
     event.target.value=String(normalized[key]);
     run('transform.snap_settings',{settings:{[key]:normalized[key]}});
   });
@@ -942,13 +977,13 @@ $('#pie-menu').addEventListener('click',async event=>{
 });
 $('#shading-btn').addEventListener('click',()=>ui.togglePie('shading'));
 $('#numeric-pad').addEventListener('click',async event=>{
-  if(modalTransform.active && event.target.closest('#pad-move-snap-settings-toggle')){
-    moveSnapSettingsOpen=!moveSnapSettingsOpen;
+  if(modalTransform.active && event.target.closest('#pad-transform-snap-settings-toggle')){
+    transformSnapSettingsOpen=!transformSnapSettingsOpen;
     ui.refreshModal();
     return;
   }
-  if(modalTransform.active && event.target.closest('#pad-move-snap-toggle')){
-    await run('transform.snap_settings',{settings:{enabled:!modalTransform.moveSnapSettings.enabled}});
+  if(modalTransform.active && event.target.closest('#pad-transform-snap-toggle')){
+    await run('transform.snap_settings',{settings:{enabled:!modalTransform.transformSnapSettings.enabled}});
     return;
   }
   if(modalTransform.active && event.target.closest('#pad-transform-orientation')){await run('transform.modal_orientation_toggle');return;}

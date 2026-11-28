@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { resolveTransformAxis } from '../core/TransformOrientation.js';
-import { normalizeMoveSnapSettings, resolveMoveSnapAmount } from '../core/TransformSnap.js';
+import { getTransformSnapStep, normalizeTransformSnapSettings, resolveMoveSnapAmount, resolveRotateSnapDegrees, resolveScaleSnapFactor } from '../core/TransformSnap.js';
 
 const AXES = {
   x: new THREE.Vector3(1, 0, 0),
@@ -17,7 +17,7 @@ function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
  * a virtual trackball expressed in the camera's orientation.
  */
 export class ModalTransform {
-  constructor({ document, undoManager, viewport, onChange, status, moveSnapSettings = {} }) {
+  constructor({ document, undoManager, viewport, onChange, status, transformSnapSettings = {} }) {
     this.document = document;
     this.undoManager = undoManager;
     this.viewport = viewport;
@@ -41,7 +41,7 @@ export class ModalTransform {
     this.arcballStart = null;
     this.orientation = 'global';
     this.startWorldQuaternion = new THREE.Quaternion();
-    this.moveSnapSettings = normalizeMoveSnapSettings(moveSnapSettings);
+    this.transformSnapSettings = normalizeTransformSnapSettings(transformSnapSettings);
   }
 
   async begin(type, pointer = null) {
@@ -191,7 +191,7 @@ export class ModalTransform {
     const delta = this.screenDelta;
     if (this.axis) {
       const rawAmount = this.axisMouseAmount(this.axis);
-      const amount = resolveMoveSnapAmount(rawAmount, this.moveSnapSettings, this.orientation, false);
+      const amount = resolveMoveSnapAmount(rawAmount, this.transformSnapSettings, this.orientation, false);
       return this.axisVector(this.axis).multiplyScalar(amount);
     }
     if (this.planeNormal) {
@@ -215,6 +215,19 @@ export class ModalTransform {
     return vector.normalize();
   }
 
+  rotationPointerDegrees() {
+    const constrainedAxis = this.axis || this.planeNormal;
+    if (!constrainedAxis) return null;
+    const projected = this.projectedAxis(constrainedAxis);
+    const tangent = projected.lengthSq() < 1e-6
+      ? new THREE.Vector2(1, 0)
+      : new THREE.Vector2(-projected.y, projected.x).normalize();
+    const rawDegrees = THREE.MathUtils.radToDeg(this.screenDelta.dot(tangent) * 0.01);
+    return this.axis
+      ? resolveRotateSnapDegrees(rawDegrees, this.transformSnapSettings, this.orientation, false)
+      : rawDegrees;
+  }
+
   rotationDelta(numeric) {
     const constrainedAxis = this.axis || this.planeNormal;
     if (numeric) {
@@ -222,12 +235,10 @@ export class ModalTransform {
       return new THREE.Quaternion().setFromAxisAngle(axis, THREE.MathUtils.degToRad(Number(this.numeric)));
     }
     if (constrainedAxis) {
-      const projected = this.projectedAxis(constrainedAxis);
-      const tangent = projected.lengthSq() < 1e-6
-        ? new THREE.Vector2(1, 0)
-        : new THREE.Vector2(-projected.y, projected.x).normalize();
-      const radians = this.screenDelta.dot(tangent) * 0.01;
-      return new THREE.Quaternion().setFromAxisAngle(this.axisVector(constrainedAxis), radians);
+      return new THREE.Quaternion().setFromAxisAngle(
+        this.axisVector(constrainedAxis),
+        THREE.MathUtils.degToRad(this.rotationPointerDegrees())
+      );
     }
     const current = this.mapArcball(this.lastPointer);
     const cameraDelta = new THREE.Quaternion().setFromUnitVectors(this.arcballStart, current);
@@ -244,7 +255,10 @@ export class ModalTransform {
         ? -this.pointerDelta.y * 0.01
         : this.screenDelta.dot(projected.normalize()) * 0.01;
     } else exponent = this.screenDelta.y * 0.01;
-    return clamp(Math.exp(clamp(exponent, -6, 6)), 0.001, 1000);
+    const factor = clamp(Math.exp(clamp(exponent, -6, 6)), 0.001, 1000);
+    return this.axis
+      ? resolveScaleSnapFactor(factor, this.transformSnapSettings, this.orientation, false)
+      : factor;
   }
 
   scaleWorldOffset(offset, factor) {
@@ -341,15 +355,19 @@ export class ModalTransform {
     this.onChange?.();
   }
 
-  setMoveSnapSettings(settings = {}) {
-    this.moveSnapSettings = normalizeMoveSnapSettings(settings, this.moveSnapSettings);
-    if (this.active && this.type === 'move') this.apply();
+  setTransformSnapSettings(settings = {}) {
+    this.transformSnapSettings = normalizeTransformSnapSettings(settings, this.transformSnapSettings);
+    if (this.active && this.axis && ['move', 'rotate', 'scale'].includes(this.type)) this.apply();
     this.onChange?.();
-    return { ...this.moveSnapSettings };
+    return { ...this.transformSnapSettings };
   }
 
-  toggleMoveSnap() {
-    return this.setMoveSnapSettings({ enabled: !this.moveSnapSettings.enabled });
+  toggleTransformSnap() {
+    return this.setTransformSnapSettings({ enabled: !this.transformSnapSettings.enabled });
+  }
+
+  getActiveSnapStep() {
+    return getTransformSnapStep(this.transformSnapSettings, this.type, this.orientation);
   }
 
   toggleOrientation() {
