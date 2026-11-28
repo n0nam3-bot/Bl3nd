@@ -118,7 +118,8 @@ export class KeyboardController {
     if (doc.mode==='edit' && key==='l' && event.ctrlKey && event.altKey) { event.preventDefault(); await this.dispatch('mesh.select_edge_ring'); return; }
     if (doc.mode==='edit' && key==='l' && event.altKey) { event.preventDefault(); await this.dispatch('mesh.select_edge_loop'); return; }
     if (doc.mode==='edit' && ['b','c','l'].includes(key) && !event.ctrlKey && !event.metaKey && !event.altKey) { event.preventDefault(); await this.dispatch('selection.tool.set',{tool:({b:'box',c:'circle',l:'lasso'})[key]}); return; }
-    if (key==='g' || key==='r' || key==='s') { event.preventDefault(); const type=({g:'move',r:'rotate',s:'scale'})[key]; await this.dispatch('transform.modal_start',{type,pointer:(this.viewport.getPointerOrigin?.() || this.ui.pointerCenter())}); return; }
+    if (key==='g' || key==='r' || key==='s') { event.preventDefault(); const type=({g:'move',r:'rotate',s:'scale'})[key]; await this.dispatch('transform.tool.select',{tool:type}); await this.dispatch('transform.modal_start',{type,pointer:(this.viewport.getPointerOrigin?.() || this.ui.pointerCenter())}); return; }
+    if (key==='q' && !event.ctrlKey && !event.metaKey && !event.altKey) { event.preventDefault(); await this.dispatch('transform.tool.select',{tool:'select'}); await this.dispatch('selection.tool.set',{tool:'tap'}); return; }
     if (key==='e' && doc.mode==='edit') { event.preventDefault(); await this.dispatch('mesh.extrude_region'); return; }
     if (key==='i' && doc.mode==='edit') { event.preventDefault(); await this.dispatch('mesh.inset'); return; }
     if (event.shiftKey && key==='x' && doc.mode==='edit') { event.preventDefault(); await this.dispatch('mesh.dissolve'); return; }

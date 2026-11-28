@@ -497,3 +497,19 @@ Full Blender keymap parity is not claimed by this build. Android touch acceptanc
 - Use the List tab to select objects; verify Shift-click adds/removes objects and active/secondary highlights match the viewport.
 - Expand an object and select individual faces. Verify a face click from Object Mode enters Edit Mode; Shift-click in Edit Mode adds/removes faces; switching to a different object's face returns through Object Mode safely.
 - Verify name/face-number search, clear-search recovery, scroll position, empty-scene state and the 250-row safety limit. Confirm the existing Scene, Modifiers and System tabs still work.
+
+
+## v0.1.76 — Remembered transform-tool selection
+
+### Android — Chrome / Samsung Internet
+- Tap **Move** on the bottom actionbar. Confirm the existing Move modal still opens immediately and the Move button receives the active amber highlight.
+- Apply one Move, then tap **Rotate** and **Scale** in turn. Confirm the active highlight moves to the newly chosen tool and each button still starts its existing modal immediately.
+- Reload the page. Confirm the last selected Move/Rotate/Scale button is highlighted again. Change to another transform tool, reload, and confirm the newest choice is restored.
+- With no modal active, drag blank viewport space and confirm it still orbits the camera. Start Move/Rotate/Scale and confirm blank-area drags still adjust only the active modal; center, axis and plane handles remain unchanged.
+- Confirm Apply makes one Undo step, Cancel restores the source, and switching the highlighted tool never starts or leaves a background transform active.
+
+### Desktop — Chrome / Edge
+- Click Move, Rotate and Scale in the tool rail. Confirm one active highlight, immediate modal start, and persistence after reload.
+- Press `G`, `R` and `S` separately. Confirm each updates the selected tool highlight before starting the same modal as before. Press `Q` and confirm Select is highlighted and any Box/Circle/Lasso selection tool returns to Click Select.
+- Confirm the selected tool state is restored from browser storage, the existing numeric input / snapping / Global-Local / center-axis-plane gizmo / pointer-ID paths still work, and ordinary blank-area drags outside a modal remain viewport navigation.
+- With browser storage blocked, confirm the app starts normally and falls back to Select for that session without a startup error.

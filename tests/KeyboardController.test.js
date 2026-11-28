@@ -15,15 +15,16 @@ function makeController(mode = 'edit') {
   };
   const calls = [];
   const document = { mode };
+  const viewport = { selectionTool: 'tap', getPointerOrigin() { return { x: 12, y: 34 }; } };
   const controller = new KeyboardController({
-    viewport: { selectionTool: 'tap' },
+    viewport,
     commandBus: { async dispatch(name, payload) { calls.push({ name, payload }); return true; } },
     modalTransform: { active: false },
     getDocument: () => document,
     ui: { pieMenuOpen: false },
     notify() {}
   });
-  return { controller, calls, document, listeners };
+  return { controller, calls, document, listeners, viewport };
 }
 
 function keyEvent({ key, code, ctrlKey = false, metaKey = false, altKey = false, shiftKey = false } = {}) {
@@ -148,5 +149,33 @@ test('radial menu keeps keyboard focus ahead of command search', async () => {
   await controller.onKeyDown(event);
   assert.equal(opened, 0);
   assert.equal(event.prevented, false);
+  controller.dispose();
+});
+
+
+test('G/R/S synchronize the remembered tool before starting the existing modal', async () => {
+  for (const [key, tool] of [['g', 'move'], ['r', 'rotate'], ['s', 'scale']]) {
+    const { controller, calls } = makeController('object');
+    const event = keyEvent({ key, code: `Key${key.toUpperCase()}` });
+    await controller.onKeyDown(event);
+    assert.equal(event.prevented, true);
+    assert.deepEqual(calls.map(call => call.name), ['transform.tool.select', 'transform.modal_start']);
+    assert.equal(calls[0].payload.tool, tool);
+    assert.equal(calls[1].payload.type, tool);
+    assert.deepEqual(calls[1].payload.pointer, { x: 12, y: 34 });
+    controller.dispose();
+  }
+});
+
+test('Q restores the Select tool and Click Select without starting a transform', async () => {
+  const { controller, calls, viewport } = makeController('object');
+  viewport.selectionTool = 'lasso';
+  const event = keyEvent({ key: 'q', code: 'KeyQ' });
+  await controller.onKeyDown(event);
+  assert.equal(event.prevented, true);
+  assert.deepEqual(calls.map(call => [call.name, call.payload.tool]), [
+    ['transform.tool.select', 'select'],
+    ['selection.tool.set', 'tap']
+  ]);
   controller.dispose();
 });

@@ -5,6 +5,7 @@ import { SceneDocument } from './core/SceneDocument.js';
 import { buildMoveReadout } from './core/TransformReadout.js';
 import { getTransformSnapSettingKeys, getTransformSnapStep, normalizeTransformSnapSettings } from './core/TransformSnap.js';
 import { normalizeProportionalSettings } from './core/ProportionalEditing.js';
+import { getTransformToolFromDataset, loadTransformToolSelection, saveTransformToolSelection } from './core/TransformToolSelection.js';
 import { bindProjectionToggleButton, syncProjectionToggleButton } from './core/ProjectionToggle.js';
 import { UndoManager } from './core/UndoManager.js';
 import { MeshOperators } from './operators/MeshOperators.js';
@@ -24,6 +25,22 @@ import { SceneExplorer } from './ui/SceneExplorer.js';
 
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
+let activeTransformTool = loadTransformToolSelection();
+function syncTransformToolButtons() {
+  $$('[data-transform-tool]').forEach(button => {
+    const active = button.dataset.transformTool === activeTransformTool;
+    const mobile = Boolean(button.closest('.mobile-actionbar'));
+    button.classList.toggle('selected', active && !mobile);
+    button.classList.toggle('active', active && mobile);
+    button.setAttribute('aria-pressed', String(active));
+  });
+}
+function setActiveTransformTool(tool) {
+  if (!['select', 'move', 'rotate', 'scale'].includes(tool)) return false;
+  activeTransformTool = saveTransformToolSelection(tool);
+  syncTransformToolButtons();
+  return true;
+}
 const statusEl = $('#status-message');
 const toastRegion = $('#toast-region');
 const loading = window.Bl3ndLoading;
@@ -201,6 +218,14 @@ function initializeEditSelection(hem) {
 }
 
 function registerCommands() {
+  commandBus.register('transform.tool.select', ({ tool }) => {
+    if (!setActiveTransformTool(tool)) return false;
+    if (tool === 'select') {
+      viewport.selectionTool = 'tap';
+      ui?.refreshSelectionTool();
+    }
+    return true;
+  }, { recordUndo: false });
   commandBus.register('object.add_primitive', ({ primitive = 'cube' }) => { const mesh = sceneDocument.addPrimitive(primitive); refresh(); viewport.frame(mesh); return mesh; });
   commandBus.register('object.delete', () => { const ok = sceneDocument.deleteActiveObject(); refresh(); return ok; });
   commandBus.register('object.select', ({ mesh = null, additive = false, toggle = false }) => {
@@ -1132,6 +1157,7 @@ loadingProgress(73, 'Building the workspace panels and editing controls…');
 
 // Header, panels, tools and mobile quick actions all route into the command bus.
 $('#undo-btn').addEventListener('click',()=>ui.undo()); $('#redo-btn').addEventListener('click',()=>ui.redo());
+syncTransformToolButtons();
 $('#object-mode-btn').addEventListener('click',()=>run('mode.set',{mode:'object'}));
 $('#edit-mode-btn').addEventListener('click',()=>run('mode.set',{mode:'edit'}));
 $('#save-btn').addEventListener('click',async()=>{try{await modelIO.exportFile('glb');}catch(e){notify(e.message,'error');}});
@@ -1139,9 +1165,6 @@ $('#open-btn').addEventListener('click',()=>$('#file-input').click());
 $('#file-input').addEventListener('change',async event=>{const file=event.target.files?.[0];if(!file)return;try{const meshes=await modelIO.importFile(file);const issues=meshes.reduce((sum,mesh)=>sum+(mesh.userData.hem?.validateTopology().issueCount||0),0);if(issues)notify(`Imported mesh validation found ${issues} topology issue(s). Use Validate Mesh for details.`,'error');refresh();viewport.frame(meshes[0]);}catch(e){notify(e.message,'error');}finally{event.target.value='';}});
 $('#add-menu-btn').addEventListener('click',()=>ui.togglePie('add'));
 $('#mobile-add').addEventListener('click',()=>ui.togglePie('add'));
-$('#mobile-move').addEventListener('click',()=>run('transform.modal_start',{type:'move',pointer:ui.pointerOrigin()}));
-$('#mobile-rotate').addEventListener('click',()=>run('transform.modal_start',{type:'rotate',pointer:ui.pointerOrigin()}));
-$('#mobile-scale').addEventListener('click',()=>run('transform.modal_start',{type:'scale',pointer:ui.pointerOrigin()}));
 $('#mobile-proportional').addEventListener('click',()=>run('transform.proportional_toggle'));
 $('#mobile-proportional-radius').addEventListener('input',event=>{
   const radius=Number(event.target.value);
@@ -1150,10 +1173,10 @@ $('#mobile-proportional-radius').addEventListener('input',event=>{
 });
 $('#mobile-edit').addEventListener('click',()=>run('mode.toggle_edit'));
 $('#mobile-more').addEventListener('click',()=>{ const panel=$('.properties-panel'); if(panel.classList.contains('mobile-open')){panel.classList.remove('mobile-open');return;} $('[data-panel=\"explorer\"]')?.click(); panel.classList.add('mobile-open'); });
-$$('[data-tool]').forEach(button=>button.addEventListener('click',()=>{
-  $$('.tool-button').forEach(item=>item.classList.remove('selected'));button.classList.add('selected');
-  const tool=button.dataset.tool;
-  if(['move','rotate','scale'].includes(tool))run('transform.modal_start',{type:tool,pointer:ui.pointerOrigin()});
+$$('[data-transform-tool]').forEach(button=>button.addEventListener('click',async()=>{
+  const tool=getTransformToolFromDataset(button.dataset);
+  if(!tool || !await run('transform.tool.select',{tool}))return;
+  if(['move','rotate','scale'].includes(tool))await run('transform.modal_start',{type:tool,pointer:ui.pointerOrigin()});
 }));
 $('#extrude-btn').addEventListener('click',()=>run('mesh.extrude_region')); $('#extrude-panel-btn').addEventListener('click',()=>run('mesh.extrude_region')); $('#mobile-extrude').addEventListener('click',()=>run('mesh.extrude_region'));
 $('#inset-btn').addEventListener('click',()=>run('mesh.inset')); $('#inset-panel-btn').addEventListener('click',()=>run('mesh.inset'));

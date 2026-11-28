@@ -39,10 +39,10 @@
 
     <main class="workspace">
       <aside class="tool-rail" aria-label="Tools">
-        <button class="tool-button selected" data-tool="select" title="Select (Q)">⌖<small>Select</small></button>
-        <button class="tool-button" data-tool="move" title="Move (G)">✥<small>Move</small></button>
-        <button class="tool-button" data-tool="rotate" title="Rotate (R)">⟳<small>Rotate</small></button>
-        <button class="tool-button" data-tool="scale" title="Scale (S)">⤢<small>Scale</small></button>
+        <button class="tool-button selected" data-transform-tool="select" aria-pressed="true" title="Select (Q)">⌖<small>Select</small></button>
+        <button class="tool-button" data-transform-tool="move" aria-pressed="false" title="Move (G)">✥<small>Move</small></button>
+        <button class="tool-button" data-transform-tool="rotate" aria-pressed="false" title="Rotate (R)">⟳<small>Rotate</small></button>
+        <button class="tool-button" data-transform-tool="scale" aria-pressed="false" title="Scale (S)">⤢<small>Scale</small></button>
         <div class="rail-separator"></div>
         <button class="tool-button" id="extrude-btn" title="Extrude (E)">▱<small>Extrude</small></button>
         <button class="tool-button" id="inset-btn" title="Inset (I)">▣<small>Inset</small></button>
@@ -268,9 +268,9 @@
 
     <nav class="mobile-actionbar" aria-label="Quick actions">
       <button id="mobile-add">＋<small>Add</small></button>
-      <button id="mobile-move">✥<small>Move</small></button>
-      <button id="mobile-rotate">⟳<small>Rotate</small></button>
-      <button id="mobile-scale">⤢<small>Scale</small></button>
+      <button id="mobile-move" data-transform-tool="move" aria-pressed="false" title="Move (G)">✥<small>Move</small></button>
+      <button id="mobile-rotate" data-transform-tool="rotate" aria-pressed="false" title="Rotate (R)">⟳<small>Rotate</small></button>
+      <button id="mobile-scale" data-transform-tool="scale" aria-pressed="false" title="Scale (S)">⤢<small>Scale</small></button>
       <button id="mobile-projection-toggle" data-projection-toggle aria-label="Switch to Orthographic projection" aria-pressed="false" title="Switch to Orthographic projection"><span data-projection-label>P</span><small>View</small></button>
       <button id="mobile-multi-select" aria-label="Object Multi-Select off" aria-pressed="false" title="Enable to add or remove objects with taps">◎<small>Multi</small></button>
       <button id="mobile-proportional" aria-label="Enable proportional editing" aria-pressed="false" title="Proportional Editing · OFF">◎<small>Prop OFF</small></button>
