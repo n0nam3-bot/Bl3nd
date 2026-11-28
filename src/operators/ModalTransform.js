@@ -124,7 +124,7 @@ export class ModalTransform {
       ? ` · ${this.transformGroups.length} connected origin${this.transformGroups.length === 1 ? '' : 's'}`
       : '';
     const proportionalNote = this.document.mode === 'edit' && this.proportionalSettings.enabled
-      ? ` · PROP ${this.proportionalSettings.radius.toFixed(2)} · ${this.proportionalInfluencedCount} influenced`
+      ? ` · PROP ${this.proportionalSettings.falloff.toUpperCase()} ${this.proportionalSettings.radius.toFixed(2)} · ${this.proportionalInfluencedCount} influenced`
       : '';
     this.status?.(`${type.toUpperCase()} · ${this.orientation.toUpperCase()} orientation${individualNote}${proportionalNote} · drag in the current view · X/Y/Z axis · Shift+axis plane · numeric value · Enter apply · Esc cancel`);
     this.onChange?.();

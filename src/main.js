@@ -46,6 +46,12 @@ function persistProportionalSettings(settings) {
   try { localStorage.setItem(PROPORTIONAL_STORAGE_KEY, JSON.stringify(settings)); }
   catch { /* Browser storage may be unavailable; in-memory settings still work. */ }
 }
+function syncProportionalFalloffControls() {
+  const falloff = modalTransform.proportionalSettings.falloff;
+  $$('[data-proportional-falloff]').forEach(select => {
+    if (document.activeElement !== select) select.value = falloff;
+  });
+}
 
 loadingProgress(6, 'Checking device and graphics capabilities…');
 const capabilities = await detectCapabilities();
@@ -662,6 +668,9 @@ function refresh() {
   if (proportionalRadius) { proportionalRadius.value = String(Math.min(25, Math.max(0.1, modalTransform.proportionalSettings.radius))); proportionalRadius.disabled = sceneDocument.mode !== 'edit'; }
   const proportionalRadiusLabel = $('#proportional-editing-radius-value');
   if (proportionalRadiusLabel) proportionalRadiusLabel.textContent = modalTransform.proportionalSettings.radius.toFixed(2);
+  const proportionalFalloff = $('#proportional-editing-falloff');
+  if (proportionalFalloff) proportionalFalloff.disabled = sceneDocument.mode !== 'edit';
+  syncProportionalFalloffControls();
   $('#object-mode-btn').classList.toggle('active',sceneDocument.mode==='object');
   $('#edit-mode-btn').classList.toggle('active',sceneDocument.mode==='edit');
   $('#selection-vertex').classList.toggle('active',sceneDocument.selectionMode==='vertex');
@@ -746,6 +755,7 @@ ui = {
     const proportionalToggle=$('#pad-proportional-toggle');
     const proportionalRadius=$('#pad-proportional-radius');
     const proportionalRadiusValue=$('#pad-proportional-radius-value');
+    syncProportionalFalloffControls();
     proportionalControls.hidden=true;
     const mobileProportionalPanel=$('#mobile-proportional-panel');
     if(mobileProportionalPanel) mobileProportionalPanel.hidden=sceneDocument.mode!=='edit' || !modalTransform.proportionalSettings.enabled || modalTransform.active || viewport.modalOperationActive;
@@ -888,7 +898,7 @@ ui = {
     if(!modalTransform.active){readout.hidden=true;pad.hidden=true;snapControls.hidden=true;snapSettingsPanel.hidden=true;transformSnapSettingsOpen=false;return;}
     const axis=modalTransform.axis?` · ${modalTransform.orientation.toUpperCase()} ${modalTransform.axis.toUpperCase()} axis`:modalTransform.planeNormal?` · ${modalTransform.orientation.toUpperCase()} ${modalTransform.planeNormal.toUpperCase()} plane`:` · ${modalTransform.orientation.toUpperCase()} orientation`;
     const proportionalReadout = sceneDocument.mode === 'edit' && modalTransform.proportionalSettings.enabled
-      ? ` · PROP r ${modalTransform.proportionalSettings.radius.toFixed(2)} · ${modalTransform.proportionalInfluencedCount} influenced`
+      ? ` · PROP ${modalTransform.proportionalSettings.falloff.toUpperCase()} r ${modalTransform.proportionalSettings.radius.toFixed(2)} · ${modalTransform.proportionalInfluencedCount} influenced`
       : '';
     let moveReadout=null;
     let transformPadValue='0';
@@ -1013,6 +1023,9 @@ $('#pad-proportional-radius').addEventListener('input',event=>{
   const radius=Number(event.target.value);$('#pad-proportional-radius-value').textContent=radius.toFixed(2);
   run('transform.proportional_settings',{settings:{radius}});
 });
+$$('[data-proportional-falloff]').forEach(select=>select.addEventListener('change',event=>{
+  run('transform.proportional_settings',{settings:{falloff:event.target.value}});
+}));
 $('#pivot-select').addEventListener('change',event=>run('pivot.set',{pivot:event.target.value}));
 $('#transform-snap-enabled').addEventListener('change',event=>run('transform.snap_settings',{settings:{enabled:event.target.checked}}));
 const mobileSnapInputRoles=[

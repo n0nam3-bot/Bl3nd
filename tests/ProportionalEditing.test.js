@@ -113,3 +113,26 @@ test('empty or invalid seed groups return no influence without throwing', () => 
   assert.deepEqual(result.groups, [[]]);
   assert.equal(result.influencedCount, 0);
 });
+
+test('selectable falloff curves produce their documented distinct weights', () => {
+  const distance = 0.5;
+  const radius = 2;
+  const weights = Object.fromEntries(['smooth', 'linear', 'sharp', 'root', 'sphere'].map(falloff => [
+    falloff, proportionalFalloffWeight(distance, radius, falloff)
+  ]));
+  assert.ok(Math.abs(weights.smooth - 0.84375) < 1e-12);
+  assert.ok(Math.abs(weights.linear - 0.75) < 1e-12);
+  assert.ok(Math.abs(weights.sharp - 0.5625) < 1e-12);
+  assert.ok(Math.abs(weights.root - Math.sqrt(0.75)) < 1e-12);
+  assert.ok(Math.abs(weights.sphere - Math.sqrt(0.9375)) < 1e-12);
+  assert.equal(new Set(Object.values(weights)).size, 5);
+});
+
+test('falloff selection survives radius-only updates through settings normalization', () => {
+  const selected = normalizeProportionalSettings({ enabled: true, radius: 3, falloff: 'root' });
+  assert.deepEqual(normalizeProportionalSettings({ radius: 5 }, selected), {
+    enabled: true, radius: 5, falloff: 'root'
+  });
+  assert.equal(normalizeProportionalSettings({ falloff: 'unknown' }, selected).falloff, 'smooth');
+});
+

@@ -92,6 +92,11 @@
             <div class="pad-proportional-controls" id="pad-proportional-controls" hidden>
               <button type="button" id="pad-proportional-toggle" aria-pressed="false">PROPORTIONAL · OFF</button>
               <label>RADIUS <b id="pad-proportional-radius-value">1.00</b><input id="pad-proportional-radius" type="range" min="0.1" max="25" step="0.1" value="1" hidden></label>
+              <label class="pad-proportional-falloff">FALLOFF
+                <select id="pad-proportional-falloff" data-proportional-falloff aria-label="Proportional falloff shape">
+                  <option value="smooth">Smooth</option><option value="linear">Linear</option><option value="sharp">Sharp</option><option value="root">Root</option><option value="sphere">Sphere</option>
+                </select>
+              </label>
             </div>
             <div class="pad-snap-controls" id="pad-transform-snap-controls" hidden>
               <div class="pad-snap-actions">
@@ -224,7 +229,12 @@
           <div class="panel-heading section-gap">PROPORTIONAL EDITING</div>
           <label class="proportional-enable"><input id="proportional-editing-enabled" type="checkbox"><span>Enable · O</span></label>
           <label class="proportional-radius-control">Radius <b id="proportional-editing-radius-value">1.00</b><input id="proportional-editing-radius" type="range" min="0.1" max="25" step="0.1" value="1"></label>
-          <p class="panel-note">Transforms selected vertices fully and nearby connected vertices by a smooth edge-distance falloff. Disconnected mesh islands are not affected. Adjust radius with the slider or mouse wheel during a transform.</p>
+          <label class="proportional-falloff-control">Falloff shape
+            <select id="proportional-editing-falloff" data-proportional-falloff aria-label="Proportional falloff shape">
+              <option value="smooth">Smooth · default</option><option value="linear">Linear</option><option value="sharp">Sharp</option><option value="root">Root</option><option value="sphere">Sphere</option>
+            </select>
+          </label>
+          <p class="panel-note">Selected vertices move fully; connected unselected vertices follow the chosen edge-distance curve. Smooth is the default. Linear, Sharp, Root and Sphere change how quickly influence fades. Disconnected mesh islands remain isolated.</p>
           <div class="panel-heading section-gap">3D CURSOR</div>
           <div class="cursor-coords" id="cursor-coords">X 0.00 · Y 0.00 · Z 0.00</div>
         </section>
@@ -262,7 +272,12 @@
       <div class="mobile-proportional-heading"><strong>PROPORTIONAL EDITING · ON</strong><b id="mobile-proportional-radius-value">1.00</b></div>
       <label for="mobile-proportional-radius">RADIUS</label>
       <input id="mobile-proportional-radius" type="range" min="0.1" max="25" step="0.1" value="1">
-      <p>G / R / S also moves nearby connected vertices with a smooth falloff.</p>
+      <label class="mobile-proportional-falloff-control" for="mobile-proportional-falloff">FALLOFF
+        <select id="mobile-proportional-falloff" data-proportional-falloff aria-label="Proportional falloff shape">
+          <option value="smooth">Smooth</option><option value="linear">Linear</option><option value="sharp">Sharp</option><option value="root">Root</option><option value="sphere">Sphere</option>
+        </select>
+      </label>
+      <p>G / R / S influence connected vertices using the selected falloff curve.</p>
     </div>
     <div class="toast-region" id="toast-region" aria-live="polite"></div>
   </div>

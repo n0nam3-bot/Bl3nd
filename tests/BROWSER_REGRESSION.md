@@ -281,3 +281,14 @@ This procedure validates browser interaction for the starter cube. The automated
 - Drag the radius slider before starting a transform. The value must update continuously and persist after leaving/re-entering Edit Mode or reloading the page. Tap Prop ON to disable; the panel must close and the actionbar button return to Prop OFF.
 - With Prop ON, select one or more vertices and use the mobile Move, Rotate and Scale actions. Confirm the modal numeric pad still includes its proportional toggle and radius slider, and adjusting the radius rebuilds the preview without drift. Cancel restores the exact source; Apply is one undo step.
 - Confirm the existing `Select ▾` toggle and `O` keyboard shortcut remain synchronized with the bottom actionbar button. Desktop keyboard/mouse controls remain unchanged. Desktop Chrome/Edge acceptance remains deferred until PC access is available.
+
+## v0.1.59 — Proportional falloff selector
+
+- In Edit Mode on desktop, enable Proportional Editing in Scene Properties. Confirm the Falloff shape selector offers Smooth, Linear, Sharp, Root and Sphere, with Smooth selected by default.
+- Change the shape to Linear, then to Sharp, Root and Sphere. Confirm each selection updates the same preference without changing the radius or enabled state. Start Move, Rotate and Scale and confirm the viewport readout identifies the active falloff curve.
+- On a phone, enter Edit Mode and enable Prop from the bottom actionbar. Confirm the same five choices appear in the panel above the actionbar. Change the falloff and confirm the desktop/Scene control reflects the same value after reopening More.
+- Start a mobile G/R/S transform. Confirm the transform pad exposes the same falloff selector while the always-available panel is hidden. Change the curve during the preview and verify the geometry rebuilds from the immutable source rather than accumulating drift.
+- With the same selection, radius and transform amount, compare the five curves: Smooth is the default, Linear fades evenly, Sharp falls off more quickly, Root retains broader influence, and Sphere has its rounded curve. Disconnected mesh islands must remain unaffected for every curve.
+- Cancel and confirm exact source restoration. Apply, Undo and Redo; confirm one transform transaction. Reload the page and confirm the chosen falloff remains selected in every control. Repeat with Proportional Editing OFF to confirm the saved falloff does not activate the feature by itself.
+- Desktop Chrome/Edge acceptance remains deferred until PC access is available; live Android acceptance is pending.
+
